@@ -169,7 +169,7 @@ mesh-first cut, while a **federated partner pod** — one that runs its *own* SP
 issues/rotates/revokes its own workloads locally (only public trust bundles cross the core,
 so each side's SPIRE is a SPOF for its own domain only) — is **designed-not-built** and
 lands with the moon-pod SPIRE overlay ([`goat-moon-pod.md`](goat-moon-pod.md),
-`zagros-moon-pod`).
+`USAREUR-AF/zagros-moon-pod`).
 
 ### Two issuance paths, one decision point — the accurate picture
 

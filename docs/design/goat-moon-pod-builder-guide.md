@@ -6,7 +6,7 @@
 | ADR anchor | [`../adr/0223-goat-moon-pod-repo-containment.md`](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-goat-moon-pod-repo-containment.md) |
 | Companions | [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md), [`goat-moon-pod.md`](goat-moon-pod.md) |
 | Audience | Vendors with a data platform or sensor product; partners with engineering capacity who want to build their own moon-pod |
-| Reference implementation | `moon-pod` (worked example, Apache 2.0; private during MVP, public at GA) |
+| Reference implementation | [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) (worked example, Apache 2.0; private during MVP, public at GA) |
 
 ## Why this guide exists
 
@@ -54,7 +54,7 @@ A conformant goat-moon-pod must:
 
 ## How to use the reference implementation
 
-`moon-pod` is a worked example, not a template you must follow. Useful uses:
+[`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) is a worked example, not a template you must follow. Useful uses:
 
 - **Read it to understand a conformant shape.** Our pod implements all six pieces; reading the source shows one way each piece can be satisfied.
 - **Copy specific overlays.** The IdP overlays (Kanidm / Dex / Authelia / Zitadel) are reusable across moon-pods if they fit your product shape.
@@ -98,7 +98,7 @@ We do not issue conformance certifications today. Your conformance claim is what
 
 - **Contract clarifications**: open an issue against this repo referencing [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md). We treat contract-clarification issues as priority because they affect every conformant implementation.
 - **Cookbook contributions**: PR against `../integrations/moon-pods/`. We merge cookbooks for any vendor product with a public API surface; we do not require the vendor to be a goat partner to merge a cookbook.
-- **Reference-implementation issues**: open against `moon-pod`. Our pod is the worked example; bugs there are bugs in goat.
+- **Reference-implementation issues**: open against [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod). Our pod is the worked example; bugs there are bugs in goat.
 - **Partnership inquiries**: contact channels in the [Partner Data Sharing Charter](https://github.com/usareur-af/goatdocs/blob/main/docs/partner-templates/data-sharing-charter.md). The charter is a precondition for actual data flow regardless of which moon-pod the partner uses.
 
 ## Out of scope for this guide
@@ -119,4 +119,4 @@ If you build something here you would like to upstream, open an issue first to d
 - `../integrations/INDEX.md` — discoverability surface
 - `../integrations/moon-pods/` — per-vendor cookbooks
 - [`../../tests/moon-pod-conformance/`](https://github.com/usareur-af/goatcore/tree/main/tests/moon-pod-conformance) — conformance smoke-test suite
-- `moon-pod` — reference implementation
+- [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) — reference implementation

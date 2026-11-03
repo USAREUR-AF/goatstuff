@@ -5,12 +5,12 @@
 | Status | Proposed (Phase 2D-late / Phase 3 commitment) |
 | ADR anchor | [`../adr/0223-goat-moon-pod-repo-containment.md`](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-goat-moon-pod-repo-containment.md) |
 | Companions | [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md), [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md), [`partner-reference-architecture.md`](https://github.com/usareur-af/goatdocs/blob/main/docs/design/partner-reference-architecture.md), [`mission-partner-sharing.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/mission-partner-sharing.md) |
-| Reference implementation | `moon-pod` (separate repo; Apache 2.0; private during MVP, public at GA) |
+| Reference implementation | [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) (separate repo; Apache 2.0; private during MVP, public at GA) |
 | Implementation tracker | `../project/implementation-plan.md` Block 60 |
 
 ## What this is
 
-The **abstract spec** for a goat-moon-pod — a deployable instance of the sovereign-orbital partner-relationship pattern. This document defines the architectural shape; the requirements contract lives at [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md); the reference implementation lives at `moon-pod`; a guide for vendors who want to build their own lives at [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md).
+The **abstract spec** for a goat-moon-pod — a deployable instance of the sovereign-orbital partner-relationship pattern. This document defines the architectural shape; the requirements contract lives at [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md); the reference implementation lives at [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod); a guide for vendors who want to build their own lives at [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md).
 
 ## The shape in one paragraph
 
@@ -111,7 +111,7 @@ A conformant pod meets the seven-requirement contract **without** workload ident
 - **What it adds:** the pod runs its own SPIRE trust domain (`spiffe://<partner>.pod`) and attests its own containers (zenoh router, polygloat, audit, UI) with short-lived X509-SVIDs. Because the pod is a *controlled bundle*, its workloads are attestable — unlike a bare external publisher.
 - **Why the pod is the right home:** SPIFFE **federation** (pod trust domain ↔ goatnet trust domain, exchanging only public trust *bundles*) lets the pod's router carry a cryptographically-attested identity the goat-side ingress gateway (the [ADR 1020](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1020-zenoh-federated-peering-trust-model.md) Tier-2 receiver) can verify — an upgrade over trusting the bundle-embedded setup key. Sovereignty-clean: SPIRE runs *inside* the pod on partner hardware; goat hosts no partner SVIDs.
 - **Progressive disclosure, not a filter.** The 24-hour layman path stays an honest easy default — the base pod works end-to-end with no SPIRE. The SPIRE overlay is fully available to any partner who wants (or is required to have) attested workload identity. Neither path is second-class; offering the simple default does not withhold the capability.
-- **Status:** Phase 3+, partner-gated, off the 24-hour path. The goat-side analysis + the ZAGROS sandbox proving-ground for the same pattern live at `../project/spiffe-spire-spike-2026-06-09.md` (§6 moon-pod fit) + `../project/zagros-spire-implementation-plan.md`. Until a Zenoh URI-SAN matcher lands upstream (backlog `zenoh-uri-san-acl-matcher-upstream`), an SVID admitted at the wire uses the CN-bearing-SVID bridge or is verified off the core router by the ingress gateway. The reference-implementation overlay (a `profiles/<…>-spire` overlay alongside the IdP overlays) lives in the standalone `moon-pod` repo.
+- **Status:** Phase 3+, partner-gated, off the 24-hour path. The goat-side analysis + the ZAGROS sandbox proving-ground for the same pattern live at `../project/spiffe-spire-spike-2026-06-09.md` (§6 moon-pod fit) + `../project/zagros-spire-implementation-plan.md`. Until a Zenoh URI-SAN matcher lands upstream (backlog `zenoh-uri-san-acl-matcher-upstream`), an SVID admitted at the wire uses the CN-bearing-SVID bridge or is verified off the core router by the ingress gateway. The reference-implementation overlay (a `profiles/<…>-spire` overlay alongside the IdP overlays) lives in the standalone [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) repo.
 
 ## What lives where
 
@@ -122,8 +122,8 @@ Per [ADR 0223](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-go
 | Requirements contract (the seven requirements) | This repo: [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) |
 | Boundary enforcement (release-bridge, schema-enforcer, allowlist, conditioning) | This repo: `zenoh-plugins/release-bridge/` + Ansible roles |
 | Coordination plane (partner-net netbird-mgmt instance) | This repo: `terraform/` + `ops/ansible/` |
-| Reference implementation (bundle, IdP overlays, hardware imaging, web UI, first-boot scripts, signing pipeline) | **Canonical:** separate repo `moon-pod`. In-monorepo dev mirror at `incubator/goat-moon-open-pod/` (kept in sync; the standalone repo wins on divergence). |
-| ZAGROS-partner collaboration surface | Separate repo `zagros-moon-pod` — the reference pod ZAGROS-defaulted (per-uuid slot profile) and **scrubbed for open partner co-dev**: no links into this private monorepo, no `ghcr.io/<org>` registry coupling (→ `ghcr.io/usareur-af`), no internal hostnames/mesh-IPs/operator-provisioning runbooks; the boundary contract is vendored self-contained. Where we and ZAGROS partners develop the pod together without us-internal content leaking. See "Bundle is the source of truth" below. |
+| Reference implementation (bundle, IdP overlays, hardware imaging, web UI, first-boot scripts, signing pipeline) | **Canonical:** separate repo [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod). In-monorepo dev mirror at `incubator/goat-moon-open-pod/` (kept in sync; the standalone repo wins on divergence). |
+| ZAGROS-partner collaboration surface | Separate repo [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) — the reference pod ZAGROS-defaulted (per-uuid slot profile) and **scrubbed for open partner co-dev**: no links into this private monorepo, no `ghcr.io/<org>` registry coupling (→ `ghcr.io/usareur-af`), no internal hostnames/mesh-IPs/operator-provisioning runbooks; the boundary contract is vendored self-contained. Where we and ZAGROS partners develop the pod together without us-internal content leaking. See "Bundle is the source of truth" below. |
 | Vendor implementations | Vendor-controlled repos: `goat-moon-<product>-pod` |
 | Per-vendor cookbooks | This repo: `../integrations/moon-pods/` |
 | Conformance smoke-test suite | This repo: [`../../tests/moon-pod-conformance/`](https://github.com/usareur-af/goatcore/tree/main/tests/moon-pod-conformance) |
@@ -156,7 +156,7 @@ the deltas live in each repo's `*-vs-production.md`.
 
 ## Two delivery shapes (same product)
 
-The reference pod ships in two delivery shapes, both produced from the same source tree at `moon-pod`:
+The reference pod ships in two delivery shapes, both produced from the same source tree at [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod):
 
 ### Shape A — software bundle
 
@@ -242,5 +242,5 @@ These are all implementation choices, not contract concerns.
 - `zenoh-data-fabric.md` — substrate
 - `../integrations/moon-pods/` — per-vendor cookbooks
 - [`../../tests/moon-pod-conformance/`](https://github.com/usareur-af/goatcore/tree/main/tests/moon-pod-conformance) — conformance smoke-test suite
-- `moon-pod` — reference implementation
+- [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) — reference implementation
 - `polygloat` — translation engine
