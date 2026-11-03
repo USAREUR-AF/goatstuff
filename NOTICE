@@ -1,0 +1,16 @@
+goatstuff (part of goat)
+Copyright 2025-2026 U.S. Federal Government (in countries where recognized)
+
+This work was created by the U.S. Government and is released for use by anyone,
+for any purpose, including commercial use. Contributions made after the initial
+release are copyright their contributors and licensed under the same terms.
+
+This product is licensed
+under the Apache License, Version 2.0 (see LICENSE at the root of this
+repository).
+
+The goat software this repository works with includes third-party components,
+some under copyleft licenses (GPL, AGPL), that run as separate processes next to
+goat services and are not linked into goat binaries. Attribution and source links
+are in THIRD_PARTY_LICENSES.md, and the reasoning in docs/adr/0110 and docs/adr/0111,
+both in https://github.com/usareur-af/goatcore.
