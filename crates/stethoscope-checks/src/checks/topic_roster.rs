@@ -244,8 +244,8 @@ mod tests {
     #[test]
     fn url_safe_handles_slashes_and_colons() {
         assert_eq!(
-            url_safe("org-1/radar1radar/RADAR-EXAMPLE/tracks"),
-            "drs%2Fradar1radar%2FRADAR-EXAMPLE%2Ftracks"
+            url_safe("acme/sensor1/RADAR-EXAMPLE/tracks"),
+            "acme%2Fsensor1%2FRADAR-EXAMPLE%2Ftracks"
         );
     }
 }

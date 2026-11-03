@@ -701,9 +701,9 @@ mod tests {
     #[test]
     fn renders_vendor_page_with_applicable_checks_only() {
         let r = populated_registry();
-        let page = render_page(&Target::vendor("drs"), "drs", None, &r, "nova-a", "/api/diagnose", &Siblings::default(), &crate::config::Lexicon::default());
+        let page = render_page(&Target::vendor("acme"), "acme", None, &r, "nova-a", "/api/diagnose", &Siblings::default(), &crate::config::Lexicon::default());
         assert!(page.contains("VENDOR"));
-        assert!(page.contains("drs"));
+        assert!(page.contains("acme"));
         assert!(page.contains("sx-cards"));
         // Two checks apply to vendor targets: registration + flow-rate.
         assert!(page.contains("data-check-id=\"registration\""));
@@ -771,8 +771,8 @@ mod tests {
     fn renders_topic_page_only_applicable_cards() {
         let r = populated_registry();
         let page = render_page(
-            &Target::topic("org-1/radar1radar/RADAR-EXAMPLE/tracks"),
-            "org-1/radar1radar/RADAR-EXAMPLE/tracks",
+            &Target::topic("acme/sensor1/RADAR-EXAMPLE/tracks"),
+            "acme/sensor1/RADAR-EXAMPLE/tracks",
             None,
             &r,
             "nova-a",
@@ -862,20 +862,20 @@ mod tests {
     #[test]
     fn vendor_page_includes_picker_with_current_value() {
         let r = populated_registry();
-        let page = render_page(&Target::vendor("drs"), "drs", None, &r, "nova-a", "/api/diagnose", &Siblings::default(), &crate::config::Lexicon::default());
+        let page = render_page(&Target::vendor("acme"), "acme", None, &r, "nova-a", "/api/diagnose", &Siblings::default(), &crate::config::Lexicon::default());
         // CHANGE affordance + popover ship on the diagnose page too.
         assert!(page.contains("id=\"change-target-btn\""));
         assert!(page.contains("change ›"));
         assert!(page.contains("Place the stethoscope on"));
         // The picker is seeded with the current target.
-        assert!(page.contains("data-kind=\"vendor\" data-value=\"drs\""));
+        assert!(page.contains("data-kind=\"vendor\" data-value=\"acme\""));
         // Vendor chip should be the active one on this page.
         assert!(page.contains("sx-kind-btn is-on\" data-kind=\"vendor\""));
     }
 
     #[test]
     fn urlencode_handles_slashes_and_colons() {
-        assert_eq!(urlencode("drs/foo/bar/v1"), "drs%2Ffoo%2Fbar%2Fv1");
+        assert_eq!(urlencode("acme/foo/bar/v1"), "acme%2Ffoo%2Fbar%2Fv1");
         assert_eq!(urlencode("a b"), "a%20b");
         assert_eq!(urlencode("plain"), "plain");
     }
@@ -884,36 +884,36 @@ mod tests {
     fn build_diagnose_url_round_trip() {
         let u = build_diagnose_url(
             "/api/diagnose",
-            &Target::topic("drs/foo/bar/v1"),
+            &Target::topic("acme/foo/bar/v1"),
         );
-        assert_eq!(u, "/api/diagnose?topic=drs%2Ffoo%2Fbar%2Fv1");
+        assert_eq!(u, "/api/diagnose?topic=acme%2Ffoo%2Fbar%2Fv1");
     }
 
     #[test]
     fn parent_crumb_is_empty_for_vendor_target() {
-        let s = render_parent_crumb_html(&Target::vendor("drs"));
+        let s = render_parent_crumb_html(&Target::vendor("acme"));
         assert!(s.is_empty());
     }
 
     #[test]
     fn parent_crumb_links_vendor_for_system_target() {
-        let s = render_parent_crumb_html(&Target::system("org-1/radar1radar"));
-        assert!(s.contains(r#"<a href="/?vendor=drs""#));
-        assert!(s.contains(">drs</a>"));
+        let s = render_parent_crumb_html(&Target::system("acme/sensor1"));
+        assert!(s.contains(r#"<a href="/?vendor=acme""#));
+        assert!(s.contains(">acme</a>"));
     }
 
     #[test]
     fn parent_crumb_links_vendor_and_system_for_topic_target() {
-        let s = render_parent_crumb_html(&Target::topic("org-1/radar1radar/RADAR-EXAMPLE/tracks"));
-        assert!(s.contains(r#"<a href="/?vendor=drs""#));
-        assert!(s.contains(r#"<a href="/?system=drs%2Fradar1radar""#));
-        assert!(s.contains(">radar1radar</a>"));
+        let s = render_parent_crumb_html(&Target::topic("acme/sensor1/RADAR-EXAMPLE/tracks"));
+        assert!(s.contains(r#"<a href="/?vendor=acme""#));
+        assert!(s.contains(r#"<a href="/?system=acme%2Fsensor1""#));
+        assert!(s.contains(">sensor1</a>"));
     }
 
     #[test]
     fn diagnose_page_brand_links_home() {
         let r = populated_registry();
-        let page = render_page(&Target::vendor("drs"), "drs", None, &r, "nova-a", "/api/diagnose", &Siblings::default(), &crate::config::Lexicon::default());
+        let page = render_page(&Target::vendor("acme"), "acme", None, &r, "nova-a", "/api/diagnose", &Siblings::default(), &crate::config::Lexicon::default());
         assert!(page.contains(r#"<a class="sx-topbar__brand" href="/""#));
         assert!(page.contains(r#"<a href="/" class="sx-crumb-link">GOAT-Net</a>"#));
         assert!(page.contains(r#"id="back-btn""#));
@@ -925,7 +925,7 @@ mod tests {
     fn sibling_buttons_empty_when_no_siblings_configured() {
         // Default Siblings = both None ⇒ no buttons rendered in the
         // topbar at all (URL-only contract: no sibling = no button).
-        let s = render_sibling_buttons(&Target::vendor("drs"), &Siblings::default());
+        let s = render_sibling_buttons(&Target::vendor("acme"), &Siblings::default());
         assert!(s.is_empty());
     }
 
@@ -935,9 +935,9 @@ mod tests {
             panoscope: Some("https://panoscope.example".into()),
             flashlight: Some("https://flashlight.example".into()),
         };
-        let s = render_sibling_buttons(&Target::vendor("drs"), &siblings);
-        assert!(s.contains("panoscope.example/?vendor=drs"));
-        assert!(s.contains("flashlight.example/?vendor=drs"));
+        let s = render_sibling_buttons(&Target::vendor("acme"), &siblings);
+        assert!(s.contains("panoscope.example/?vendor=acme"));
+        assert!(s.contains("flashlight.example/?vendor=acme"));
         assert!(s.contains("see in panoscope"));
         assert!(s.contains("watch in flashlight"));
     }
@@ -949,12 +949,12 @@ mod tests {
             flashlight: Some("https://flashlight.example".into()),
         };
         let s = render_sibling_buttons(
-            &Target::topic("drs/foo/bar/v1"),
+            &Target::topic("acme/foo/bar/v1"),
             &siblings,
         );
         // Block 94 canon: `key=` is the preferred param name across
         // surfaces for Zenoh key expressions, not `topic=`.
-        assert!(s.contains("?key=drs%2Ffoo%2Fbar%2Fv1"));
+        assert!(s.contains("?key=acme%2Ffoo%2Fbar%2Fv1"));
     }
 
     #[test]
@@ -964,13 +964,13 @@ mod tests {
             flashlight: None,
         };
         let s = render_sibling_buttons(
-            &Target::system("org-1/radar1radar"),
+            &Target::system("acme/sensor1"),
             &siblings,
         );
         // Panoscope/flashlight don't have a system-level selection in
         // v1 of the contract; siblings render with the vendor prefix
         // as the next-best parent the operator likely wants to see.
-        assert!(s.contains("?vendor=drs"));
+        assert!(s.contains("?vendor=acme"));
         // Flashlight sibling unset ⇒ no flashlight button.
         assert!(!s.contains("watch in flashlight"));
     }
@@ -982,7 +982,7 @@ mod tests {
             panoscope: None,
             flashlight: Some("https://flashlight.example".into()),
         };
-        let s = render_sibling_buttons(&Target::vendor("drs"), &siblings);
+        let s = render_sibling_buttons(&Target::vendor("acme"), &siblings);
         assert!(!s.contains("see in panoscope"));
         assert!(s.contains("watch in flashlight"));
     }
