@@ -1,0 +1,49 @@
+# goat-topology — the zenoh routing-topology surface.
+# ADR 1160 / docs/design/zenoh-topology-surface.md.
+#
+# ONE binary, TWO modes:
+#   publish  runs on each zenoh router host. Reads that router's OWN adminspace
+#            over host loopback and the `gateway` block of its declared config,
+#            and publishes RouterTopologyV1 to ops/fabric/topology/<site>/<node>.
+#   serve    runs on the mgmt-host. Subscribes ops/fabric/topology/**, holds the
+#            last snapshot per router in memory, renders the graph + findings.
+#
+# A browser request NEVER reaches the fabric (ADR 1123). The only fabric traffic
+# this component makes is one small publish per router per interval.
+#
+# zenoh pinned per docs/design/zenoh-version-pinning.md (=1.9.0). protobuf via
+# prost-derive on hand-written structs (no protoc / build.rs); the canonical
+# schema is proto/router_topology_v1.proto — keep the two in lock-step.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# Same rationale as goat-fabric-health: IO-bound service, thin LTO halves the
+# image build for negligible runtime cost.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-topology"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Zenoh routing-topology surface: region/gateway census, graph, and findings (ADR 1160)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync", "net", "io-util"] }
+axum = { version = "0.7", features = ["macros"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The declared router config is JSON5 (comments, trailing commas, bare keys).
+# Only the `gateway` block is ever parsed — see src/gwconfig.rs.
+json5 = "0.4"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

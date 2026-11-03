@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Local-dev compose for panoscope — pairs the panoscope service with an
+# eclipse/zenoh router AND a single synth-vendor "fleet" container that
+# generates the notional dynamic data panoscope renders, so the full stack
+# runs against `docker compose up` on a developer laptop. Bind ports on
+# localhost; no TLS; no Ory (auth headers stubbed via env). The production
+# compose is deployed by the Ansible role.
+#
+# Three services:
+#   zenoh-router  — the data backbone panoscope subscribes to.
+#   synth-fleet   — ONE container running synth-vendor in --roster (fleet)
+#                   mode: it opens one Zenoh session per notional peer
+#                   (distinct ZID each) so panoscope renders ~22 distinct
+#                   nodes from a single container, instead of the 22 separate
+#                   containers a full deployment uses. Keeps laptop resource
+#                   use low. Roster baked into the image at
+#                   /etc/synth-vendor/demo-roster.json (generated from
+#                   ops/ansible/group_vars/nova_hosts/synth-vendors.yml).
+#   panoscope     — the web surface (embedded frontend + API), same image as
+#                   production; subscribes to ** and renders the graph.
+#
+# Quickstart (see README-local-demo.md for the full hosting guide):
+#   cd ops/panoscope && ./demo.sh up   # then open http://127.0.0.1:8080
+# or directly:
+#   docker compose -f ops/panoscope/docker-compose.dev.yml up --build
+
+services:
+  zenoh-router:
+    image: eclipse/zenoh:1.9.0  # zenoh-pin-lint: allow — local-dev only; production uses ghcr.io/usareur-af/zenoh per pinning discipline
+    container_name: panoscope-dev-zenoh
+    ports:
+      - "127.0.0.1:7447:7447"
+      - "127.0.0.1:8000:8000" # REST plugin (introspection)
+    command:
+      - "--config=/etc/zenoh.json5"
+    volumes:
+      - ./dev/zenoh.json5:/etc/zenoh.json5:ro
+    healthcheck:
+      test: ["CMD-SHELL", "true"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  synth-fleet:
+    build:
+      context: ../zenoh-trial-peers/synth-vendor
+      dockerfile: Dockerfile
+    image: synth-vendor:dev
+    container_name: panoscope-dev-synth-fleet
+    depends_on:
+      - zenoh-router
+    restart: unless-stopped
+    environment:
+      RUST_LOG: "synth_vendor=info"
+      # Fleet mode: one process, one Zenoh session per roster peer (distinct
+      # ZID each) → panoscope sees the whole notional ecosystem from this one
+      # container. Roster baked into the image; endpoint overridden here so it
+      # points at the dev router by its compose DNS name.
+      SYNTH_VENDOR_ROSTER: "/etc/synth-vendor/demo-roster.json"
+      SYNTH_VENDOR_ENDPOINT: "tcp/panoscope-dev-zenoh:7447"
+
+  panoscope:
+    build:
+      # Repo root — the panoscope Dockerfile COPYs crates/panoscope-core/ and
+      # ops/panoscope/ by repo-relative path, so the build context
+      # must be the repository root, not this compose file's directory.
+      context: ../..
+      dockerfile: ops/panoscope/Dockerfile
+    image: panoscope:dev
+    container_name: panoscope-dev
+    depends_on:
+      - zenoh-router
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      RUST_LOG: "panoscope=debug,axum=info,tower_http=info"
+      PANOSCOPE_BIND: "0.0.0.0:8080"
+      PANOSCOPE_ZENOH_ENDPOINT: "tcp/panoscope-dev-zenoh:7447"
+      # No portal for dev — fallback resolver carries.
+      PANOSCOPE_PORTAL_SCHEMAS_URL: "http://127.0.0.1:0/api/schemas"
+      PANOSCOPE_PORTAL_REFRESH_SECS: "60"
+      PANOSCOPE_SAMPLING_PER_TOPIC_EPS: "50"
+      PANOSCOPE_WS_COALESCE_MS: "100"

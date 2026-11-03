@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Response &amp; Pressure</title>
+<style>
+/* Served by the relay-health nginx alongside index.html and
+   node-net-health.html. Reads netview.json, written by netview-poll.py on a
+   host timer — the browser never queries Prometheus, so viewers cost nothing
+   (ADR 1123: client demand must not amplify into backend work). */
+:root{
+  color-scheme:dark;
+  --plane:#0e1014; --surface:#1a1a19; --surface-2:#202024; --raised:#232327;
+  --line:#34363d; --line-soft:#292b31;
+  --ink:#fff; --ink-2:#c3c2b7; --ink-3:#8f9199;
+  --accent:#6ea8e8; --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  --unknown:#9aa0ab; --hatch:#4a4d55;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  color-scheme:light;
+  --plane:#eef0f4; --surface:#fcfcfb; --surface-2:#f6f7f9; --raised:#fff;
+  --line:#d6dae2; --line-soft:#e6e9ee;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#7c7f88;
+  --accent:#2a5f9e; --unknown:#6b7280; --hatch:#b9bec8;
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.mono,code,.k,th,.tag{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 20px 70px}
+.mast{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:baseline;
+  padding-bottom:14px;border-bottom:1px solid var(--line)}
+.mast h1{margin:0;font-size:24px;font-weight:640;letter-spacing:-.015em}
+.mast .sub{color:var(--ink-2);font-size:13.5px}
+.mast .meta{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tag{font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;
+  border:1px solid var(--line);border-radius:3px;color:var(--ink-2);background:var(--surface-2)}
+a{color:var(--accent)}
+/* the five questions are the structure */
+.q{margin-top:30px}
+.q>h2{margin:0 0 2px;font-size:17px;font-weight:640;letter-spacing:-.01em}
+.q>h2 .n{display:inline-block;min-width:1.6em;color:var(--ink-3);font-weight:600}
+.q>.lede{margin:0 0 14px 1.6em;font-size:13px;color:var(--ink-2);max-width:76ch}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+/* Hard containment. A long peer name (e.g. a 60-char laptop hostname) made the
+   table wider than its card and the BIT/S column rendered OUTSIDE the panel
+   background — text floating on the page ground. `td` is nowrap by design so
+   numbers stay on one line, so the table cannot shrink itself; the card has to
+   clip, and the name cell has to truncate rather than push. */
+.card{overflow:hidden}
+.card table{table-layout:fixed;width:100%}
+td.mono,td.name{overflow:hidden;text-overflow:ellipsis}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:4px;
+  padding:12px 14px 14px;min-width:0}
+.card h3{margin:0 0 2px;font-size:12.5px;font-weight:620}
+.card .d{margin:0 0 10px;font-size:11.5px;color:var(--ink-3);line-height:1.45}
+.c3{grid-column:span 3}.c4{grid-column:span 4}.c6{grid-column:span 6}
+.c8{grid-column:span 8}.c12{grid-column:span 12}
+@media(max-width:900px){.c3,.c4,.c6,.c8{grid-column:span 12}}
+.v{font-size:29px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.v.sm{font-size:15px;font-weight:560;letter-spacing:0;line-height:1.35}
+.v.unknown{color:var(--unknown)}.v.good{color:var(--good)}
+.v.warn{color:var(--warn)}.v.crit{color:var(--crit)}
+.sub{margin-top:5px;font-size:11.5px;color:var(--ink-3)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;letter-spacing:.03em;
+  text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid currentColor}
+.bars{display:grid;gap:7px}
+.bar{display:grid;grid-template-columns:150px 1fr auto;gap:10px;align-items:center;font-size:12px}
+.bar .k{color:var(--ink-2);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .track{background:var(--line-soft);border-radius:2px;height:15px;overflow:hidden}
+.bar .fill{display:block;height:100%;border-radius:2px}
+.bar .n{font-size:11.5px;color:var(--ink-2)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);padding:0 10px 6px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:6px 10px 6px 0;border-bottom:1px solid var(--line-soft);color:var(--ink-2);white-space:nowrap}
+/* Alignment is a property of the COLUMN, so both cell types are set in ONE rule.
+   This said `td.n` while the `th` rule above says text-align:left
+   unconditionally. The markup was already right — these tables have carried
+   `<th class="n">` all along — but nothing matched it, so every numeric header
+   sat left-aligned over right-aligned data, by a gap that grows with column
+   width. Keep th.n and td.n together; splitting them is what let one side move
+   without the other. */
+td.n,th.n{text-align:right}
+td.n{font-family:ui-monospace,Menlo,monospace;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+tr:last-child td{border-bottom:0}
+.chip{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:3px;
+  border:1px solid var(--line);color:var(--ink-2);font-family:ui-monospace,Menlo,monospace}
+.chip.relay{border-color:var(--s2);color:var(--s2)}
+.chip.p2p{border-color:var(--s1);color:var(--s1)}
+.stack{display:flex;height:34px;border-radius:3px;overflow:hidden;background:var(--line-soft)}
+.stack span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:9px;font-size:11.5px;color:var(--ink-2)}
+.legend .it{display:flex;align-items:center;gap:6px}
+.legend .sw{width:10px;height:10px;border-radius:2px;flex:none}
+.note{background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--warn);
+  border-radius:4px;padding:12px 14px;font-size:13px;color:var(--ink-2);margin:18px 0 0}
+.note.ok{border-left-color:var(--good)}
+.note b{color:var(--ink)}
+.shed li{margin-bottom:7px;font-size:12.5px;color:var(--ink-2)}
+.shed code{color:var(--ink)}
+footer{margin-top:38px;padding-top:15px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--ink-3)}
+.err{color:var(--crit)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <h1>Response &amp; Pressure</h1>
+      <div class="sub">How services are answering, read against the load underneath them</div>
+    </div>
+    <div class="meta">
+      <span class="tag" id="host">—</span>
+      <span class="tag" id="age">—</span>
+      <a class="tag" href="./netview.html">◂ Load &amp; headroom</a>
+    </div>
+  </header>
+
+  <div id="staleness"></div>
+  <div id="body"></div>
+  <footer>
+    Served from <code>netview.json</code>, written on the host by
+    <code>ops/netview/netview-poll.py</code>. Paired with
+    <a href="./netview.html">Load &amp; headroom</a> — same data, same instant.
+    Design: <code>docs/design/mesh-bandwidth-attribution.md</code> (ADR 1128).
+    Drill in <a href="/d/service-response-pressure">Grafana</a>.
+  </footer>
+</div>
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const CO=["--s1","--s2","--s3","--s4","--s5","--s6","--s7"];
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const UNK='<span class="v sm unknown">not measured</span>';
+function bps(v){if(v==null)return null;const a=Math.abs(v);
+ if(a>=1e9)return (v/1e9).toFixed(2)+" Gbit/s";if(a>=1e6)return (v/1e6).toFixed(2)+" Mbit/s";
+ if(a>=1e3)return (v/1e3).toFixed(0)+" kbit/s";return v.toFixed(0)+" bit/s";}
+const pct=v=>v==null?null:(v*100).toFixed(1)+"%";
+const ms=v=>v==null?null:v.toFixed(1)+" ms";
+const secs=v=>v==null?null:v<90?v.toFixed(0)+" s":(v/60).toFixed(1)+" min";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const val=(v,c)=>v==null?UNK:`<div class="v ${c||""}">${v}</div>`;
+function bars(rows,unit){
+ if(!rows||!rows.length)return '<p class="sub">Nothing here is currently carrying traffic.</p>';
+ const max=Math.max(...rows.map(r=>r.value))||1;
+ return '<div class="bars">'+rows.map((r,i)=>`<div class="bar">
+   <span class="k mono" title="${esc(r.name)}">${esc(r.name)}</span>
+   <span class="track"><span class="fill" style="width:${(r.value/max*100).toFixed(1)}%;background:${cssv(CO[i%CO.length])}"></span></span>
+   <span class="n">${unit==="s"?p99s(r.value):unit==="rps"?rps(r.value):unit==="pct"?pct(r.value):bps(r.value)}</span></div>`).join("")+'</div>';}
+
+// Requests per second. A REAL unit, because the request-rate card used to pass
+// "pct" and render 2.319 req/s as "231.9%" — a percentage of nothing, which is
+// exactly what an operator asked about. The old line carried a
+// .replace(/bit\/s/g,"req/s") that never fired, because passing "pct" sent it
+// down the percent branch instead of the bytes branch it was written for.
+// Precision scales so a busy service does not print six digits and a quiet one
+// does not round to zero.
+function rps(v){
+  if(v===null||v===undefined) return null;
+  const a=Math.abs(v);
+  return (a>=100?v.toFixed(0):a>=10?v.toFixed(1):v.toFixed(2))+" req/s";
+}
+
+// p99 rendered HONESTLY against the histogram's own resolution.
+//
+// An operator asked why six services all read "0.099 s" and whether it was a
+// default. It was not a default and it was not a measurement either: it is
+// histogram_quantile interpolating INSIDE the first bucket. When every request
+// lands under le=0.1, the p99 estimate is arithmetically 0.1 x 0.99 = 0.099 for
+// every such service — identical numbers that look measured and are not. The
+// only true statement available is "faster than the finest bucket we have".
+//
+// So anything below the first bucket edge renders "< 0.1 s". Same discipline as
+// null -> "not measured": never imply resolution the data does not carry.
+let FIRST_BUCKET = null;   // set from response.bucket_edges[0] at render time
+function p99s(v){
+  if(v===null||v===undefined) return null;
+  if(FIRST_BUCKET!==null && v < FIRST_BUCKET) return "< "+FIRST_BUCKET+" s";
+  return v.toFixed(3)+" s";
+}
+
+function render(d){
+  // Wire the histogram's own first bucket into the p99 formatter, so
+  // "< 0.1 s" tracks the real bucket layout instead of a hard-coded guess.
+  FIRST_BUCKET = (d.response && d.response.bucket_edges && d.response.bucket_edges.length)
+                 ? d.response.bucket_edges[0] : null;
+ $("#host").textContent=`host ${d.host_filter==="*"||d.host_filter===".*"?"all":d.host_filter}`;
+ $("#age").textContent=`updated ${Math.max(0,Math.floor(Date.now()/1000-d.generated_unix))}s ago`;
+ const r=d.response,st=d.streams,pa=d.path,p=d.pipe;
+ let h="";
+
+ // the quadrant — the reason these two pages exist as a pair
+ const busy=p.util_rx!=null?p.util_rx>0.75:null;
+ const slow=r.worst_p99!=null?r.worst_p99>1:null;
+ let verdict,vclass;
+ if(busy==null){verdict="Cannot place this — no declared link capacity, so \"busy\" has no meaning yet.";vclass="unknown";}
+ else if(!busy&&!slow){verdict="Healthy — pipe quiet, services fast.";vclass="good";}
+ else if(busy&&!slow){verdict="Coping — the pipe is busy and nothing is suffering. Headroom is real.";vclass="good";}
+ else if(!busy&&slow){verdict="The SERVICE is the problem. The pipe is quiet; the network is not your answer.";vclass="warn";}
+ else{verdict="Contention — busy pipe AND slow services. Go to Load & headroom and shed.";vclass="crit";}
+
+ h+=`<section class="q"><h2><span class="n">▸</span>Where are we?</h2>
+  <p class="lede">The pair exists so this question has one answer instead of two half-answers.</p>
+  <div class="grid"><div class="card c12"><h3>Reading</h3>
+  <p class="d">Pipe busy = over 75% of declared capacity. Slow = worst p99 over 1 s.</p>
+  <div class="v ${vclass}" style="font-size:19px;line-height:1.4">${esc(verdict)}</div>
+  <div class="sub">Correlation, not causation — this places you on a grid, it does not
+  prove which way the arrow points. Driving it deliberately is a load test, not an
+  observation.</div></div></div></section>`;
+
+ h+=`<section class="q"><h2><span class="n">1.</span>Are services answering?</h2>
+  <p class="lede">Only services that actually served requests. Streaming services are
+  excluded — a stream's lifetime is not a response time — and appear in section 2.</p>
+  <div class="grid">`;
+ // MEASURED, not interpolated. Two bucket counters divided. A p99 over four
+ // coarse buckets returns 0.1x0.99 for every service whose requests all land
+ // under 100 ms — a dozen identical "0.099 s" readings that look measured.
+ // This asks the question the buckets can actually answer.
+ h+=`<div class="card c3"><h3>Under 100 ms</h3><p class="d">Share of requests finishing inside the fastest bucket.</p>
+   ${r.fast_share_all==null?UNK:val(pct(r.fast_share_all),r.fast_share_all<0.8?"crit":r.fast_share_all<0.95?"warn":"good")}
+   <div class="sub">counted, not interpolated — the buckets are ${r.bucket_edges.join(" / ")} s</div></div>`;
+ h+=`<div class="card c3"><h3>Worst p99</h3><p class="d">Slowest responding service.</p>
+   ${r.worst_p99==null?UNK:val(p99s(r.worst_p99),r.worst_p99>3?"crit":r.worst_p99>1?"warn":"good")}
+   <div class="sub">only meaningful when it lands INSIDE a bucket; below ${r.bucket_edges[0]} s it is arithmetic</div></div>`;
+ h+=`<div class="card c3"><h3>Error ratio</h3><p class="d">5xx share.</p>
+   ${r.error_ratio==null?UNK:val(pct(r.error_ratio),r.error_ratio>0.05?"crit":r.error_ratio>0.01?"warn":"good")}
+   <div class="sub">failures matter even when latency is fine</div></div>`;
+ // Sorted WORST-FIRST: a wall of 100% rows carries no information, the ones
+ // below it are the entire signal.
+ h+=`<div class="card c6"><h3>Under 100 ms, by service</h3>
+   <p class="d">Slowest-first. Absent means idle, not fast. 100% means every
+   request this window finished inside the fastest bucket.</p>
+   ${bars((r.fast_share_by_service||[]).slice().sort((a,b)=>a.value-b.value).slice(0,7),"pct")}</div>`;
+ h+=`<div class="card c12"><h3>Request rate by service</h3>
+   <p class="d">Requests per second, averaged over the last 5 minutes. A latency
+   figure with no requests behind it is noise — read these together. The bar
+   length is relative to the busiest service shown, not to any capacity.</p>
+   ${bars((r.rps_by_service||[]).slice(0,8),"rps")}</div>`;
+ h+=`</div></section>`;
+
+ h+=`<section class="q"><h2><span class="n">2.</span>Streams, measured as streams</h2>
+  <p class="lede">Traefik times a connection open-to-close, so a held-open stream records as
+  one enormous "request". Mixing those into a percentile reported the signal server as slow
+  when it is fast.</p><div class="grid">`;
+ h+=`<div class="card c4"><h3>Sessions over 5 s</h3><p class="d">Counted, not averaged. Last 10 minutes.</p>
+   ${val(st.over_5s_10m==null?null:Math.round(st.over_5s_10m).toLocaleString())}
+   <div class="sub">this is the stream population — previously reported as a 5 s p99</div></div>`;
+ h+=`<div class="card c4"><h3>Open connections</h3><p class="d">Concurrency at the edge.</p>
+   ${val(st.open_connections==null?null:String(Math.round(st.open_connections)))}
+   <div class="sub">streams cost concurrency, not throughput</div></div>`;
+ h+=`<div class="card c4"><h3>Excluded from percentiles</h3><p class="d">Stream-carrying services.</p>
+   <div class="v sm">${(st.services||[]).map(s=>`<code>${esc(s)}</code>`).join(" ")||"none"}</div>
+   <div class="sub">Traefik router labels are off, so a service is excluded whole rather than
+   by route — enabling them would let just the SSE route go</div></div>`;
+ h+=`<div class="card c12"><h3>Fast-vs-stream split</h3>
+   <p class="d">Share of each excluded service's requests that finished under 1.2 s — i.e. were
+   ordinary requests, not held-open streams. <b>This is the real page latency signal for a
+   service whose percentile is unusable.</b></p>
+   ${bars(st.fast_share||[],"pct")}</div>`;
+ h+=`</div></section>`;
+
+ h+=`<section class="q"><h2><span class="n">3.</span>Does the path matter? (direct vs relayed)</h2>
+  <p class="lede">A relayed client pays the relay hop before reaching any service, so judging
+  response time without the path mix judges two populations as one. Measured by netbird, not
+  by Traefik.</p><div class="grid">`;
+ const cov=pa.coverage;
+ h+=`<div class="card c3"><h3>Direct RTT</h3><p class="d">Mean over timed p2p peers.</p>
+   ${val(ms(pa.rtt_p2p_ms))}<div class="sub">peer-to-peer</div></div>`;
+ h+=`<div class="card c3"><h3>Relayed RTT</h3><p class="d">Mean over timed relayed peers.</p>
+   ${val(ms(pa.rtt_relayed_ms))}<div class="sub">via a relay hop</div></div>`;
+ const pen=(pa.rtt_relayed_ms!=null&&pa.rtt_p2p_ms!=null)?pa.rtt_relayed_ms-pa.rtt_p2p_ms:null;
+ h+=`<div class="card c3"><h3>Relay penalty</h3><p class="d">Relayed mean minus direct mean.</p>
+   ${val(pen==null?null:(pen>0?"+":"")+pen.toFixed(1)+" ms")}
+   <div class="sub">${cov!=null&&cov<0.6?`on ${pct(cov)} coverage this is a hint, not a measurement`:"difference between the two populations"}</div></div>`;
+ h+=`<div class="card c3"><h3>RTT coverage</h3><p class="d">Peers netbird has actually timed.</p>
+   ${cov==null?UNK:val(pct(cov),cov<0.34?"crit":cov<0.67?"warn":"good")}
+   <div class="sub">${pa.peers_total!=null?`${pa.peers_total} peers, ${pa.peers_relayed} relayed`:""}</div></div>`;
+ if(cov!=null&&cov<0.6){
+  h+=`<div class="card c12"><div class="note" style="margin:0"><b>Do not conclude anything from the
+   relay penalty yet.</b> Only ${pct(cov)} of connected peers have a measured RTT — netbird
+   reports 0 for the rest, and 0 is not a measurement. The two means are drawn from different,
+   small samples.</div></div>`;}
+ h+=`<div class="card c6"><h3>Slowest measured peers</h3>
+   <p class="d">With path class. A relayed peer at the top explains why one person sees a slow
+   surface while everyone else is fine.</p>
+   <table><thead><tr><th>Peer</th><th>Path</th><th class="n">RTT</th></tr></thead><tbody>
+   ${(pa.slowest||[]).slice(0,8).map(x=>`<tr><td class="mono">${esc(x.name.replace(/\.netbird\.selfhosted$/,""))}</td>
+     <td><span class="chip ${x.class==="mesh-relayed"?"relay":"p2p"}">${x.class==="mesh-relayed"?"relayed":"direct"}</span></td>
+     <td class="n">${ms(x.value)}</td></tr>`).join("")||'<tr><td colspan="3" class="sub">none measured</td></tr>'}
+   </tbody></table></div>`;
+ h+=`<div class="card c6"><h3>Jitter and packet loss</h3>
+   <p class="d">Not shown, because not measured here.</p>
+   ${UNK}
+   <div class="sub">The mesh path-quality prober is not deployed on this goatnet, so
+   <code>goat_mesh_rtt_jitter_ms</code> and <code>goat_mesh_packet_loss_ratio</code> have zero
+   series. Reported absent rather than as zero. Closing this is the measurement-parity item.</div></div>`;
+ h+=`</div></section>`;
+
+ h+=`<section class="q"><h2><span class="n">4.</span>What is the load underneath?</h2>
+  <p class="lede">The other half of the pair, summarised. Full breakdown on
+  <a href="./netview.html">Load &amp; headroom</a>.</p><div class="grid">`;
+ h+=`<div class="card c4"><h3>Downlink in use</h3>${val(bps(p.nic_rx_bps))}
+   <div class="sub">${p.capacity_rx_bps==null?"no declared capacity":"of "+bps(p.capacity_rx_bps)}</div></div>`;
+ h+=`<div class="card c4"><h3>Utilisation</h3>
+   ${p.util_rx==null?UNK:val(pct(p.util_rx),p.util_rx>0.9?"crit":p.util_rx>0.75?"warn":"good")}
+   <div class="sub">${p.capacity_rx_bps==null?"blank until a capacity is declared":"of the declared pipe"}</div></div>`;
+ h+=`<div class="card c4"><h3>Reclaimable if needed</h3>
+   ${d.shed.reclaimable_bps==null?UNK:val(bps(d.shed.reclaimable_bps))}
+   <div class="sub">sheddable categories — see the shed order on the other page</div></div>`;
+ h+=`</div></section>`;
+
+ $("#body").innerHTML=h;
+}
+fetch("netview.json?_="+Date.now()).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+ .then(render).catch(e=>{$("#body").innerHTML=
+  `<div class="note"><b class="err">Could not load netview.json.</b> ${esc(e.message)}. No data
+   is shown rather than stale data presented as current.</div>`;});
+setTimeout(()=>location.reload(),60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peers &amp; People</title>
+<link rel="stylesheet" href="./peerview.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <h1>Peers &amp; People</h1>
+      <div class="sub">Who is on this goatnet, what they run, and how they are attached</div>
+    </div>
+    <div class="meta">
+      <span class="tag" id="net">—</span>
+      <span class="tag" id="age">—</span>
+      <a class="tag" href="./demand.html">Demand &amp; contention ▸</a>
+    </div>
+  </header>
+
+  <div id="staleness"></div>
+  <div id="body"></div>
+
+  <footer>
+    Served from <code>peerview.json</code>, written on the host by
+    <code>ops/peerview/peerview-poll.py</code> — the browser never queries the
+    NetBird management API or Prometheus, so a viewer costs nothing (ADR 1123).
+    Design: <code>docs/design/peer-demand-surface.md</code> (ADR 1135).
+    Service classes: <code>ops/peerview/peerview-service-classes.yaml</code>.
+    Role vocabulary: <code>ops/ansible/netbird_acl_taxonomy.yml</code>.
+  </footer>
+</div>
+
+<script src="./peerview-common.js"></script>
+<script>
+"use strict";
+
+function render(d){
+  const c = d.census || {}, t = d.transport || {};
+  $("#net").textContent = `goatnet ${d.goatnet||"?"} · vantage ${d.vantage||"?"}`;
+  $("#age").textContent = `updated ${age(d)}s ago`;
+  $("#staleness").innerHTML = staleBanner(d);
+
+  if(!c.ok){
+    $("#body").innerHTML = `<div class="note bad"><b>No census.</b> The NetBird
+      management API did not answer (${esc(c.reason||"reason not recorded")}), so
+      nothing on this page can be counted. Nothing is shown rather than a
+      population reported as zero.</div>` + sourcesSection(d);
+    return;
+  }
+
+  let h = "";
+
+  // ── the headline ───────────────────────────────────────────────────────
+  const online = c.peers_connected / c.peers_total;
+  h += `<section class="q"><h2><span class="n">▸</span>Where are we?</h2>
+    <p class="lede">One sentence, computed. The panels below are the working.</p>
+    <div class="grid"><div class="card c12"><h3>Reading</h3>
+    <div class="v" style="font-size:19px;line-height:1.45">${esc(headline(c, d))}</div>
+    <div class="sub">Enrolled counts every peer the management plane knows of, connected
+    or not. A peer that has been quiet for weeks still holds a credential and still
+    counts against the scale envelope (ADR 1122).</div>
+    </div></div></section>`;
+
+  // ── 1. how many ────────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">1.</span>How many are there, and how many are here now?</h2>
+    <p class="lede">Enrolled is a credential fact; connected is an instant. They move
+    independently and reading either alone has misled before.</p><div class="grid">`;
+  h += card3("Enrolled peers", "Every peer the management plane holds a record for.",
+             num(c.peers_total), "", `${c.groups_populated ?? "?"} of ${c.groups_declared ?? "?"} declared groups hold a peer`);
+  h += card3("Connected now", "Reported connected by management at this instant.",
+             num(c.peers_connected),
+             online>=0.5?"good":online>=0.25?"warn":"",
+             pct(online)+" of the population");
+  h += card3("Quiet over 7 days", "Not connected, last seen more than a week ago.",
+             num(c.dormant?.["7"]),
+             (c.dormant?.["7"]/c.peers_total)>0.4?"warn":"",
+             `${num(c.dormant?.["14"])} over 14d · ${num(c.dormant?.["30"])} over 30d`);
+  h += card3("Never connected", "Enrolled and never once seen. A credential that was issued and not used.",
+             num(c.never_connected),
+             c.never_connected>0?"warn":"good",
+             "counted inside every dormancy bucket above");
+
+  h += `<div class="card c12"><h3>Enrolments by month</h3>
+    <p class="d">From each peer's own <code>created_at</code>, so this is complete
+    from the first run of the poller and owes nothing to metric retention. It counts
+    peers <b>still enrolled</b> — a peer created and later deleted leaves no record,
+    so this is a standing population history, not a gross intake history.</p>
+    ${bars((c.enrolments_by_month||[]).map(r=>({name:r.name,value:r.value})),"count")}</div>`;
+
+  h += `<div class="card c12"><h3>Last seen, by month</h3>
+    <p class="d">When each currently-offline peer was last connected. A cluster in an
+    old month is a cohort that walked away together, which is a different fact from a
+    steady trickle of the same size.</p>
+    ${bars((c.last_seen_by_month||[]).map(r=>({name:r.name,value:r.value})),"count")}</div>`;
+  h += `</div></section>`;
+
+  // ── 2. who ─────────────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">2.</span>Who are they?</h2>
+    <p class="lede">Role and scope come from the mesh plane, resolved against the
+    declared taxonomy rather than by splitting group names on a dash. Affiliation does
+    not come from either, and the panel below says why.</p><div class="grid">`;
+
+  h += `<div class="card c6"><h3>By role</h3>
+    <p class="d">One role per peer, the most privileged it holds. Peers commonly hold
+    several groups — DEVELOPER + OBSERVER is the standard full-participation pair — so
+    counting memberships would total more than the population.
+    ${c.roles_unresolved ? `<b>${c.roles_unresolved}</b> peer(s) hold no group from the declared
+    role vocabulary and are shown as such.` : ""}</p>
+    ${bars(c.by_role||[],"count")}</div>`;
+
+  h += `<div class="card c6"><h3>By scope</h3>
+    <p class="d">The scope family of the group that gave the peer its role. A scope is
+    an authorization boundary, <b>not a place</b> — it says which admin set may act on
+    the peer, and nothing about where the machine is.
+    ${c.multi_scope_peers ? `<b>${c.multi_scope_peers}</b> peer(s) hold groups in more than
+    one scope and are counted once, under the scope their role came from.` : ""}</p>
+    ${bars(c.by_scope||[],"count")}</div>`;
+
+  h += `<div class="card c4"><h3>People with peers</h3>
+    <p class="d">Distinct mint handles across the population.</p>
+    ${val(num(c.people_total))}
+    <div class="sub">${num(c.peers_with_handle)} peers carry a handle · ${num(c.peers_without_handle)} do not</div></div>`;
+  h += `<div class="card c4"><h3>Peers per person</h3>
+    <p class="d">Median, and the largest holding.</p>
+    ${val(c.peers_per_person_median==null?null:String(c.peers_per_person_median))}
+    <div class="sub">largest holding ${num(c.peers_per_person_max)} · ${num(c.multi_device_people)} people hold more than one</div></div>`;
+  h += `<div class="card c4"><h3>Graduated to P2P</h3>
+    <p class="d">Lateral reach is a capability, not a role, so it is counted apart.</p>
+    ${val(num((c.by_capability||[]).find(x=>x.name==="P2P")?.value ?? 0))}
+    <div class="sub">members may initiate to any peer (p2p-graduation.md)</div></div>`;
+
+  h += `<div class="card c6"><h3>People vs machines</h3>
+    <p class="d">A peer whose name carries a mint handle was minted for a person; one that
+    does not was enrolled by a setup key with no person in its name. The handle is used
+    here only as an opaque key for "same person" — nothing reads an employer, an
+    organisation or a place out of it, and carrying a handle is not the same as having a
+    declared owner. Whether it resolves to one is the panel below.</p>
+    ${splitBar([{name:"person-held",value:c.peers_with_handle},
+                {name:"machine",value:c.peers_without_handle}])}</div>`;
+
+  h += `<div class="card c6"><h3>Affiliation</h3>
+    <p class="d">Not shown, because not measurable from here.</p>
+    ${UNK}
+    <div class="sub">Affiliation is an identity-plane attribute and is deliberately
+    <b>never</b> a mesh group (identity-grammar.md), so the mesh census cannot carry it.
+    The link that would resolve it — a peer's <code>user_id</code> — is empty on every
+    peer on this goatnet, because peers are enrolled with setup keys rather than by a
+    user login. Reported absent rather than inferred from a name.</div></div>`;
+
+  h += ownership(c.ownership, d.links);
+
+  if((c.top_holders||[]).length){
+    h += `<div class="card c12"><h3>Largest holdings</h3>
+      <p class="d">People holding several peers. Not a problem by itself — a laptop, a
+      desktop and a phone is three — but it is where a revocation has the most work to do.</p>
+      <table><thead><tr><th>Handle</th><th class="n">Peers</th></tr></thead><tbody>
+      ${(c.top_holders||[]).filter(r=>r.value>1).map(r=>
+        `<tr><td class="mono name">${esc(r.name)}</td><td class="n">${r.value}</td></tr>`).join("")
+        || '<tr><td colspan="2" class="sub">nobody holds more than one peer</td></tr>'}
+      </tbody></table></div>`;
+  }
+  h += `</div></section>`;
+
+  // ── 3. what they run ───────────────────────────────────────────────────
+  const vers = c.by_version||[];
+  const verLead = vers.length ? maxVersion(vers.map(v=>v.name)) : null;
+  const onLead = verLead ? (vers.find(v=>v.name===verLead)?.value||0) : null;
+  h += `<section class="q"><h2><span class="n">3.</span>What are they running?</h2>
+    <p class="lede">Client version and operating system, per peer. Version spread is the
+    one that bites: a fleet on eight client versions is eight different behaviours under
+    one name.</p><div class="grid">`;
+  h += card3("Distinct client versions", "In use across the enrolled population.",
+             num(vers.length), vers.length>4?"crit":vers.length>2?"warn":"good",
+             verLead?`newest in use: ${verLead}`:"");
+  h += card3("On the newest in use", "Share of peers running the highest version present.",
+             onLead==null?null:pct(onLead/c.peers_total),
+             onLead/c.peers_total<0.5?"warn":"good",
+             "not a pin check — this compares peers to each other, not to a declared pin");
+  h += card3("Operating-system families", "Distinct OS families enrolled.",
+             num((c.by_os_family||[]).length), "",
+             "each family is a separate client build and a separate support path");
+  h += card3("Desktop UI present", "Peers reporting a desktop UI build; the rest are headless.",
+             num((c.by_ui_version||[]).filter(x=>x.name!=="(headless)").reduce((a,b)=>a+b.value,0)),
+             "", "headless peers cannot be prompted to update by the UI");
+
+  h += `<div class="card c6"><h3>By client version</h3>
+    <p class="d">Biggest cohort first, up to twelve shown${vers.length>=12?" — there may be more in the tail":""}.
+    A long tail is a rollout that has not finished, and each old version is its own
+    behaviour: client releases have changed key handling and connection posture between
+    minor versions.</p>
+    ${bars(vers,"count")}</div>`;
+  h += `<div class="card c6"><h3>By operating system</h3>
+    <p class="d">Full OS strings as the peer reports them.</p>
+    ${bars(c.by_os||[],"count")}</div>`;
+  h += `<div class="card c12"><h3>By OS family</h3>
+    <p class="d">Rolled up. The shape of the fleet in one row.</p>
+    ${splitBar(c.by_os_family||[])}</div>`;
+  h += `</div></section>`;
+
+  // ── 4. how attached ────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">4.</span>Direct or relayed?</h2>
+    <p class="lede">Measured by netbird from <b>this host's</b> vantage. A peer that is
+    relayed from here may be direct from somewhere else; two hosts would legitimately
+    disagree, and neither would be wrong.</p><div class="grid">`;
+  // `reachable` and `has_data` are different facts. A goatnet's Prometheus can
+  // be healthy and carry none of these series; rendering a wall of "not
+  // measured" cards there would be honest and would not say why.
+  if(!t.has_data){
+    h += `<div class="card c12"><h3>Not measured on this goatnet</h3>
+      <p class="d">${t.reachable
+        ? "Prometheus answered and holds none of the series this section needs."
+        : "Prometheus did not answer."}</p>
+      ${UNK}
+      <div class="sub">Per-peer transport class comes from the node-net-health
+      attribution pass (<code>goat_net_peer_latency_measured</code>,
+      <code>goat_net_peer_bytes_total</code>) or from the mesh path-quality prober
+      (<code>goat_mesh_rtt_ms</code>). Prometheus at
+      <code>${esc((d.sources?.prometheus?.detail||"?").split(" — ")[0])}</code> carries
+      neither. Reported absent rather than as zero relayed peers, which would be the
+      opposite of a safe default. Closing this is a measurement-parity item, not a
+      bug in this page.</div></div>`;
+  } else {
+    const meas = t.peers_measured, rel = t.peers_relayed;
+    h += card3("Peers with a measured path", "netbird reports 0 for peers it has not timed; 0 is not a measurement.",
+               num(meas), "", t.coverage==null?"":pct(t.coverage)+" of peers carrying the metric");
+    h += card3("Relayed", "Traffic to these peers rides a relay hop.",
+               num(rel), (rel/meas)>0.6?"warn":"", meas?pct(rel/meas)+" of measured":"");
+    h += card3("Direct", "Peer-to-peer, no relay hop.",
+               num(t.peers_p2p), "", meas?pct(t.peers_p2p/meas)+" of measured":"");
+    const pen = (t.rtt_relayed_ms!=null&&t.rtt_p2p_ms!=null)?t.rtt_relayed_ms-t.rtt_p2p_ms:null;
+    h += card3("Relay penalty", "Relayed mean RTT minus direct mean RTT.",
+               pen==null?null:(pen>0?"+":"")+pen.toFixed(1)+" ms", pen>50?"warn":"",
+               `direct ${ms(t.rtt_p2p_ms)??"—"} · relayed ${ms(t.rtt_relayed_ms)??"—"}`);
+    if(t.coverage!=null && t.coverage<0.6){
+      h += `<div class="card c12"><div class="note flat"><b>Do not conclude anything from
+        the relay penalty yet.</b> Only ${pct(t.coverage)} of peers carrying this metric have
+        a measured RTT. The two means are drawn from different, small samples.</div></div>`;
+    }
+    if((t.bytes_by_class||[]).length){
+      h += `<div class="card c6"><h3>Bytes by path class</h3>
+        <p class="d">What each path is actually carrying, on the wire.</p>
+        ${bars(t.bytes_by_class||[],"bps")}</div>`;
+    }
+    if((t.slowest_peers||[]).length){
+      h += `<div class="card c6"><h3>Slowest measured peers</h3>
+        <p class="d">A relayed peer at the top explains why one person sees a slow
+        surface while everyone else is fine.</p>
+        <table><thead><tr><th>Peer</th><th>Owner</th><th>Path</th><th class="n">RTT</th></tr></thead><tbody>
+        ${(t.slowest_peers||[]).slice(0,8).map(x=>
+          `<tr><td class="mono name">${esc(shortPeer(x.name))}</td>
+           <td class="mono">${ownerCell((c.owners||{})[x.name], d.links)}</td>
+           <td><span class="chip ${x.class==="mesh-relayed"?"relay":"p2p"}">${x.class==="mesh-relayed"?"relayed":"direct"}</span></td>
+           <td class="n">${ms(x.value)}</td></tr>`).join("")}
+        </tbody></table></div>`;
+    }
+    if(t.jitter_ms!=null || t.loss_ratio!=null){
+      h += `<div class="card c6"><h3>Path quality</h3>
+        <p class="d">From the mesh path-quality prober, where it is deployed.</p>
+        <div class="v sm">jitter ${ms(t.jitter_ms)??"not measured"} · loss ${pct(t.loss_ratio)??"not measured"}</div></div>`;
+    }
+  }
+  h += `</div></section>`;
+
+  // ── 5. posture ─────────────────────────────────────────────────────────
+  const po = c.posture||{};
+  h += `<section class="q"><h2><span class="n">5.</span>What posture are they carrying?</h2>
+    <p class="lede">Per-peer flags as the management plane holds them. These are what the
+    peer has <b>locally</b>, which is not always what the goatnet has declared — that gap
+    is the point of showing them.</p><div class="grid">`;
+  h += card3("Rosenpass enabled locally", "Peers whose local flags carry the PQC handshake.",
+             num(po.rosenpass_enabled),
+             po.rosenpass_enabled>0?"warn":"good",
+             "a declaration flipped centrally does not clear a peer's local flag — plain <code>netbird up</code> will not clear it");
+  h += card3("SSH server enabled", "Peers exposing netbird's built-in SSH.",
+             num(po.ssh_enabled), po.ssh_enabled>0?"warn":"good",
+             "host shell access has its own door (ssh-key-self-service.md)");
+  h += card3("Login expired", "Credential past its expiry and not renewed.",
+             num(po.login_expired), po.login_expired>0?"warn":"good", "");
+  h += card3("Awaiting approval", "Enrolled and not yet admitted.",
+             num(po.approval_required), po.approval_required>0?"warn":"good",
+             `${num(po.ephemeral)} ephemeral peer(s)`);
+  h += `</div></section>`;
+
+  h += sourcesSection(d);
+  $("#body").innerHTML = h;
+}
+
+// The one-sentence verdict. Computed from the counts, never asserted: a goatnet
+// with a small dormant tail and a tight version spread renders a calm sentence
+// through the same code that renders an alarming one.
+// ── who answers for a peer ────────────────────────────────────────────────
+// The census counts peers; this counts ANSWERABILITY. The two questions come
+// apart badly: a fleet can be fully enrolled, fully connected and fully
+// role-assigned while nobody can say who to ask about any of it.
+//
+// The four unresolved kinds are shown separately and never summed into one
+// "unowned" number, because the remedy differs for each and the sum hides
+// which one you have. `unknown` in particular is not a finding about the
+// fleet at all — it means this host could not read the registry.
+function ownership(o, links){
+  if(!o){
+    return `<div class="card c12"><h3>Who answers for these peers</h3>
+      <p class="d">Not in this document. The poller that wrote it predates the owner
+      join — redeploy the peerview role to get this panel.</p>${UNK}</div>`;
+  }
+  if(!o.roster_ok && !o.resolved){
+    return `<div class="card c12"><h3>Who answers for these peers</h3>
+      <p class="d">Nothing could be asked. The shared resolver did not answer and the
+      registry file (<code>docs/operators/roster.json</code>) did not load on this host,
+      so no peer's owner could be checked.</p>${UNK}
+      <div class="sub">${esc(o.roster_reason || "reason not recorded")}. This is a gap in
+      the reading, not a finding about the fleet — nothing here says these peers have no
+      owner.</div></div>`;
+  }
+  const k = o.by_kind || {};
+  const total = Object.values(k).reduce((a,b)=>a+b,0);
+  // Unmatched split by what the name says; a poller older than the split
+  // reports none, and every unmatched peer then reads as no principal.
+  const u = o.unmatched_by_shape || {none: k.unmatched||0};
+  return `<div class="card c12"><h3>Who answers for these peers</h3>
+    <p class="d">Resolved by the <b>shared resolver</b> every surface uses
+    (<code>POST /api/access/peers</code>, peer-identity-resolution.md) — the same answer
+    <code>goat who</code>, panoscope and the relay-health card get, so no two surfaces
+    disagree about who owns a machine. <b>Recorded</b> means the roster handle reconciled
+    against a live identity; a roster handle with no live identity behind it is a
+    <b>lead</b>, not an answer. A machine resolves to the <b>custodian</b> who enrolled
+    it, never to itself. A name that does not resolve is never rendered as an owner: the
+    peer name is evidence about ownership, not the record of it.</p>
+    ${splitBar([
+      {name:"recorded (live identity)", value:k.registry||0},
+      {name:"roster handle only",       value:k.name||0},
+      {name:"custodian (machine)",      value:k.custody||0},
+      {name:"declared in config",       value:k.declared||0},
+      {name:"handle not in roster",     value:u.person||0},
+      {name:"machine, no custodian",    value:u.machine||0},
+      {name:"no principal in the name", value:u.none||0},
+      {name:"could not check",          value:k.unread||0},
+      {name:"ambiguous",                value:k.ambiguous||0},
+    ])}
+    <div class="sub">${num(o.resolved)} of ${num(total)} peers reach a named identity,
+      ${num(o.recorded)} of them RECORDED · ${num(o.owning_identities)} distinct identities
+      answer for them · ${rosterAge(o)}
+      ${u.person ? `<b>${plural(u.person, "peer carries a handle the roster does not have",
+        "peers carry a handle the roster does not have")}</b> — the declared roster has not
+        caught up with them, or the handle was renamed. Syncing onboarded manifests and
+        regenerating the roster closes the first.` : ""}
+      ${u.machine ? `<b>${plural(u.machine, "machine peer has", "machine peers have")}</b>
+        no custodian the resolver could find.` : ""}
+      ${u.none ? `<b>${plural(u.none, "peer carries no principal in its name",
+        "peers carry no principal in their names")}</b> — never onboarded through the
+        operator path. Declare an owner where somebody is responsible; each is nameable
+        from the peer table.` : ""}
+      ${k.unread ? `<b>${plural(k.unread, "peer", "peers")}</b> could not be checked at
+        all — that is this host's reading, not a fact about those peers.` : ""}</div>
+    ${(o.top_owners||[]).length ? `<table><thead><tr><th>Owning identity</th>
+      <th class="n">Peers answered for</th></tr></thead><tbody>
+      ${(o.top_owners||[]).map(r=>{
+        const href = identityHref({handle:r.name}, links);
+        return `<tr><td class="mono name">${href
+          ? `<a href="${href}" rel="noopener">${esc(r.name)} ↗</a>` : esc(r.name)}</td>
+          <td class="n">${r.value}</td></tr>`;
+      }).join("")}</tbody></table>` : ""}</div>`;
+}
+
+function headline(c, d){
+  const bits = [];
+  bits.push(`${c.peers_total} peers enrolled, ${c.peers_connected} connected now`);
+  if(c.people_total) bits.push(`${c.people_total} people hold ${c.peers_with_handle} of them`);
+  const nv = (c.by_version||[]).length;
+  if(nv>2) bits.push(`spread across ${nv} client versions`);
+  const dormant = c.dormant?.["30"];
+  if(dormant) bits.push(`${dormant} quiet for over a month`);
+  return bits.join("; ") + ".";
+}
+
+// Highest semver-ish string present. Used only to say "newest IN USE" — it is
+// explicitly NOT a pin check, because the declared pin lives in group_vars and
+// this page does not read it. Claiming compliance against a pin we have not
+// loaded would be exactly the fabricated-percentage failure these pages exist
+// to avoid.
+function maxVersion(names){
+  const parse = s => (s||"").split(".").map(x=>parseInt(x,10)).map(x=>isNaN(x)?-1:x);
+  let best = null;
+  for(const n of names){
+    if(!/^\d/.test(n)) continue;
+    if(best===null){ best = n; continue; }
+    const a = parse(n), b = parse(best);
+    for(let i=0;i<Math.max(a.length,b.length);i++){
+      const x=a[i]??-1, y=b[i]??-1;
+      if(x>y){ best = n; break; }
+      if(x<y) break;
+    }
+  }
+  return best;
+}
+
+load("peerview.json", render);
+</script>
+</body>
+</html>

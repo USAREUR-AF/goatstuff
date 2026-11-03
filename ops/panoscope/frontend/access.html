@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>panoscope access — __LEX_FABRIC__</title>
+  </head>
+  <body class="page-body">
+    <header>
+      <span class="brand">PANOSCOPE</span>
+      <span class="separator">·</span>
+      <span class="subtitle">ACCESS · catalog + access picture · __LEX_FABRIC__</span>
+      <nav class="page-nav">
+        <a href="/">COP</a>
+        <a href="/top">TOP</a>
+        <a href="/who">WHO</a>
+        <a href="/access" class="active">ACCESS</a>
+      </nav>
+      <span class="connection-indicator" id="conn" data-state="connecting">connecting…</span>
+    </header>
+
+    <main class="page-main who-layout" id="main">
+      <section class="panel who-roster">
+        <h2 id="catalog-title">DATA CATALOG</h2>
+        <p class="portal-note" id="catalog-note" hidden></p>
+        <input
+          type="search"
+          id="catalog-filter"
+          class="producer-filter"
+          placeholder="search orgs…"
+          aria-label="Search catalog"
+        />
+        <label class="catalog-fold" id="catalog-fold" hidden>
+          <input type="checkbox" id="catalog-show-empty" />
+          show the <span id="catalog-fold-count">0</span> orgs with no declared topics
+        </label>
+        <div class="table-scroll">
+          <table class="data-table" id="org-table">
+            <thead>
+              <tr><th></th><th>ORG</th><th>PREFIX</th><th></th><th class="num">LIVE MSG/S</th></tr>
+            </thead>
+            <tbody id="org-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="labels-note">
+          Labels + grant edges: none declared on this goatnet yet — the
+          label/grant registry is design-declared, not yet built. This pane
+          gains label lanes and grant edges when it lands.
+        </p>
+      </section>
+
+      <aside class="panel who-detail" id="access-pane">
+        <h2>ACCESS PICTURE</h2>
+        <p class="portal-note" id="access-gate-note" hidden></p>
+        <div id="access-tools">
+          <dl>
+            <dt>identity query (who)</dt>
+            <dd>
+              <input type="text" id="who-id" class="producer-filter" placeholder="anchor / org / person id" />
+              <button type="button" id="who-go" class="fleet-tier-badge">LOOK UP</button>
+            </dd>
+            <dt>why trace (identity × topic)</dt>
+            <dd>
+              <input type="text" id="why-id" class="producer-filter" placeholder="identity" />
+              <input type="text" id="why-key" class="producer-filter" placeholder="topic key" />
+              <button type="button" id="why-go" class="fleet-tier-badge">TRACE</button>
+            </dd>
+            <dt>reverse topic query</dt>
+            <dd>
+              <input type="text" id="topic-key" class="producer-filter" placeholder="topic key or namespace" />
+              <button type="button" id="topic-go" class="fleet-tier-badge">WHO CAN ACCESS</button>
+            </dd>
+          </dl>
+        </div>
+        <div id="access-result"></div>
+      </aside>
+    </main>
+
+    <footer class="cli-note">
+      Read-only web view. The <strong>goat CLI</strong> carries the fuller toolset —
+      <code>goat access who | topic | why</code>, <code>goat doctor --topic</code> (the
+      self write-precheck), plus admin onboarding · revocation · rotation, access grants,
+      publishing, and edge diagnostics. Ask your goatnet operator (or your goatnet's
+      <code>get.&lt;site&gt;</code> download page) for the CLI.
+    </footer>
+
+    <section class="full-error" id="full-error" hidden></section>
+    <script type="module" src="/src/access.ts"></script>
+  </body>
+</html>

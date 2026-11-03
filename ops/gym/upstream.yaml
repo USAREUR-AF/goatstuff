@@ -1,0 +1,803 @@
+# goat gym — Foundations: the technologies we use and do not own.
+#
+# WHY THIS FILE EXISTS. Most of what a person needs to learn here was not
+# written here. WireGuard, Zenoh, Ory, Postgres, Traefik, Terraform — each has
+# documentation better than anything we would write, and none of it is ours to
+# maintain. Re-explaining them would create a second copy that rots;
+# linking them without saying HOW WE USE THEM leaves the reader to discover our
+# deltas by accident, which is the expensive way.
+#
+# So each entry carries three things and only three:
+#
+#   what_it_is    one paragraph, enough to know whether you need it today
+#   how_we_use_it the specific shape it takes HERE — versions, pins, choices
+#   differences   where our use diverges from the documentation's assumptions.
+#                 This is the part that saves days, and the part no upstream
+#                 document will ever contain.
+#
+# Plus `reading` (curated, each with a reason and an honest time estimate) and
+# `activities` (things to DO — reading upstream docs is not knowing either).
+#
+# EVERY LINK IS OFF-MESH. The gym is served on a mesh with no guarantee of
+# internet, so these are labelled as needing it, and the checker records when
+# each was last reachable rather than assuming it still is.
+#
+#   upstream_check.py --verify     re-checks every URL, records the date
+#
+# Kinds: docs | tutorial | spec | paper | book | video | reference | source
+#
+# `status` is required and says whether we actually run the thing:
+#   in-use            deployed and load-bearing today
+#   partial           deployed somewhere, not everywhere, or in one phase
+#   not-deployed      we have designed for it, or may adopt it; nothing runs it
+# A reader deciding what to learn next needs to know which of those they are
+# looking at, and an entry that quietly implies production use is worse than no
+# entry at all.
+
+version: 1
+
+categories:
+  - id: networking
+    title: Networking and transport
+    blurb: How bytes get from one machine to another when the path is hostile.
+  - id: fabric
+    title: The data fabric
+    blurb: How programs address each other once the network exists.
+  - id: identity
+    title: Identity and cryptography
+    blurb: Who a principal is, and what makes that claim hard to forge.
+  - id: data
+    title: Data and state
+    blurb: Where state lives, and how it survives being in several places at once.
+  - id: infrastructure
+    title: Infrastructure and delivery
+    blurb: How the machines get built, configured, and changed without ceremony.
+
+technologies:
+
+  # ── networking ────────────────────────────────────────────────────────────
+  - id: wireguard
+    name: WireGuard
+    category: networking
+    status: in-use
+    one_line: The tunnel every other layer rides on.
+    what_it_is: >-
+      A VPN protocol small enough to audit: a fixed cryptographic suite, no
+      negotiation, no cipher agility, and roughly four thousand lines of kernel
+      code. Peers are identified by public key, not by address, which is why an
+      endpoint can move without the tunnel breaking. There is no connection to
+      establish and nothing to keep alive — a peer is either sending valid
+      encrypted packets or it is silent.
+    how_we_use_it: >-
+      It is the data plane. Every peer-to-peer path between two enrolled devices
+      is a WireGuard tunnel, addressed by mesh IP. The control plane rides its
+      own separate WireGuard listener so the management API is not exposed on
+      the public internet. On the Jetson management hosts we run a kernel-space
+      module rather than the userspace implementation, which is why a kernel
+      bump has to wait for that module to be rebuilt first.
+    differences: >-
+      Two things surprise people. First, roaming: a peer that changes network
+      keeps its tunnel, so "it still works" is not evidence that the path is the
+      one you think it is. Second, silence is normal — WireGuard does not
+      heartbeat by default, so a peer that looks idle may be perfectly healthy,
+      and a peer that looks connected may have had no traffic for hours.
+    reading:
+      - title: WireGuard whitepaper
+        url: https://www.wireguard.com/papers/wireguard.pdf
+        kind: paper
+        minutes: 45
+        why: The original design paper. Short, readable, and the fastest way to understand why there are no options to configure.
+      - title: WireGuard — Conceptual Overview
+        url: https://www.wireguard.com/#conceptual-overview
+        kind: docs
+        minutes: 10
+        why: Cryptokey routing in a page — the one idea that explains why identity is the public key.
+      - title: Quick Start
+        url: https://www.wireguard.com/quickstart/
+        kind: tutorial
+        minutes: 20
+        why: Stand up a tunnel by hand once. Everything the mesh does for you is this, automated.
+    activities:
+      - do: Build a two-peer tunnel by hand between two machines you control, without any mesh software.
+        gets: You will never again wonder what the mesh is actually configuring.
+      - do: Run `wg show` on a host and read the last-handshake times.
+        gets: You learn to tell a quiet peer from a dead one — the distinction the mesh surfaces depend on.
+
+  - id: netbird
+    name: NetBird
+    category: networking
+    status: in-use
+    one_line: The control plane that introduces peers to each other.
+    what_it_is: >-
+      An overlay network built on WireGuard: a management server holds the peer
+      registry and the access policy, a signal service helps two peers find a
+      direct path, and relays carry traffic when they cannot. Peers enrol once
+      with a setup key and then talk to each other directly.
+    how_we_use_it: >-
+      It is our mesh, running from a fork rather than upstream releases. Access
+      is expressed as group-to-group policies with explicit ports; a peer lands
+      in its groups at enrolment, decided by the setup key. The management plane
+      is deliberately reachable only for enrolment and administration — enrolled
+      peers keep working while it is down.
+    differences: >-
+      Policies carry BOTH a policy-level and a rule-level enabled flag, and they
+      are independent: a production goatnet's catch-all rule sits enabled inside
+      a DISABLED policy, so reading the rule alone tells you the goatnet is
+      running wide open when it is not. Check the policy flag first.
+      Membership is additive — union of allows over a default deny, which is
+      ordinary for allow-list models rather than a goat oddity; the consequence
+      worth internalising is that you cannot narrow anything by ADDING a group,
+      because there is no deny to reach for.
+      The third one is ours rather than NetBird's: we express graduated lateral
+      reach as a CAPABILITY group whose rule is one-way. Verified in the
+      declaration: the only rule naming it as a destination has that same group
+      as its source, and it is not bidirectional. So a peer holding the
+      capability and no role group can initiate to everything and is reachable
+      only by other capability holders — not by the substrate, not by an admin.
+    reading:
+      - title: NetBird documentation
+        url: https://docs.netbird.io/
+        kind: docs
+        minutes: 40
+        why: Concepts, setup keys, access controls. Read the access-control section twice — it is the model our ACL work sits on.
+      - title: NetBird source
+        url: https://github.com/netbirdio/netbird
+        kind: source
+        minutes: 0
+        why: Ours is a fork of this. When behaviour and documentation disagree, this is the tiebreaker.
+    activities:
+      - do: Read the auto-groups on a setup key you hold, then predict which access groups a peer enrolled with it will land in.
+        gets: The single most useful prediction in mesh administration.
+      - do: Find the rules naming your goatnet's lateral-reach capability group as a SOURCE and as a DESTINATION, and count each.
+        gets: You see the asymmetry in the declaration itself rather than taking anyone's word for it — including this page's.
+
+  - id: stun-turn
+    name: STUN, TURN and coturn
+    category: networking
+    status: in-use
+    one_line: How two machines behind NAT find each other — and what to do when they cannot.
+    what_it_is: >-
+      STUN lets a host discover how the outside world sees it, so two peers can
+      attempt a direct path through their respective NATs. TURN is the fallback:
+      a relay both peers can reach, used when no direct path exists. coturn is
+      the common open-source implementation of both.
+    how_we_use_it: >-
+      Every peer pair tries direct first. Where both ends sit behind carrier-grade
+      NAT that rewrites ports per destination, no direct path can be made and the
+      relay path is not a fallback but the only path — that is a property of the
+      network, not a fault to fix.
+    differences: >-
+      Relay traffic is not an alarm. A dashboard showing a pair relaying means a
+      direct path could not be built for that pair, which for some pairs is the
+      permanent and correct answer.
+    reading:
+      - title: RFC 8489 — Session Traversal Utilities for NAT (STUN)
+        url: https://www.rfc-editor.org/rfc/rfc8489
+        kind: spec
+        minutes: 60
+        why: The current STUN specification. Skim §3–§6 for the mechanism; the rest is for implementers.
+      - title: RFC 8656 — Traversal Using Relays around NAT (TURN)
+        url: https://www.rfc-editor.org/rfc/rfc8656
+        kind: spec
+        minutes: 60
+        why: What a relay actually does, and the allocation model behind it.
+      - title: coturn
+        url: https://github.com/coturn/coturn
+        kind: source
+        minutes: 0
+        why: The implementation we run. Its README is the fastest tour of the knobs.
+    activities:
+      - do: From two networks you control, find a pair that cannot make a direct path and one that can.
+        gets: You stop treating relayed traffic as a defect.
+
+  - id: traefik
+    name: Traefik
+    category: networking
+    status: in-use
+    one_line: The reverse proxy in front of nearly every service you will open.
+    what_it_is: >-
+      An edge router that discovers what to route from providers — Docker labels,
+      files, orchestrator APIs — rather than a static config file, and obtains
+      TLS certificates automatically through ACME.
+    how_we_use_it: >-
+      One instance per management host, routing every mesh-internal service by
+      hostname, with certificates minted on first request. Our routes come from
+      the FILE provider rather than container labels, so each service drops a
+      small config file with a distinct name and cannot stomp its neighbours.
+    differences: >-
+      The certificate resolver lives in an overlay compose file. Bringing the
+      base file up alone recreates the proxy WITHOUT it — every HTTPS surface on
+      the goatnet then serves a self-signed default certificate, browsers warn
+      rather than fail, and nothing looks broken from inside. It has happened
+      more than once; if TLS breaks everywhere at once, this is the first thing
+      to check.
+    reading:
+      - title: Traefik documentation
+        url: https://doc.traefik.io/traefik/
+        kind: docs
+        minutes: 45
+        why: Routers, services, middlewares, providers. The mental model transfers directly to what you will read in our config.
+      - title: Let's Encrypt — How It Works
+        url: https://letsencrypt.org/how-it-works/
+        kind: docs
+        minutes: 15
+        why: What ACME is doing on your behalf, and why a DNS challenge is used for names that are not publicly reachable.
+    activities:
+      - do: Read one service's routing config and trace hostname → router → service → container.
+        gets: You can add a service without copying somebody else's file and hoping.
+
+  - id: haproxy-rathole
+    name: HAProxy and rathole
+    category: networking
+    status: in-use
+    one_line: How traffic reaches a management host that has no public address.
+    what_it_is: >-
+      HAProxy is a mature TCP and HTTP load balancer; in TCP passthrough mode it
+      forwards a connection without terminating TLS, so the far end still sees
+      the original handshake. rathole is a small reverse tunnel: a host behind
+      NAT dials out to a public server and the server forwards connections back
+      down that tunnel.
+    how_we_use_it: >-
+      Relays run HAProxy on 443 in passthrough, forwarding into per-host rathole
+      tunnels. A management host with no inbound path dials out, and enrolment
+      traffic arrives over that tunnel with TLS terminated at the destination,
+      not at the relay.
+    differences: >-
+      Passthrough is the whole point: a relay never holds a private key and never
+      sees plaintext. If you find yourself wanting to terminate TLS at the relay
+      to "make debugging easier", that is the trade being reversed.
+    reading:
+      - title: HAProxy documentation
+        url: https://docs.haproxy.org/
+        kind: docs
+        minutes: 30
+        why: Start with modes and frontends/backends; TCP mode is the one we use.
+      - title: rathole
+        url: https://github.com/rapiz1/rathole
+        kind: source
+        minutes: 15
+        why: Small enough to read end to end. The README explains the reverse-tunnel model in a page.
+    activities:
+      - do: Trace one enrolment request from the public name to the management host.
+        gets: You can say which hop terminates TLS — and why it is not the relay.
+
+  # ── fabric ────────────────────────────────────────────────────────────────
+  - id: zenoh
+    name: Zenoh
+    category: fabric
+    status: in-use
+    one_line: The publish/subscribe substrate the data plane is built on.
+    what_it_is: >-
+      A protocol unifying publish/subscribe, query, and storage over one address
+      space of hierarchical key expressions. It can run brokered, peer to peer,
+      or through routers, and is designed for constrained and intermittent
+      networks rather than datacentre fabrics.
+    how_we_use_it: >-
+      Brokerless, through routers, pinned to one exact version across the whole
+      fleet. Publishers carry per-identity certificates; namespaces are owned;
+      storage is opt-in per class of data rather than automatic.
+    differences: >-
+      Three that cost time. A publish you are not permitted to make returns
+      SUCCESS — denial is silent at both ends. A storage query returning empty is
+      evidence of empty, not of denial. And the version pin is exact, fleet-wide:
+      building against a newer client than the goatnet runs is a problem you
+      discover at runtime.
+    reading:
+      - title: Zenoh documentation
+        url: https://zenoh.io/docs/
+        kind: docs
+        minutes: 60
+        why: Key expressions, the three modes, storages and queryables. The key-expression section is the one that changes how you design.
+      - title: Getting started
+        url: https://zenoh.io/docs/getting-started/first-app/
+        kind: tutorial
+        minutes: 30
+        why: A publisher and a subscriber in a few lines, in the language you already use.
+      - title: Zenoh source
+        url: https://github.com/eclipse-zenoh/zenoh
+        kind: source
+        minutes: 0
+        why: Where the version we pin comes from, and where behaviour questions get settled.
+    activities:
+      - do: Write a publisher and a subscriber against a local router, then kill the subscriber and publish anyway.
+        gets: You feel the brokerless trade before it costs you production data.
+      - do: Design a key expression for something you would publish, and defend the wildcard a subscriber would use.
+        gets: Key design is a capacity decision here, not a naming preference.
+
+  # ── identity and crypto ───────────────────────────────────────────────────
+  - id: ory
+    name: Ory Kratos and Hydra
+    category: identity
+    status: in-use
+    one_line: The identity server behind every login and every gated console.
+    what_it_is: >-
+      Kratos handles identities and the flows around them — registration, login,
+      recovery, settings — without owning your UI. Hydra is an OAuth2 and OpenID
+      Connect provider that issues tokens and delegates authentication to
+      something like Kratos. They are deliberately separate: one knows who you
+      are, the other knows what a client may do on your behalf.
+    how_we_use_it: >-
+      Kratos holds people and their traits, including the group memberships that
+      service fences read. Hydra issues the tokens those fences check. Consoles
+      and dashboards sit behind a proxy that requires a valid token and an
+      allowed group.
+    differences: >-
+      Group membership rides in the token. Adding someone to a group changes
+      nothing until they get a NEW token — the old one keeps its old groups until
+      it expires. Also, our service-plane group names are never site-prefixed,
+      while mesh group names are; getting that backwards produces a group that
+      matches nothing and fails silently.
+    reading:
+      - title: Ory Kratos documentation
+        url: https://www.ory.sh/docs/kratos/
+        kind: docs
+        minutes: 45
+        why: Identity schemas, traits and self-service flows — the shape of what onboarding writes.
+      - title: Ory Hydra documentation
+        url: https://www.ory.sh/docs/hydra/
+        kind: docs
+        minutes: 40
+        why: The OAuth2 flows, and why an issuer that cannot be reached at its own advertised address breaks logins in confusing ways.
+      - title: OAuth 2.0 Simplified
+        url: https://www.oauth.com/
+        kind: book
+        minutes: 90
+        why: If OAuth2 and OIDC are new, read this before the Ory docs — it makes them twice as fast.
+    activities:
+      - do: Decode your own token and read its group claim.
+        gets: You can explain your own access without asking an admin.
+
+  - id: pqc
+    name: Post-quantum cryptography
+    category: identity
+    status: in-use
+    one_line: Why key exchange is changing, and what "hybrid" means in practice.
+    what_it_is: >-
+      A family of algorithms believed secure against an adversary with a large
+      quantum computer. The standardised set is ML-KEM for key encapsulation and
+      ML-DSA and SLH-DSA for signatures. The threat that drives adoption now is
+      harvest-now-decrypt-later: traffic captured today, decrypted when the
+      hardware exists.
+    how_we_use_it: >-
+      Hybrid rather than replacement: a classical exchange and a post-quantum one
+      combined so the result is at least as strong as the better of the two. It
+      appears in the fabric's TLS and, separately, in the mesh through Rosenpass.
+    differences: >-
+      Hybrid is a deliberate belt-and-braces position, not a transitional
+      embarrassment: the classical half protects against a break in the new
+      algorithms, which are young. Expect exact version pins wherever post-quantum
+      code appears — the implementations move faster than our fleet does.
+    reading:
+      - title: NIST FIPS 203 — ML-KEM
+        url: https://csrc.nist.gov/pubs/fips/203/final
+        kind: spec
+        minutes: 30
+        why: The key-encapsulation standard. Read the introduction and the parameter sets; skip the proofs.
+      - title: NIST FIPS 204 — ML-DSA
+        url: https://csrc.nist.gov/pubs/fips/204/final
+        kind: spec
+        minutes: 30
+        why: The signature standard you will meet next.
+      - title: NIST Post-Quantum Cryptography project
+        url: https://csrc.nist.gov/projects/post-quantum-cryptography
+        kind: reference
+        minutes: 15
+        why: The index. Useful for checking whether something you read last year is still current.
+    activities:
+      - do: Find one hybrid key exchange in a service you can reach, and name both halves.
+        gets: You can answer "are we post-quantum yet" with a specific rather than a slogan.
+
+  - id: rosenpass
+    name: Rosenpass
+    category: identity
+    status: in-use
+    one_line: Post-quantum key exchange bolted alongside WireGuard, without forking it.
+    what_it_is: >-
+      A separate daemon that performs a post-quantum key exchange and feeds the
+      result into WireGuard as a pre-shared key. WireGuard's own cryptography is
+      untouched; the pre-shared key it already supports becomes the carrier for
+      post-quantum protection.
+    how_we_use_it: >-
+      Intra-mesh, as an option a goatnet turns on. It is deliberately additive:
+      turning it off leaves ordinary WireGuard, and turning it on requires both
+      ends to agree.
+    differences: >-
+      Because it rides the pre-shared key, both peers must run it. A one-sided
+      enablement does not half-protect the link; it simply does not apply. Roll
+      it out per pair, not per host.
+    reading:
+      - title: Rosenpass
+        url: https://rosenpass.eu/
+        kind: docs
+        minutes: 20
+        why: What it is and why it is a sidecar rather than a patch to WireGuard.
+      - title: Rosenpass source
+        url: https://github.com/rosenpass/rosenpass
+        kind: source
+        minutes: 20
+        why: The protocol write-up and the daemon we actually run.
+    activities:
+      - do: On a goatnet that has it enabled, confirm both ends of one link are running it.
+        gets: You learn to check the pair rather than the host.
+
+  # ── data ──────────────────────────────────────────────────────────────────
+  - id: postgres
+    name: PostgreSQL
+    category: data
+    status: in-use
+    one_line: The database under identity, policy and audit.
+    what_it_is: >-
+      The relational database everything else assumes. For our purposes the parts
+      that matter are the write-ahead log, replication slots, and the difference
+      between physical replication (byte-for-byte, whole cluster) and logical
+      replication (row changes, selectable, cross-version).
+    how_we_use_it: >-
+      One cluster per management pair, with logical replication between sites so
+      several sites can accept writes. Backups are taken to local storage and
+      remain valid with no internet, which is a deliberate constraint.
+    differences: >-
+      Replication slots retain WAL for a consumer that has stopped consuming, and
+      a slot nobody drains will fill the disk. We cap that retention explicitly,
+      which trades a broken replica for a live primary — the right way round, but
+      it means a replica left down long enough cannot simply resume.
+    reading:
+      - title: PostgreSQL documentation — Logical Replication
+        url: https://www.postgresql.org/docs/current/logical-replication.html
+        kind: docs
+        minutes: 40
+        why: Publications, subscriptions, and what logical replication does not carry.
+      - title: Write-Ahead Logging and replication slots
+        url: https://www.postgresql.org/docs/current/wal-intro.html
+        kind: docs
+        minutes: 25
+        why: The mechanism behind both replication and the disk-filling failure mode above.
+      - title: Spock (pgEdge)
+        url: https://github.com/pgEdge/spock
+        kind: source
+        minutes: 20
+        why: The multi-master extension we use on top of logical replication. Read its conflict-handling section before designing anything that writes in two places.
+    activities:
+      - do: Read the replication slot state on a live cluster and work out what would happen if the consumer stayed down for a week.
+        gets: You can predict the failure instead of meeting it.
+
+  # ── infrastructure ────────────────────────────────────────────────────────
+  - id: ansible
+    name: Ansible
+    category: infrastructure
+    status: in-use
+    one_line: How every host gets configured, and where its idempotence claim ends.
+    what_it_is: >-
+      Agentless configuration management: tasks run over SSH, described in YAML,
+      organised into roles. Its central promise is idempotence — running the same
+      play twice converges rather than duplicating.
+    how_we_use_it: >-
+      One role per service, one playbook per operation, run from an operator
+      laptop rather than a server. Roles render config, bring containers up, and
+      record what they deployed so a rollback has something to read.
+    differences: >-
+      The idempotence verdict describes the HOST, not the running process. An
+      interrupted run can leave a file correct on disk and stale inside a
+      container — the re-run then finds the host already correct, notifies no
+      handler, and prints a clean `changed=0`. The trap is the report, not the
+      drift. Handlers also do not run when a play is aborted, so a killed deploy
+      is not a no-op.
+    reading:
+      - title: Ansible documentation — User Guide
+        url: https://docs.ansible.com/ansible/latest/user_guide/index.html
+        kind: docs
+        minutes: 60
+        why: Playbooks, roles, handlers, variables. The variable-precedence page is worth reading twice.
+      - title: Ansible best practices
+        url: https://docs.ansible.com/ansible/latest/tips_tricks/ansible_tips_tricks.html
+        kind: reference
+        minutes: 20
+        why: Most of our conventions are these, plus scar tissue.
+    activities:
+      - do: Run any play with `--check` and read the diff it would make.
+        gets: The habit that separates a confident deploy from a hopeful one.
+
+  - id: terraform
+    name: Terraform
+    category: infrastructure
+    status: in-use
+    one_line: How the cloud side gets created, and why state separation matters more than the code.
+    what_it_is: >-
+      Declarative infrastructure provisioning. You describe the desired resources,
+      it computes a plan against recorded state, and applies the difference. The
+      state file — not the cloud — is what it believes.
+    how_we_use_it: >-
+      One tree per goatnet with its own state, so a mistake in one environment
+      cannot destroy another. Relays, DNS, security groups and secret stores are
+      created here; everything above them is configured by Ansible.
+    differences: >-
+      Blast radius is managed by separation rather than by care. Two environments
+      sharing one state is the failure we design against, which is why "just add
+      it to the existing tree" is usually the wrong answer.
+    reading:
+      - title: Terraform documentation
+        url: https://developer.hashicorp.com/terraform/docs
+        kind: docs
+        minutes: 60
+        why: Language, state, and the plan/apply cycle.
+      - title: State — Terraform
+        url: https://developer.hashicorp.com/terraform/language/state
+        kind: docs
+        minutes: 25
+        why: Read this before you touch anything. Most Terraform accidents are state accidents.
+    activities:
+      - do: Run a plan against an environment you are allowed to read, and explain every line of the diff — including the empty one.
+        gets: A no-op plan you can explain is the strongest evidence that code and reality agree.
+
+  - id: aws-vault
+    name: aws-vault
+    category: infrastructure
+    status: in-use
+    one_line: Why no AWS credential is ever in a file here.
+    what_it_is: >-
+      A tool that stores cloud credentials in the operating system keychain and
+      hands short-lived credentials to a single command's environment, rather
+      than leaving long-lived keys in a dotfile.
+    how_we_use_it: >-
+      Every cloud command is wrapped by it. Credentials never appear in the
+      repository, in environment files, or in shell history.
+    differences: >-
+      We always request credentials without a session token, because the
+      temporary session form is rejected by parts of our tooling — the symptom is
+      an authentication error that looks like a permissions problem and is not.
+    reading:
+      - title: aws-vault
+        url: https://github.com/99designs/aws-vault
+        kind: source
+        minutes: 20
+        why: The README is the documentation. The backends section explains where your credentials actually sit.
+      - title: AWS — Temporary security credentials
+        url: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp.html
+        kind: docs
+        minutes: 20
+        why: What a session token is, so the paragraph above is a mechanism rather than a superstition.
+    activities:
+      - do: Run one read-only cloud command through it and confirm no credential appears in your environment afterwards.
+        gets: You can prove the property rather than believe it.
+
+  - id: containers
+    name: Docker and Podman
+    category: infrastructure
+    status: in-use
+    one_line: The unit every service ships as, and the two runtimes that run it.
+    what_it_is: >-
+      Containers are process isolation plus a packaged filesystem. Docker is the
+      familiar runtime with a long-lived daemon; Podman is daemonless and can run
+      without root, using the same image format and a nearly identical command
+      line.
+    how_we_use_it: >-
+      Every service is a container with a pinned image, brought up by compose
+      files that configuration management renders. Images are pinned by digest
+      where it matters, so a rollback is a pin change rather than a rebuild.
+    differences: >-
+      Bind-mounting a single FILE pins its inode at container-create time. Change
+      the file on the host and the running container keeps reading the old one —
+      restarting is not enough, the container must be recreated. Mount
+      directories instead where you can; where you cannot, checksum what the
+      container is actually running.
+    reading:
+      - title: Docker documentation
+        url: https://docs.docker.com/
+        kind: docs
+        minutes: 60
+        why: Images, volumes, networks, compose. The storage and networking sections are where the surprises live.
+      - title: Podman documentation
+        url: https://docs.podman.io/en/latest/
+        kind: docs
+        minutes: 30
+        why: What changes without a daemon, and what rootless means for file ownership.
+      - title: Docker — Storage overview
+        url: https://docs.docker.com/engine/storage/
+        kind: docs
+        minutes: 20
+        why: Bind mounts versus volumes, which is the distinction behind the trap above.
+    activities:
+      - do: Bind-mount a single file into a container, edit it on the host, and watch the container keep serving the old copy.
+        gets: You will recognise the most common "the deploy did nothing" report on sight.
+
+  - id: coredns
+    name: CoreDNS
+    category: networking
+    status: in-use
+    one_line: The resolver that makes every mesh-internal name work.
+    what_it_is: >-
+      A DNS server assembled from plugins: each plugin handles part of a query,
+      in a declared order. It is small, has no zone-transfer machinery by
+      default, and is usually configured with a handful of lines rather than a
+      zone-management system.
+    how_we_use_it: >-
+      Each goatnet runs its own resolver for its own zone, serving records
+      generated from the service registry rather than hand-maintained. Peers are
+      pointed at it by the mesh, so mesh-internal names resolve for enrolled
+      devices and nowhere else.
+    differences: >-
+      Two sharp edges. The hosts plugin silently loads ZERO records when the
+      zone file is mode 0600 — no error, no warning, just an empty resolver. And
+      which resolver a peer was actually handed is a live fact: an inventory
+      file naming the DNS hosts can be correct and still not describe where your
+      peers are pointed.
+    reading:
+      - title: CoreDNS manual
+        url: https://coredns.io/manual/toc/
+        kind: docs
+        minutes: 30
+        why: The Corefile model and how plugin order decides what answers a query.
+      - title: CoreDNS plugins
+        url: https://coredns.io/plugins/
+        kind: reference
+        minutes: 0
+        why: One page per plugin. The hosts and forward plugins are the two you will meet here.
+      - title: CoreDNS source
+        url: https://github.com/coredns/coredns
+        kind: source
+        minutes: 0
+        why: Where plugin behaviour gets settled when documentation is ambiguous.
+    activities:
+      - do: Read a live peer's resolver configuration rather than an inventory file, then query that resolver directly for a mesh name.
+        gets: You learn to answer "where would this peer even ask" before debugging why an answer is wrong.
+
+  - id: minio
+    name: MinIO
+    category: data
+    status: in-use
+    one_line: The object store behind audit, backups and artifacts.
+    what_it_is: >-
+      An S3-compatible object store you run yourself. Buckets, objects, policies
+      and lifecycle rules behave as the S3 API describes, with a console for
+      humans and the same API for programs.
+    how_we_use_it: >-
+      Per-site storage for audit at one tier, backups at another, and build
+      artifacts. The console authenticates against the goatnet's own identity
+      plane rather than holding its own user list, and it is mesh-only.
+    differences: >-
+      Identity wiring is read ONCE at start: a console that comes up before the
+      name it needs is resolvable starts cleanly and then cannot log anyone in,
+      and the fix is a restart rather than a config edit. Separately, lifecycle
+      rules and object-lock retention interact — objects are retained LONGER
+      than the lifecycle rule alone suggests, so reading the rule by itself
+      gives you the wrong answer about what still exists.
+    reading:
+      - title: MinIO documentation
+        url: https://min.io/docs/minio/linux/index.html
+        kind: docs
+        minutes: 40
+        why: Deployment, buckets, policies, and the console. Start with the object-management section.
+      - title: MinIO source
+        url: https://github.com/minio/minio
+        kind: source
+        minutes: 0
+        why: The implementation, and the fastest way to check whether a behaviour is intended.
+      - title: Amazon S3 — Object Lock
+        url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html
+        kind: docs
+        minutes: 20
+        why: MinIO implements this model. Read it to understand why retention can outlive a lifecycle rule.
+    activities:
+      - do: Pick one bucket and work out how long an object written today would actually survive, using both the lifecycle rule and any retention setting.
+        gets: You can answer "is it still there" without guessing — the question every audit request starts with.
+
+  - id: spiffe
+    name: SPIFFE and SPIRE
+    category: identity
+    status: partial
+    one_line: Identity for workloads, separate from identity for people and machines.
+    what_it_is: >-
+      SPIFFE is a specification for workload identity: a workload gets a short
+      lived, verifiable document proving what it is, without a shared secret.
+      SPIRE is the reference implementation — an agent attests a workload
+      against the platform it runs on and issues it that document.
+    how_we_use_it: >-
+      A first-phase deployment on the sandbox goatnet only, composing WITH the
+      existing static mesh access rules rather than replacing them. External
+      organisations stay on portal-minted credentials; this is for our own
+      workloads, and it is not fleet-wide.
+    differences: >-
+      It is a fourth identity domain, not a replacement for the other three.
+      People, machines and workloads are deliberately separate here, and a
+      workload document does not grant mesh reach — the transport-layer rules
+      still decide what sockets can be opened.
+    reading:
+      - title: SPIFFE overview
+        url: https://spiffe.io/docs/latest/spiffe-about/overview/
+        kind: docs
+        minutes: 25
+        why: What a workload identity document is and why attestation replaces a shared secret.
+      - title: SPIRE concepts
+        url: https://spiffe.io/docs/latest/spire-about/spire-concepts/
+        kind: docs
+        minutes: 30
+        why: Server, agent, attestation and registration entries — the four things you will configure.
+      - title: SPIRE source
+        url: https://github.com/spiffe/spire
+        kind: source
+        minutes: 0
+        why: The implementation we run.
+    activities:
+      - do: Name one workload here and say what would attest it — and what its identity would NOT grant.
+        gets: You keep workload identity and network reach as separate questions, which is the whole point of the split.
+
+  - id: matrix
+    name: Matrix
+    category: infrastructure
+    status: not-deployed
+    one_line: The protocol behind secure messaging that keeps working when a server does not.
+    what_it_is: >-
+      An open protocol for real-time communication with federation and
+      end-to-end encryption built in. Rooms are replicated across the servers
+      that participate in them, so a room survives the loss of any one of them —
+      which is the property that makes it interesting at an edge rather than the
+      feature list.
+    how_we_use_it: >-
+      **We do not run it today.** It is the chosen substrate if and when we
+      deploy secure messaging: a self-hosted homeserver per deployment, with
+      push delivered through our own gateway rather than a vendor service, so
+      messaging would not depend on an external notification provider being
+      reachable. Nothing here is live, and no goatnet carries it.
+    differences: >-
+      The decision that would matter on the day we deploy it: federation is the
+      resilience story AND a data-sharing surface. Which servers a room is shared
+      with is an access decision, not a networking one, and it would need the
+      same seriousness as any other sharing decision here. Read this entry as
+      preparation, not as documentation of something you can go and look at.
+    reading:
+      - title: Matrix specification
+        url: https://spec.matrix.org/latest/
+        kind: spec
+        minutes: 60
+        why: The protocol itself. Skim the client-server API; read the room and federation model properly.
+      - title: Matrix — the elements of Matrix
+        url: https://matrix.org/docs/matrix-concepts/elements-of-matrix/
+        kind: docs
+        minutes: 20
+        why: Rooms, events and federation in plain language before the specification.
+      - title: End-to-end encryption guide
+        url: https://matrix.org/docs/matrix-concepts/end-to-end-encryption/
+        kind: docs
+        minutes: 25
+        why: What is encrypted, what is not, and what device verification actually proves.
+    activities:
+      - do: Read the room and federation model, then write down which servers you would be willing to share a room with here — and why.
+        gets: If we deploy it, that answer is the first decision anyone will ask you for, and it is a sharing decision rather than a networking one.
+
+  - id: age
+    name: age
+    category: identity
+    status: in-use
+    one_line: Small-file encryption where the recipient list is the access-control decision.
+    what_it_is: >-
+      A file encryption tool with a deliberately tiny surface: one algorithm, no
+      configuration, keys that are a single line of text. Encrypt to one or more
+      recipient public keys; anyone holding a matching identity can decrypt.
+    how_we_use_it: >-
+      Operator audit records are encrypted to the operator roster, so reading
+      them is a normal operator action and adding a reader is a roster change
+      rather than a permission change. Offline continuity material uses the same
+      shape.
+    differences: >-
+      Because the recipient list IS the access control, an old artifact stays
+      readable by everyone who was a recipient when it was written — removing
+      someone from the roster does not retroactively lock them out of what
+      already exists. Rotation means re-encrypting, not revoking.
+    reading:
+      - title: age
+        url: https://github.com/FiloSottile/age
+        kind: source
+        minutes: 20
+        why: The README is the documentation, and it is short by design.
+      # `age-encryption.org/v1` is the format's VERSION STRING — the literal
+      # bytes in an age file header — and it doubles as a redirect that upstream
+      # has since pointed at a moved file, so it 404s (verified).
+      # c2sp.org/age is the maintained home and resolves to the current
+      # versioned spec.
+      - title: age specification
+        url: https://c2sp.org/age
+        kind: spec
+        minutes: 20
+        why: The format in a page — worth reading before you automate anything around it.
+    activities:
+      - do: Encrypt a file to two recipients, then decrypt it with each identity in turn.
+        gets: You see that access is a property of the artifact, not of a system you can change later.

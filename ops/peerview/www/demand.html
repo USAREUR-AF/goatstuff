@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demand &amp; Contention</title>
+<link rel="stylesheet" href="./peerview.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <h1>Demand &amp; Contention</h1>
+      <div class="sub">What peers are asking of this goatnet, who is asking most, and what it costs</div>
+    </div>
+    <div class="meta">
+      <span class="tag" id="net">—</span>
+      <span class="tag" id="age">—</span>
+      <a class="tag" href="./peers.html">◂ Peers &amp; people</a>
+    </div>
+  </header>
+
+  <div id="staleness"></div>
+  <div id="body"></div>
+
+  <footer>
+    Served from <code>peerview.json</code>, written on the host by
+    <code>ops/peerview/peerview-poll.py</code> — the browser never reads the
+    access log or queries Prometheus, so a viewer costs nothing (ADR 1123).
+    Design: <code>docs/design/peer-demand-surface.md</code> (ADR 1135).
+    Service classes: <code>ops/peerview/peerview-service-classes.yaml</code>.
+    <span id="sibling"></span>
+  </footer>
+</div>
+
+<script src="./peerview-common.js"></script>
+<script>
+"use strict";
+
+function render(d){
+  const dm = d.demand, c = d.census||{}, cost = d.cost||{}, cy = d.cycle||{};
+  $("#net").textContent = `goatnet ${d.goatnet||"?"} · vantage ${d.vantage||"?"}`;
+  $("#age").textContent = `updated ${age(d)}s ago`;
+  $("#staleness").innerHTML = staleBanner(d);
+  // Only offer the netview link where netview is actually deployed. The poller
+  // checks for its json in the same served directory; a link that 404s on half
+  // the fleet teaches people that these links do not work.
+  $("#sibling").innerHTML = d.siblings?.netview
+    ? 'Load and headroom for the same host: <a href="./netview.html">Network load &amp; headroom</a>.'
+    : '';
+
+  let h = "";
+
+  if(!dm){
+    h += `<div class="note bad"><b>No demand data.</b>
+      ${esc(d.sources?.["traefik-log"]?.detail || "the access log could not be read")}.
+      Every panel that needs per-request detail is omitted rather than shown empty.
+      The cost and cycle panels below still render from the sources that answered.</div>`;
+  } else {
+    h += whereAreWe(dm, cost);
+    h += whatIsAsked(dm);
+    h += whoIsAsking(dm, c, d.links);
+    h += whatFor(dm);
+    h += contention(dm);
+  }
+  h += costSection(cost, dm, c);
+  h += cycleSection(cy, d);
+  h += sourcesSection(d);
+  $("#body").innerHTML = h;
+}
+
+// ── 0 ─────────────────────────────────────────────────────────────────────
+function whereAreWe(dm, cost){
+  const bits = [];
+  bits.push(`${rps(dm.rps_total)} across the ingress`);
+  if(dm.attributable_share!=null)
+    bits.push(`${pct(dm.attributable_share)} of it traceable to a named peer`);
+  if(cost.baseline_share!=null)
+    bits.push(`${pct(cost.baseline_share)} of the bytes are the cost of peers merely being connected`);
+  if(dm.peers_seen!=null) bits.push(`${dm.peers_seen} peer(s) actually made a request in this window`);
+  return `<section class="q"><h2><span class="n">▸</span>Where are we?</h2>
+    <p class="lede">One sentence, computed over the last ${secs(dm.window_s)} of ingress.
+    The panels below are the working.</p>
+    <div class="grid"><div class="card c12"><h3>Reading</h3>
+    <div class="v" style="font-size:19px;line-height:1.45">${esc(bits.join("; "))}.</div>
+    <div class="sub">Synthetic health probes are removed before any of this is counted —
+    ${num(dm.requests_probe)} of ${num(dm.requests_logged)} logged requests in this window were
+    monitoring, not usage.</div></div></div></section>`;
+}
+
+// ── 1 ─────────────────────────────────────────────────────────────────────
+function whatIsAsked(dm){
+  let h = `<section class="q"><h2><span class="n">1.</span>What is the goatnet being asked for?</h2>
+    <p class="lede">Every request through the ingress in this window, classified. The
+    classes are declared in one file, not inferred here, so the browse-versus-core line
+    is something you can read and argue with.</p><div class="grid">`;
+  h += card3("Requests per second", "Real requests, probes excluded.",
+             rps(dm.rps_total), "", `${num(dm.requests_total)} requests over ${secs(dm.window_s)}`);
+  h += card3("Traceable to a peer", "Requests whose source address resolves to an enrolled peer.",
+             pct(dm.attributable_share),
+             dm.attributable_share<0.1?"warn":"",
+             `${num(dm.requests_attributable)} of ${num(dm.requests_total)}`);
+  h += card3("Peers seen asking", "Distinct peers that made at least one request.",
+             num(dm.peers_seen), "", "the active population, not the enrolled one");
+  h += card3("Probes removed", "Synthetic health checks, counted and set aside.",
+             num(dm.requests_probe), "",
+             `${pct(dm.requests_probe/Math.max(1,dm.requests_logged))} of everything logged`);
+
+  h += `<div class="card c12"><h3>Why most of it is anonymous</h3>
+    <p class="d">Requests arriving through the relay ingress tunnel reach Traefik from the
+    container bridge, so every one of them shares a single source address and cannot be
+    attributed to a peer at this vantage. That is a property of the ingress path
+    (relay-ingress-dispatch.md), not a measurement failure, and it is nearly all of the
+    signal and management plane. <b>The traceable slice is the browsing plane</b> — which
+    is the plane these panels are about — but the fraction is printed above rather than
+    quietly divided away.</p>
+    ${splitBar([{name:"traceable to a peer",value:dm.requests_attributable},
+                {name:"arrived through the ingress tunnel",value:dm.requests_anonymous}],"count")}</div>`;
+
+  h += `<div class="card c6"><h3>Requests by class</h3>
+    <p class="d">Core is what a peer generates by existing; browse is what a person
+    generates by looking.</p>
+    ${bars((dm.by_class||[]).map(x=>({name:x.name,value:x.requests})),"count")}</div>`;
+  h += `<div class="card c6"><h3>Bytes by class</h3>
+    <p class="d">The same split weighted by bytes rather than requests. They rank
+    differently, and the difference is the point.</p>
+    ${bars((dm.by_class||[]).map(x=>({name:x.name,value:x.bps})),"bps")}</div>`;
+
+  if((dm.unclassified_services||[]).length){
+    h += `<div class="card c12"><div class="note flat"><b>Unclassified services.</b>
+      These carried traffic and match no declared class, so they are counted in
+      <code>unclassified</code> and folded into nothing:
+      ${(dm.unclassified_services||[]).map(x=>`<code>${esc(x.name)}</code> (${x.value})`).join(", ")}.
+      Add them to <code>peerview-service-classes.yaml</code>.</div></div>`;
+  }
+  if(dm.truncated){
+    h += `<div class="card c12"><div class="note flat"><b>Window truncated.</b> The access log
+      exceeded the byte cap for this interval, so the counts above are over the most recent
+      part of the window only. Treat rates as valid and totals as a floor.</div></div>`;
+  }
+  return h + `</div></section>`;
+}
+
+// ── 2 ─────────────────────────────────────────────────────────────────────
+// Outliers are defined here, on the page, in one sentence, because "heavy
+// user" is a judgement and a reader is entitled to know which judgement was
+// applied. The rule is deliberately crude and stated: a peer is flagged when it
+// makes at least five times the median active peer's requests AND at least
+// twenty requests, so a quiet window with two requests and one cannot manufacture
+// an outlier out of nothing.
+// The ownership reading for the peers IN THIS WINDOW, which is a different
+// population from the whole census (peers.html carries that one). Stated as a
+// sentence under the table because the actionable part is not the ratio, it is
+// WHICH kind of unresolved: a peer with no manifest is a different job from a
+// peer nothing could record an owner for.
+function ownerCoverage(peers){
+  if(!peers.length) return "";
+  const k = {};
+  peers.forEach(p => { const t = (p.owner||{}).kind || "unknown"; k[t] = (k[t]||0)+1; });
+  const named = (k.registry||0) + (k.name||0) + (k.custody||0) + (k.declared||0);
+  if(k.unread === peers.length){
+    return `<p class="sub">No owner could be checked for any peer here — neither the
+      resolver nor the registry file answered on this host. That is a gap in the
+      reading, not a fleet with no owners.</p>`;
+  }
+  // An unmatched peer is labelled by what its name says (`shape`), because a
+  // roster that has not caught up, a machine with no custodian found, and a
+  // name with no principal are three different jobs.
+  const shapes = {};
+  peers.forEach(p => {
+    const o = p.owner || {};
+    if(o.kind === "unmatched"){ const s = o.shape || "none"; shapes[s] = (shapes[s]||0)+1; }
+  });
+  const gaps = [];
+  if(k.team) gaps.push(plural(k.team, "answers to its scope's platform admins",
+    "answer to their scope's platform admins"));
+  if(shapes.person) gaps.push(plural(shapes.person, "carries a handle the roster does not have",
+    "carry a handle the roster does not have") + " — the roster has not caught up, or the handle was renamed");
+  if(shapes.machine) gaps.push(plural(shapes.machine, "is a machine", "are machines")
+    + " with no custodian found");
+  if(shapes.none) gaps.push(plural(shapes.none, "carries no principal in its name",
+    "carry no principal in their names") + " — never onboarded through the operator path");
+  if(k.ambiguous) gaps.push(plural(k.ambiguous, "matches", "match")
+    + " more than one declared identity");
+  if(k.unread) gaps.push(plural(k.unread, "could", "could") + " not be checked");
+  const lead = (k.name||0) + (k.custody||0) + (k.declared||0);
+  const graded = named ? `, ${k.registry||0} of them RECORDED (a live identity behind the
+    handle)${lead ? ` and ${lead} a lead — a roster handle, a custodian, or a declared line` : ""}` : "";
+  return `<p class="sub">${named} of ${peers.length} peers in this window reach a named
+    owner${graded}${gaps.length ? ". Of the rest, " + gaps.join("; ") : ""}.</p>`;
+}
+
+function whoIsAsking(dm, c, links){
+  const peers = dm.peers || [];
+  const counts = peers.map(p=>p.requests).sort((a,b)=>a-b);
+  const med = counts.length ? counts[Math.floor(counts.length/2)] : null;
+  const heavy = med ? peers.filter(p=>p.requests >= 5*med && p.requests >= 20) : [];
+
+  let h = `<section class="q"><h2><span class="n">2.</span>Who is asking, and is anyone an outlier?</h2>
+    <p class="lede">Only peers whose requests carried their own mesh address. A peer absent
+    from this table asked for nothing over the mesh entrypoint in this window — it is not
+    a peer we failed to measure.</p><div class="grid">`;
+  h += card3("Median active peer", "Requests made by the middle peer of those seen.",
+             num(med), "", "the yardstick the outlier rule uses");
+  h += card3("Outliers", "At least 5x the median and at least 20 requests.",
+             num(heavy.length), heavy.length?"warn":"good",
+             heavy.length?"named below":"nobody stands out in this window");
+  h += card3("Busiest peer", "Requests from the single heaviest peer.",
+             num(peers.length?peers[0].requests:null), "",
+             peers.length?esc(shortPeer(peers[0].name)):"");
+  // Concentration is only a reading when there is something to concentrate.
+  // With one active peer the share is trivially 100% and colouring it amber
+  // would page somebody about a single operator opening a page.
+  const concentrated = peers.length >= 3 && dm.requests_attributable;
+  h += card3("Share from the top peer", "How concentrated the traceable demand is.",
+             concentrated ? pct(peers[0].requests/dm.requests_attributable) : null,
+             (concentrated && peers[0].requests/dm.requests_attributable>0.7)?"warn":"",
+             concentrated ? "one peer carrying most of it is a person, not a trend"
+                          : `needs at least 3 active peers to mean anything — ${peers.length} seen`);
+
+  h += `<div class="card c12"><h3>Peers by demand</h3>
+    <p class="d">Requests, bytes and 95th-percentile response time per peer, with the role
+    and client the peer carries. <b>p95 here is what the peer experienced</b>, so a slow row
+    beside a fast fleet is usually that peer's path, not the service.
+    <b>Owner</b> is the identity answerable for the peer — the person themselves, or, for a
+    machine, the custodian who enrolled it. It links into the identity roster.</p>
+    <table><thead><tr>
+      <th style="width:22%">Peer</th><th style="width:15%">Owner</th><th>Role</th>
+      <th class="n">Req/s</th><th class="n">Requests</th>
+      <th class="n">Bytes</th><th class="n">p95</th><th class="n">Services</th>
+      <th>Mostly</th><th>Client</th></tr></thead><tbody>
+    ${peers.slice(0,25).map(p=>{
+      const isHeavy = med && p.requests >= 5*med && p.requests >= 20;
+      return `<tr>
+        <td class="mono name" title="${esc(p.name)}">${isHeavy?'<span class="chip relay">heavy</span> ':""}${esc(shortPeer(p.name))}</td>
+        <td class="mono">${ownerCell(p.owner, links)}</td>
+        <td class="mono">${esc(p.role||"—")}</td>
+        <td class="n">${rps(p.rps)}</td>
+        <td class="n">${num(p.requests)}</td>
+        <td class="n">${bytes(p.bytes)}</td>
+        <td class="n">${ms(p.p95_ms)??"—"}</td>
+        <td class="n">${p.services}</td>
+        <td class="mono">${esc(p.top_service||"—")}</td>
+        <td class="mono">${esc(p.version||"—")}</td></tr>`;
+    }).join("") || '<tr><td colspan="10" class="sub">no peer made an attributable request in this window</td></tr>'}
+    </tbody></table>
+    ${ownerCoverage(peers)}</div>`;
+
+  if((dm.peers||[]).length){
+    h += `<div class="card c6"><h3>Requests by peer</h3>
+      <p class="d">The concentration, drawn.</p>
+      ${bars(peers.slice(0,10).map(p=>({name:shortPeer(p.name),value:p.requests})),"count")}</div>`;
+    h += `<div class="card c6"><h3>Bytes by peer</h3>
+      <p class="d">Ranked by bytes rather than requests. A different peer at the top means
+      someone is pulling artifacts, not browsing.</p>
+      ${bars(peers.slice().sort((a,b)=>b.bytes-a.bytes).slice(0,10)
+             .map(p=>({name:shortPeer(p.name),value:p.bps})),"bps")}</div>`;
+  }
+  return h + `</div></section>`;
+}
+
+// ── 3 ─────────────────────────────────────────────────────────────────────
+function whatFor(dm){
+  const svcs = dm.services || [];
+  let h = `<section class="q"><h2><span class="n">3.</span>What are they asking for?</h2>
+    <p class="lede">Per service, over the same window. <code>Clients</code> counts only
+    peers that could be named, so a busy service with zero clients is one reached entirely
+    through the ingress tunnel — not one nobody uses.</p><div class="grid">`;
+  h += `<div class="card c12"><h3>Services by demand</h3>
+    <table><thead><tr>
+      <th style="width:22%">Service</th><th>Class</th><th class="n">Req/s</th><th class="n">Requests</th>
+      <th class="n">Bytes/s</th><th class="n">Mean</th><th class="n">p95</th>
+      <th class="n">Named clients</th><th class="n">5xx</th></tr></thead><tbody>
+    ${svcs.map(s=>`<tr>
+      <td class="mono name">${esc(s.name)}</td>
+      <td><span class="chip">${esc(s.class)}</span></td>
+      <td class="n">${rps(s.rps)}</td>
+      <td class="n">${num(s.requests)}</td>
+      <td class="n">${bps(s.bps)}</td>
+      <td class="n">${ms(s.mean_ms)??"—"}</td>
+      <td class="n">${ms(s.p95_ms)??"—"}</td>
+      <td class="n">${s.clients}</td>
+      <td class="n">${s.err_5xx?`<span class="err">${s.err_5xx}</span>`:"0"}</td></tr>`).join("")
+      || '<tr><td colspan="9" class="sub">no service carried a request in this window</td></tr>'}
+    </tbody></table></div>`;
+
+  const browse = svcs.filter(s=>s.class==="browse");
+  if(browse.length){
+    h += `<div class="card c6"><h3>Browsing surfaces by request rate</h3>
+      <p class="d">Which surfaces people actually open. Probes are already removed, so a
+      surface at zero is genuinely unused rather than being visited four times a minute
+      by a health check.</p>
+      ${bars(browse.map(s=>({name:s.name,value:s.rps})),"rps")}</div>`;
+    // A stream-carrying service has NO p95 — its duration is a connection
+    // lifetime, not a response time — and `s.p95_ms||0` would draw it as a
+    // zero-millisecond bar, i.e. the fastest surface on the goatnet. Untimed
+    // services are named beneath the chart instead of being drawn at zero.
+    const timedBrowse = browse.filter(s=>s.p95_ms!=null);
+    const untimed = browse.filter(s=>s.p95_ms==null).map(s=>s.name);
+    h += `<div class="card c6"><h3>Browsing surfaces by p95</h3>
+      <p class="d">Slowest first is what matters here; a surface nobody uses being slow is
+      a smaller problem than the busy one beside it.</p>
+      ${timedBrowse.length
+        ? bars(timedBrowse.slice().sort((a,b)=>b.p95_ms-a.p95_ms)
+               .map(s=>({name:s.name,value:s.p95_ms})),"ms")
+        : '<p class="sub">No browsing surface in this window has a response time to report.</p>'}
+      ${untimed.length ? `<div class="sub">Not timed, because their duration is a
+        connection lifetime rather than a response time:
+        ${untimed.map(n=>`<code>${esc(n)}</code>`).join(" ")}. Their requests and bytes
+        are still counted everywhere else on this page.</div>` : ""}</div>`;
+  }
+  return h + `</div></section>`;
+}
+
+// ── 4 ─────────────────────────────────────────────────────────────────────
+// The contention question, answered with the only test the data supports, and
+// with its limits stated in the same breath as its result.
+function contention(dm){
+  const ct = dm.contention || {};
+  let h = `<section class="q"><h2><span class="n">4.</span>Is browsing competing with the core?</h2>
+    <p class="lede">The question this surface exists for: does peer usage of panoscope,
+    the map and the other browsing surfaces degrade signal, management and auth?</p>
+    <div class="grid">`;
+
+  if(!ct.testable){
+    h += `<div class="card c12">${UNK}
+      <div class="sub">${esc(ct.reason || "not enough of this window carries both classes to compare")}.
+      A comparison run on a sample this thin would produce a number, and the number would
+      not mean anything. Lengthen the poll window if this stays blank.</div></div>`;
+    return h + `</div></section>`;
+  }
+
+  const dq = ct.quiet_core_p95_ms, db = ct.busy_core_p95_ms;
+  const delta = (dq!=null && db!=null) ? db - dq : null;
+  const ratio = (dq) ? db/dq : null;
+  // Refuse a verdict on a difference too small to survive a five-minute
+  // sample. A 0.8 ms separation on a 4 ms baseline is scheduling noise, and
+  // announcing it as contention is how a dashboard trains people to ignore it.
+  let verdict, vclass;
+  if(delta==null){ verdict="Cannot place this — one side of the comparison has no measurement."; vclass="unknown"; }
+  else if(db < 50 && delta < 5){
+    verdict = `No contention visible. Core responses ran ${ms(dq)} in the quietest browsing minutes and `
+            + `${ms(db)} in the busiest — a ${ms(Math.abs(delta))} difference on a sub-50 ms baseline, `
+            + `which is inside the noise of a ${secs(ct.minutes*60)} sample.`;
+    vclass = "good";
+  } else if(ratio!=null && ratio >= 2){
+    verdict = `Core responses are ${ratio.toFixed(1)}x slower in the busiest browsing minutes `
+            + `(${ms(db)}) than the quietest (${ms(dq)}). Worth investigating — this is an `
+            + `association within one window, not proof that browsing caused it.`;
+    vclass = "crit";
+  } else if(delta > 0){
+    verdict = `Core responses are ${ms(delta)} slower in the busiest browsing minutes `
+            + `(${ms(db)} against ${ms(dq)}). Visible, not yet alarming.`;
+    vclass = "warn";
+  } else {
+    verdict = `Core responses were no slower in the busiest browsing minutes `
+            + `(${ms(db)} against ${ms(dq)}). No competition visible.`;
+    vclass = "good";
+  }
+
+  h += `<div class="card c12"><h3>Reading</h3>
+    <p class="d">This window's minutes are ranked by browsing request count. The busiest
+    third and the quietest third are compared on core-service p95.</p>
+    <div class="v ${vclass}" style="font-size:19px;line-height:1.45">${esc(verdict)}</div>
+    <div class="sub"><b>What this is not.</b> It does not randomise, it controls for
+    nothing, and both thirds come from the same few minutes. A difference here is a reason
+    to look, never a finding on its own. Driving it deliberately is a load test
+    (zenoh-loadtest.md), and a load test is what would settle it.</div></div>`;
+
+  h += card3("Browsing, quietest third", "Mean browsing requests per minute.",
+             ct.quiet_browse_rpm==null?null:ct.quiet_browse_rpm.toFixed(1), "",
+             `${num(ct.quiet_core_n)} core requests in those minutes`);
+  h += card3("Browsing, busiest third", "Mean browsing requests per minute.",
+             ct.busy_browse_rpm==null?null:ct.busy_browse_rpm.toFixed(1), "",
+             `${num(ct.busy_core_n)} core requests in those minutes`);
+  h += card3("Core p95, quiet", "Core-service 95th percentile in the quiet third.",
+             ms(dq), "", "");
+  h += card3("Core p95, busy", "Core-service 95th percentile in the busy third.",
+             ms(db), delta>5?"warn":"", `${ct.minutes} minute(s) compared`);
+
+  if(ct.browse_separation!=null && ct.busy_browse_rpm && ct.browse_separation < 0.2*ct.busy_browse_rpm){
+    h += `<div class="card c12"><div class="note flat"><b>The two thirds barely differ in
+      browsing load</b> (${ct.quiet_browse_rpm.toFixed(1)} against ${ct.busy_browse_rpm.toFixed(1)}
+      requests per minute), so this window contains no real contrast to test. Whatever the
+      verdict above says, this particular sample could not have detected contention.</div></div>`;
+  }
+  return h + `</div></section>`;
+}
+
+// ── 5 ─────────────────────────────────────────────────────────────────────
+function costSection(cost, dm, c){
+  let h = `<section class="q"><h2><span class="n">5.</span>What does a peer cost?</h2>
+    <p class="lede">Split by what generates it. <b>Baseline</b> is what a connected peer
+    costs by existing — signal, management, auth — and it scales with how many peers are
+    connected. <b>Active</b> is what a person costs by using something, and it scales with
+    usage, not headcount.</p><div class="grid">`;
+  h += card3("Connected peers", "The denominator for baseline.",
+             num(cost.connected), "", "enrolled-but-offline peers cost nothing on the wire");
+  h += card3("Baseline per connected peer", "Core-plane bytes divided by connected peers.",
+             bps(cost.baseline_bps_per_peer), "",
+             cost.baseline_rps_per_peer==null?"":`${rps(cost.baseline_rps_per_peer)} of requests each`);
+  h += card3("Baseline share of bytes", "How much of the ingress is peers merely being present.",
+             pct(cost.baseline_share),
+             cost.baseline_share>0.9?"warn":"",
+             "a high share means growth is priced by headcount, not by usage");
+  h += card3("Active per busy peer", "Browsing bytes divided by the peers that actually browsed.",
+             bps(cost.active_bps_per_active_peer), "",
+             cost.active_peers?`${cost.active_peers} peer(s) were active`:"");
+
+  if(cost.baseline_bps!=null || cost.active_bps!=null){
+    h += `<div class="card c12"><h3>Baseline against active</h3>
+      <p class="d">The whole capacity argument in one bar. If baseline dominates, adding
+      peers costs bandwidth whether or not anybody uses the goatnet, and the lever is the
+      control plane rather than the surfaces.</p>
+      ${splitBar([{name:"baseline — peers being connected",value:cost.baseline_bps||0},
+                  {name:"active — people using surfaces",value:cost.active_bps||0}],"bps")}</div>`;
+  }
+
+  if(cost.baseline_bps_per_peer!=null){
+    const per = cost.baseline_bps_per_peer;
+    h += `<div class="card c12"><h3>What another hundred peers would cost</h3>
+      <p class="d">A <b>projection</b>, linear in connected peers, from the measured
+      per-peer baseline above. Marked as a projection because it is one.</p>
+      <table><thead><tr><th>Connected peers</th><th class="n">Projected baseline</th></tr></thead><tbody>
+      ${[cost.connected, 100, 250, 500, 1000].filter(n=>n).map(n=>
+        `<tr><td class="mono">${num(n)}${n===cost.connected?" (today, measured)":""}</td>
+         <td class="n">${n===cost.connected?bps(cost.baseline_bps):bps(per*n)}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="sub"><b>The assumption, and where it breaks.</b> ${esc(cost.projection_basis||"")}.
+      Signal federation forwarding between management shards is super-linear in peers and is
+      not in this line, so treat the projection as a floor. The measured row is the only row
+      here that is a measurement.</div></div>`;
+  }
+
+  if(cost.classes_why){
+    h += `<div class="card c12"><h3>What counts as which</h3>
+      <p class="d">Declared, not inferred. Change these in
+      <code>peerview-service-classes.yaml</code> and this page changes with them.</p>
+      <ul class="tight">${Object.keys(cost.classes_why).map(k=>
+        `<li><code>${esc(k)}</code> — ${esc(cost.classes_why[k])}</li>`).join("")}</ul></div>`;
+  }
+  return h + `</div></section>`;
+}
+
+// ── 6 ─────────────────────────────────────────────────────────────────────
+function cycleSection(cy, d){
+  let h = `<section class="q"><h2><span class="n">6.</span>How does this change over a day, and over months?</h2>
+    <p class="lede">From the poller's own ledger. Prometheus on this goatnet retains
+    fifteen days, so a month-over-month line drawn from it would be an extrapolation
+    wearing a chart's clothes. This accumulates instead, and states how much it has.</p>
+    <div class="grid">`;
+
+  const days = cy.days || 0;
+  h += card3("History accumulated", "How long this ledger has been running.",
+             days>=1 ? days.toFixed(1)+" days" : (cy.hours||0).toFixed(1)+" hours",
+             days<1?"warn":days<7?"":"good",
+             `${num(cy.rows)} ledger rows`);
+  const hod = (cy.hour_of_day||[]).filter(x=>x.samples>0);
+  h += card3("Hours of day covered", "Hours with at least one sample.",
+             num(hod.length)+" / 24", hod.length<24?"warn":"good",
+             hod.length<24?"the profile below is incomplete":"");
+  const months = cy.by_month||[];
+  h += card3("Months covered", "Calendar months with samples.",
+             num(months.length), months.length<2?"warn":"good",
+             months.length<2?"a trajectory needs at least two":"");
+  h += card3("Ledger started", "First row.",
+             cy.span_start ? new Date(cy.span_start*1000).toISOString().slice(0,16).replace("T"," ") : null,
+             "", "kept on the host, not in Prometheus");
+
+  if(days < 1){
+    h += `<div class="card c12"><div class="note flat"><b>Too early for a daily cycle.</b>
+      This ledger holds ${(cy.hours||0).toFixed(1)} hours. A twenty-four-hour profile drawn
+      from one morning is a picture of that morning. The panels below fill in on their own;
+      hours with no sample are hatched rather than drawn at zero.</div></div>`;
+  }
+
+  if(hod.length){
+    const maxC = Math.max(...hod.map(x=>x.connected||0)) || 1;
+    h += `<div class="card c6"><h3>Connected peers by hour of day (UTC)</h3>
+      <p class="d">Mean across every day in the ledger. Hatched columns have no sample yet.</p>
+      <div class="hod">${(cy.hour_of_day||[]).map(x=>
+        x.samples ? `<span class="h" title="${x.name}:00 — ${num(x.connected)} connected (${x.samples} samples)"
+                      style="height:${Math.max(2,(x.connected||0)/maxC*100)}%"></span>`
+                  : `<span class="h thin" title="${x.name}:00 — no sample" style="height:100%"></span>`).join("")}</div>
+      <div class="hodx">${(cy.hour_of_day||[]).map(x=>x.name%3===0?x.name:"").map(l=>`<span>${l}</span>`).join("")}</div>
+      </div>`;
+    const maxR = Math.max(...hod.map(x=>x.rps||0)) || 1;
+    h += `<div class="card c6"><h3>Request rate by hour of day (UTC)</h3>
+      <p class="d">Same ledger, demand rather than population. These two peaking at
+      different hours is the interesting case: it means the load is not the people.</p>
+      <div class="hod">${(cy.hour_of_day||[]).map(x=>
+        x.samples ? `<span class="h" title="${x.name}:00 — ${rps(x.rps)} (${x.samples} samples)"
+                      style="height:${Math.max(2,(x.rps||0)/maxR*100)}%;background:var(--s3)"></span>`
+                  : `<span class="h thin" title="${x.name}:00 — no sample" style="height:100%"></span>`).join("")}</div>
+      <div class="hodx">${(cy.hour_of_day||[]).map(x=>x.name%3===0?x.name:"").map(l=>`<span>${l}</span>`).join("")}</div>
+      </div>`;
+  }
+
+  if(months.length){
+    h += `<div class="card c6"><h3>Connected peers by month</h3>
+      <p class="d">Mean connected, per calendar month of ledger history.</p>
+      ${bars(months.map(m=>({name:m.name,value:m.connected||0})),"count")}</div>`;
+    h += `<div class="card c6"><h3>Request rate by month</h3>
+      <p class="d">Mean request rate, same months.</p>
+      ${bars(months.map(m=>({name:m.name,value:m.rps||0})),"rps")}</div>`;
+  }
+  h += `<div class="card c12"><div class="note flat"><b>Population growth is not here, on
+    purpose.</b> It does not need the ledger: every peer carries the date it was enrolled,
+    so the enrolment history is complete from the poller's first run. It is on
+    <a href="./peers.html">Peers &amp; people</a>. This section covers only what has no such
+    record — how many were <i>connected</i>, and how much was being <i>asked</i>, at a
+    given hour.</div></div>`;
+  return h + `</div></section>`;
+}
+
+load("peerview.json", render);
+</script>
+</body>
+</html>

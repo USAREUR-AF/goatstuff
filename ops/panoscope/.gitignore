@@ -1,0 +1,7 @@
+target/
+*.swp
+.DS_Store
+
+# Frontend build artifacts — produced by `npm run build`; embedded
+# into the Rust binary via rust-embed at compile time.
+frontend/dist/

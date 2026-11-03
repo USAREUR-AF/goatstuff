@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network Load &amp; Headroom</title>
+<style>
+/* Served by the relay-health nginx alongside index.html and
+   node-net-health.html. Reads netview.json, written by netview-poll.py on a
+   host timer — the browser never queries Prometheus, so viewers cost nothing
+   (ADR 1123: client demand must not amplify into backend work). */
+:root{
+  color-scheme:dark;
+  --plane:#0e1014; --surface:#1a1a19; --surface-2:#202024; --raised:#232327;
+  --line:#34363d; --line-soft:#292b31;
+  --ink:#fff; --ink-2:#c3c2b7; --ink-3:#8f9199;
+  --accent:#6ea8e8; --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  --unknown:#9aa0ab; --hatch:#4a4d55;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;
+}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  color-scheme:light;
+  --plane:#eef0f4; --surface:#fcfcfb; --surface-2:#f6f7f9; --raised:#fff;
+  --line:#d6dae2; --line-soft:#e6e9ee;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#7c7f88;
+  --accent:#2a5f9e; --unknown:#6b7280; --hatch:#b9bec8;
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#4a3aa7;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.mono,code,.k,th,.tag{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 20px 70px}
+.mast{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:baseline;
+  padding-bottom:14px;border-bottom:1px solid var(--line)}
+.mast h1{margin:0;font-size:24px;font-weight:640;letter-spacing:-.015em}
+.mast .sub{color:var(--ink-2);font-size:13.5px}
+.mast .meta{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tag{font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;
+  border:1px solid var(--line);border-radius:3px;color:var(--ink-2);background:var(--surface-2)}
+a{color:var(--accent)}
+/* the five questions are the structure */
+.q{margin-top:30px}
+.q>h2{margin:0 0 2px;font-size:17px;font-weight:640;letter-spacing:-.01em}
+.q>h2 .n{display:inline-block;min-width:1.6em;color:var(--ink-3);font-weight:600}
+.q>.lede{margin:0 0 14px 1.6em;font-size:13px;color:var(--ink-2);max-width:76ch}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+/* Hard containment. A long peer name (e.g. a 60-char laptop hostname) made the
+   table wider than its card and the BIT/S column rendered OUTSIDE the panel
+   background — text floating on the page ground. `td` is nowrap by design so
+   numbers stay on one line, so the table cannot shrink itself; the card has to
+   clip, and the name cell has to truncate rather than push. */
+.card{overflow:hidden}
+.card table{table-layout:fixed;width:100%}
+td.mono,td.name{overflow:hidden;text-overflow:ellipsis}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:4px;
+  padding:12px 14px 14px;min-width:0}
+.card h3{margin:0 0 2px;font-size:12.5px;font-weight:620}
+.card .d{margin:0 0 10px;font-size:11.5px;color:var(--ink-3);line-height:1.45}
+.c3{grid-column:span 3}.c4{grid-column:span 4}.c6{grid-column:span 6}
+.c8{grid-column:span 8}.c12{grid-column:span 12}
+@media(max-width:900px){.c3,.c4,.c6,.c8{grid-column:span 12}}
+.v{font-size:29px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.v.sm{font-size:15px;font-weight:560;letter-spacing:0;line-height:1.35}
+.v.unknown{color:var(--unknown)}.v.good{color:var(--good)}
+.v.warn{color:var(--warn)}.v.crit{color:var(--crit)}
+.sub{margin-top:5px;font-size:11.5px;color:var(--ink-3)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;letter-spacing:.03em;
+  text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid currentColor}
+.bars{display:grid;gap:7px}
+.bar{display:grid;grid-template-columns:150px 1fr auto;gap:10px;align-items:center;font-size:12px}
+.bar .k{color:var(--ink-2);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .track{background:var(--line-soft);border-radius:2px;height:15px;overflow:hidden}
+.bar .fill{display:block;height:100%;border-radius:2px}
+.bar .n{font-size:11.5px;color:var(--ink-2)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);padding:0 10px 6px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:6px 10px 6px 0;border-bottom:1px solid var(--line-soft);color:var(--ink-2);white-space:nowrap}
+/* Alignment is a property of the COLUMN, so both cell types are set in ONE rule.
+   This said `td.n` while the `th` rule above says text-align:left
+   unconditionally. The markup was already right — these tables have carried
+   `<th class="n">` all along — but nothing matched it, so every numeric header
+   sat left-aligned over right-aligned data, by a gap that grows with column
+   width. Keep th.n and td.n together; splitting them is what let one side move
+   without the other. */
+td.n,th.n{text-align:right}
+td.n{font-family:ui-monospace,Menlo,monospace;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+tr:last-child td{border-bottom:0}
+.chip{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:3px;
+  border:1px solid var(--line);color:var(--ink-2);font-family:ui-monospace,Menlo,monospace}
+.chip.relay{border-color:var(--s2);color:var(--s2)}
+.chip.p2p{border-color:var(--s1);color:var(--s1)}
+.stack{display:flex;height:34px;border-radius:3px;overflow:hidden;background:var(--line-soft)}
+.stack span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:9px;font-size:11.5px;color:var(--ink-2)}
+.legend .it{display:flex;align-items:center;gap:6px}
+.legend .sw{width:10px;height:10px;border-radius:2px;flex:none}
+.note{background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--warn);
+  border-radius:4px;padding:12px 14px;font-size:13px;color:var(--ink-2);margin:18px 0 0}
+.note.ok{border-left-color:var(--good)}
+.note.bad{border-left-color:var(--crit)}
+.note b{color:var(--ink)}
+/* Panel copy is reference, not prose. Bullets over paragraphs: an operator
+   scans a dashboard, they do not read it. */
+ul.tight{margin:0 0 10px;padding-left:16px}
+ul.tight li{margin:0 0 3px}
+.shed li{margin-bottom:7px;font-size:12.5px;color:var(--ink-2)}
+.shed code{color:var(--ink)}
+footer{margin-top:38px;padding-top:15px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--ink-3)}
+.err{color:var(--crit)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <h1>Network Load &amp; Headroom</h1>
+      <div class="sub">How full the pipe is, what is filling it, and what to turn down first</div>
+    </div>
+    <div class="meta">
+      <span class="tag" id="host">—</span>
+      <span class="tag" id="age">—</span>
+      <a class="tag" href="./response.html">Response &amp; pressure ▸</a>
+    </div>
+  </header>
+
+  <div id="staleness"></div>
+  <div id="body"></div>
+
+  <footer>
+    Served from <code>netview.json</code>, written on the host by
+    <code>ops/netview/netview-poll.py</code> — the browser never queries
+    Prometheus, so a viewer costs nothing (ADR 1123).
+    Design: <code>docs/design/mesh-bandwidth-attribution.md</code> (ADR 1128).
+    Shed policy: <code>ops/observability/bandwidth-categories.yaml</code>.
+    Drill and edit in <a id="graflink" href="#">Grafana</a>.
+  </footer>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const CO = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7"];
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// null means NOT MEASURED and must never render as a number. This is the
+// single most important function on the page.
+const UNK = '<span class="v sm unknown">not measured</span>';
+function bps(v){
+  if(v===null||v===undefined) return null;
+  const a=Math.abs(v);
+  if(a>=1e9) return (v/1e9).toFixed(2)+" Gbit/s";
+  if(a>=1e6) return (v/1e6).toFixed(2)+" Mbit/s";
+  if(a>=1e3) return (v/1e3).toFixed(0)+" kbit/s";
+  return v.toFixed(0)+" bit/s";
+}
+// Byte SIZES, not rates. Separate from bps() because confusing a size with a
+// rate is exactly the class of error this page exists to avoid.
+function bytes(v){
+  if(v===null||v===undefined) return null;
+  const u=["B","KB","MB"]; let i=0, x=Math.abs(v);
+  while(x>=1024 && i<u.length-1){ x/=1024; i++; }
+  return x.toFixed(i?1:0)+" "+u[i];
+}
+// Requests per second. Its own unit because a rate rendered through pct()
+// would print "231.9%" for 2.319 req/s.
+function rps(v){
+  if(v===null||v===undefined) return null;
+  const a=Math.abs(v);
+  return (a>=100 ? v.toFixed(0) : a>=10 ? v.toFixed(1) : v.toFixed(2)) + " req/s";
+}
+const pct = v => v===null||v===undefined ? null : (v*100).toFixed(1)+"%";
+const secs = v => v===null||v===undefined ? null : v<90 ? v.toFixed(0)+" s" : (v/60).toFixed(1)+" min";
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function val(v, cls){ return v===null ? UNK : `<div class="v ${cls||""}">${v}</div>`; }
+
+function bars(rows, unit){
+  if(!rows||!rows.length) return '<p class="sub">Nothing in this group is currently moving bytes.</p>';
+  const max = Math.max(...rows.map(r=>r.value))||1;
+  return '<div class="bars">'+rows.map((r,i)=>{
+    const c = r.hatch ? `repeating-linear-gradient(45deg,${cssv("--hatch")} 0 3px,${cssv("--surface-2")} 3px 6px)`
+                      : cssv(CO[i%CO.length]);
+    return `<div class="bar"><span class="k mono" title="${esc(r.name)}">${esc(r.name)}</span>
+      <span class="track"><span class="fill" style="width:${(r.value/max*100).toFixed(1)}%;background:${c}"></span></span>
+      <span class="n">${unit==="s"?p99s(r.value):unit==="pct"?pct(r.value):bps(r.value)}</span></div>`;
+  }).join("")+'</div>';
+}
+
+// ── what the big bar MEANS ────────────────────────────────────────────────
+// The chart below is honest and was still unreadable. On a relay-ingress host
+// the rathole tunnel is most of the pipe, and a large bar dominating a
+// chart reads as "this machine is busy" or "something is wrong" when it means
+// neither: those tunnels carry OTHER PEERS' traffic THROUGH this box (ADR
+// 1085). It is plumbing, not work.
+//
+// Naming the row and printing a number left the reader to derive that, and
+// nobody derives it — the operator question was literally "what is the viewer
+// supposed to understand from that". So the page states the conclusion, in the
+// two numbers that carry it: how much of the pipe is transit, and how much is
+// this node's own work. Computed, never asserted: a host that is NOT a relay
+// ingress renders the same sentence with a small transit share, which is also
+// the right answer for it.
+function transitVerdict(p, t){
+  // t.nic_rx_bps is the NIC over the SAME rate window as the socket series;
+  // p.nic_rx_bps is the 5m headline. Dividing a 20m numerator by a 5m
+  // denominator is what produced 126% and "tunnel exceeds NIC".
+  const nic = (t.nic_rx_bps ?? p.nic_rx_bps), tun = t.relay_tunnel_rx_bps, own = t.own_workload_rx_bps;
+  if(nic===null || nic===0 || tun===null) return "";
+  const transitPct = tun / nic * 100;
+  // A class cannot exceed the interface it is measured on. When it does, the
+  // two counters are not measuring the same thing and the RATIO IS THE BUG —
+  // say so, never render "126%" as if it were a reading.
+  if(transitPct > 100) return `<div class="note bad"><b>Inconsistent:</b> tunnel class
+    ${bps(tun)} exceeds NIC ${bps(nic)}. Same-denominator assumption is broken —
+    treat both as unreliable until reconciled.</div>`;
+  // Below a third, this host is not meaningfully acting as a relay ingress and
+  // the sentence would be noise. Say nothing rather than pad the page.
+  if(transitPct < 33) return "";
+  return `<div class="note"><b>${transitPct.toFixed(0)}% inbound is tunnelled service
+    traffic</b> — ${bps(tun)}, terminating here, not transit.
+    ${own===null ? `` : ` This node's own workload ${bps(own)}, which undercounts —
+    socket attribution only sees the host network namespace, so work inside
+    container namespaces is missing from it.`}</div>`;
+}
+
+// ── surface canary, two planes (ADR 1133) ─────────────────────────────────
+// Renders the app and gate readings SIDE BY SIDE and never merges them. A
+// "gate-only" row is not a warning: it means the surface is healthy and the
+// front door is alive, and the probe has no credential to see further. Saying
+// that plainly is the whole point — the previous probe followed the redirect
+// and reported Ory's login page as the surface, at 195 ms.
+const CANARY_WORDS = {
+  "up":           ["good", "loading"],
+  "gate-only":    ["",     "up, gate not passed"],
+  "surface-down": ["crit", "not answering"],
+  "unreachable":  ["crit", "front door unreachable"],
+  "unmeasured":   ["unknown", "not measured"],
+};
+
+function canaryCards(c){
+  if(!c || !c.n_total){
+    return `<div class="card c6"><h3>Are the heavy surfaces loading?</h3>
+      <p class="d">Actively fetched, so this answers whether or not anyone is using them.</p>
+      ${UNK}<div class="sub">No probe series yet. The blackbox surface jobs are
+      not deployed on this goatnet, which is a different fact from every surface
+      being down.</div></div>`;
+  }
+  const bad = c.n_bad;
+  const cls = bad ? "crit" : (c.n_gate_only ? "" : "good");
+  let h = `<div class="card c3"><h3>Heavy surfaces loading</h3>
+    <p class="d">Actively probed every ${c.app_interval_s}s, so a surface nobody
+    clicked is still watched.</p>
+    ${val(`${c.n_up + c.n_gate_only} / ${c.n_total}`, cls)}
+    <div class="sub">${bad ? `${bad} not answering — see the list` :
+      `none failing; ${c.n_gate_only} measured at the app only, behind the auth gate`}</div></div>`;
+
+  const rows = (c.surfaces||[]).filter(r => r.verdict !== "up").slice(0, 8);
+  const shown = rows.length ? rows : (c.surfaces||[]).slice(0, 6);
+  h += `<div class="card c3"><h3>Surface by surface</h3>
+    <p class="d">App = the container itself. Gate = through Traefik and the
+    login gate, as a browser arrives. Two planes, never summed.</p>
+    <div class="bars">` + shown.map(r => {
+      const [k, word] = CANARY_WORDS[r.verdict] || ["unknown", r.verdict];
+      const app = r.app_ms===null ? (r.app_probed ? "—" : "no container")
+                                  : r.app_ms.toFixed(0)+" ms";
+      return `<div class="bar"><span class="k mono" title="${esc(r.surface)}">${esc(r.surface)}</span>
+        <span class="track"><span class="v sm ${k}">${word}</span></span>
+        <span class="n mono">${esc(app)}</span></div>`;
+    }).join("") + `</div>
+    <div class="sub">${c.exercises_fabric
+      ? "This probe issues a real fabric query, so it applies fabric pressure."
+      : "These probe constant health handlers: no fabric query, so the canary itself applies no fabric load (ADR 1123)."}</div></div>`;
+  return h;
+}
+
+// p99 rendered HONESTLY against the histogram's own resolution.
+//
+// Several services reading the same "0.099 s" is neither a default nor a
+// measurement: it is
+// histogram_quantile interpolating INSIDE the first bucket. When every request
+// lands under le=0.1, the p99 estimate is arithmetically 0.1 x 0.99 = 0.099 for
+// every such service — identical numbers that look measured and are not. The
+// only true statement available is "faster than the finest bucket we have".
+//
+// So anything below the first bucket edge renders "< 0.1 s". Same discipline as
+// null -> "not measured": never imply resolution the data does not carry.
+let FIRST_BUCKET = null;   // set from response.bucket_edges[0] at render time
+function p99s(v){
+  if(v===null||v===undefined) return null;
+  if(FIRST_BUCKET!==null && v < FIRST_BUCKET) return "< "+FIRST_BUCKET+" s";
+  return v.toFixed(3)+" s";
+}
+
+function render(d){
+  // Wire the histogram's own first bucket into the p99 formatter, so
+  // "< 0.1 s" tracks the real bucket layout instead of a hard-coded guess.
+  FIRST_BUCKET = (d.response && d.response.bucket_edges && d.response.bucket_edges.length)
+                 ? d.response.bucket_edges[0] : null;
+  $("#host").textContent = `host ${d.host_filter==="*"||d.host_filter===".*" ? "all" : d.host_filter}`;
+  const age = Math.max(0, Math.floor(Date.now()/1000 - d.generated_unix));
+  $("#age").textContent = `updated ${age}s ago`;
+  $("#graflink").href = "/d/mesh-bandwidth-attribution";
+
+  const p = d.pipe, t = d.transport, sh = d.shed, tr = d.trust;
+  const capUnknown = p.capacity_rx_bps===null;
+  let h = "";
+
+  // staleness / trust banner — first, because everything below rests on it
+  const stale = tr.attribution_age_s!==null && tr.attribution_age_s > 300;
+  const blind = tr.mesh_plane_blind;
+  if(stale || blind || tr.textfile_scrape_error){
+    h += `<div class="note"><b>Read the numbers below with care.</b> `;
+    if(stale) h += `The collector last reported ${secs(tr.attribution_age_s)} ago, so these are last-known values that age silently. `;
+    if(blind) h += `${blind} host(s) cannot read <code>netbird status</code>, so their mesh traffic reads as zero — which is not the same as idle. `;
+    if(tr.textfile_scrape_error) h += `A textfile failed to parse, so some metrics are missing entirely rather than zero. `;
+    h += `</div>`;
+  }
+
+  // ── 1 ───────────────────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">1.</span>How full is the pipe?</h2>
+    <p class="lede">Measured at the physical NIC. This is the plane with a capacity
+    denominator — the one number that turns bytes into a decision.</p><div class="grid">`;
+  h += `<div class="card c3"><h3>Downlink in use</h3><p class="d">NIC receive, right now.</p>
+        ${val(bps(p.nic_rx_bps))}<div class="sub">${capUnknown?"no declared capacity to compare against":"of "+bps(p.capacity_rx_bps)}</div></div>`;
+  h += `<div class="card c3"><h3>Uplink in use</h3><p class="d">NIC transmit.</p>
+        ${val(bps(p.nic_tx_bps))}<div class="sub">${capUnknown?"no declared capacity":"of "+bps(p.capacity_tx_bps)}</div></div>`;
+  h += `<div class="card c3"${capUnknown?' style="display:none"':""}><h3>Downlink utilisation</h3><p class="d">Share of the declared pipe.</p>
+        ${p.util_rx===null?UNK:val(pct(p.util_rx), p.util_rx>0.9?"crit":p.util_rx>0.75?"warn":"good")}
+        <div class="sub">${capUnknown?"blank because nobody has declared this link's capacity — deliberately not a guess":"warn at 75%, critical at 90%"}</div></div>`;
+  h += `<div class="card c3"><h3>Unexplained share of pipe</h3>
+        <p class="d">Left over after every measured transport class.</p>
+        ${t.other_share===null?UNK:val(pct(t.other_share), t.other_share>0.25?"crit":t.other_share>0.10?"warn":"good")}
+        <div class="sub">this is the honest ceiling on how much of the pipe is understood —
+        low is good, and a rise means something new is on the wire</div></div>`;
+  h += `<div class="card c3"><h3>Relayed share of mesh</h3><p class="d">Relay bandwidth is metered and the same payload is paid for twice.</p>
+        ${t.relayed_share===null?UNK:val(pct(t.relayed_share), t.relayed_share>0.5?"warn":"good")}
+        <div class="sub">a rise usually means peers silently losing their direct path</div></div>`;
+
+  // transport stack — sums to the NIC total by construction
+  // Every class here is MEASURED except the last, and the last must stay small.
+  // NAMED BY WHAT THE BYTES ARE ON THIS HOST, never by which machine they came
+  // from: naming a row "relay ingress tunnel" beside "mesh relayed" puts the
+  // word "relay" on two unrelated things and implies relay-fleet load shares a
+  // denominator with host load.
+  const tclasses = [
+    {name:"inbound service traffic (public HTTPS, via tunnel)", value:t.relay_tunnel_rx_bps},
+    {name:"mesh peer traffic — relayed path (WireGuard)", value:t["mesh-relayed_rx_bps"]},
+    {name:"mesh peer traffic — direct path (WireGuard)", value:t["mesh-p2p_rx_bps"]},
+    {name:"unexplained remainder", value:t.other_rx_bps, hatch:true},
+  ].filter(x=>x.value!==null);
+  const ttot = tclasses.reduce((a,b)=>a+b.value,0)||1;
+  h += `<div class="card c12"><h3>What the physical pipe is carrying — downlink</h3>
+    ${transitVerdict(p, t)}
+    <p class="d">Denominator: <b>this host's NIC only</b>. No relay's load is here —
+    relays are separate machines with their own capacity.</p>
+    <ul class="d tight">
+      <li>All rows <b>measured</b> except <b>unexplained remainder</b> — keep it small;
+        growth means something new is on the wire.</li>
+      <li>"via tunnel" = how bytes reached this NIC (ADR 1085). They terminate here.</li>
+      <li>Do not add to question 4 — same bytes, two layers (envelope vs payload).</li>
+    </ul>
+    <div class="stack">${tclasses.map((c,i)=>`<span style="width:${c.value/ttot*100}%;background:${cssv(CO[i])}" title="${esc(c.name)}"></span>`).join("")}</div>
+    <div class="legend">${tclasses.map((c,i)=>`<span class="it"><span class="sw" style="background:${cssv(CO[i])}"></span><span class="mono">${esc(c.name)}</span> <span style="color:var(--ink-3)">${bps(c.value)}</span></span>`).join("")}</div>
+    </div></div></section>`;
+
+  // ── Post-quantum key exchange ───────────────────────────────────────────
+  // ALWAYS rendered, including when the answer is zero. A panel that appears
+  // only when something is wrong makes "healthy" indistinguishable from "not
+  // measured" — the same honesty rule the rest of this page follows.
+  //
+  // This section measures a STANDING PROPERTY of the goatnet, not a campaign.
+  // A permanent surface has to answer the same question in a year, whichever
+  // way the number has moved.
+  const pq = d.pqc || {};
+  {
+    const on = pq.peers_enabled, known = pq.peers_known;
+    const share = (on !== null && on !== undefined && known) ? on / known : null;
+    const chg = pq.change_24h;
+    const sev = (on === null || on === undefined) ? "" : (on > 0 ? "warn" : "good");
+
+    h += `<section class="q"><h2><span class="n">◈</span>Post-quantum key exchange</h2>
+      <p class="lede">Rosenpass adds a Classic McEliece static public key —
+      ${bytes(pq.key_size_bytes)} — to every signal offer. The setting lives on each
+      client and survives both upgrades and re-enrolment, so the share of the fleet
+      carrying it is a property of the fleet, not of any one rollout.</p><div class="grid">`;
+
+    h += `<div class="card c3"><h3>Peers negotiating</h3><p class="d">Counted from the management database.</p>
+          ${on===null||on===undefined?UNK:val(String(on), sev)}
+          <div class="sub">${known?`of ${known} known peers${share===null?"":" — "+pct(share)}`:"denominator unmeasured"}</div></div>`;
+
+    h += `<div class="card c3"><h3>Connected now</h3><p class="d">Only these are on the wire.</p>
+          ${pq.peers_enabled_connected===null||pq.peers_enabled_connected===undefined?UNK
+            :val(String(pq.peers_enabled_connected), pq.peers_enabled_connected>0?"warn":"good")}
+          <div class="sub">${pq.peers_known_connected?`of ${pq.peers_known_connected} connected`:""}</div></div>`;
+
+    h += `<div class="card c3"><h3>Distinct owners</h3><p class="d">People, not machines.</p>
+          ${pq.owners===null||pq.owners===undefined?UNK:val(String(pq.owners), pq.owners>0?"warn":"good")}
+          <div class="sub">one person may hold several peers</div></div>`;
+
+    // Direction, from the stored series. Falling is good, rising means the
+    // setting is being turned on somewhere and is worth a look.
+    h += `<div class="card c3"><h3>Change, 24h</h3><p class="d">From the recorded series.</p>
+          ${chg===null||chg===undefined?UNK
+            :val((chg>0?"+":"")+Math.round(chg), chg>0?"crit":chg<0?"good":"")}
+          <div class="sub">${chg===null||chg===undefined?"no history yet"
+            :chg>0?"rising — something is enabling it"
+            :chg<0?"falling":"unchanged over 24h"}</div></div>`;
+
+    // The traffic figures are INFERRED and are kept visually subordinate to the
+    // counted ones above. No byte-level attribution is possible: the signal
+    // server exposes no size metric and the message body is an opaque NaCl box,
+    // so nothing can label post-quantum traffic. Size band is the only handle.
+    if(pq.signal_bps !== null && pq.signal_bps !== undefined){
+      h += `<div class="card c12"><h3>Cost on the wire — inferred from request size, not counted</h3>
+        <p class="d">No label for post-quantum traffic can exist: the signal body is an
+        opaque NaCl box. These are derived from the size distribution, which is bimodal —
+        an ICE offer is ~260 B and a key-bearing one is ~${bytes(pq.key_size_bytes)},
+        with nothing between. Treat them as an order of magnitude, not a reading.</p>
+        <div class="grid">
+        <div class="card c4"><h3>Signal traffic</h3>
+          ${val(bps(pq.signal_bps), pq.signal_bps>5e6?"crit":pq.signal_bps>1e6?"warn":"good")}
+          <div class="sub">${pq.signal_rps===null||pq.signal_rps===undefined?"":rps(pq.signal_rps)+" of requests"}</div></div>
+        <div class="card c4"><h3>Mean request size</h3>
+          ${pq.mean_request_bytes===null||pq.mean_request_bytes===undefined?UNK
+            :val(bytes(pq.mean_request_bytes), pq.mean_request_bytes>10000?"warn":"good")}
+          <div class="sub">a mean far above 260 B means key-bearing offers dominate;
+          the mean itself describes no real message</div></div>
+        <div class="card c4"><h3>Key-bearing offers</h3>
+          ${pq.suspected_pq_offers===null||pq.suspected_pq_offers===undefined?UNK
+            :val(rps(pq.suspected_pq_offers), pq.suspected_pq_offers>1?"warn":"good")}
+          <div class="sub">signal bytes ÷ key size</div></div>
+        </div></div>`;
+    }
+    h += `</div>
+      <p class="lede" style="margin-top:10px">Clearing it is a client-side action:
+      <span class="mono">netbird up --enable-rosenpass=false</span>. A plain
+      <span class="mono">up</span>, an upgrade, or a fresh setup key all leave it set.</p>
+      </section>`;
+  }
+
+  // ── 2 ───────────────────────────────────────────────────────────────────
+  const r = d.response;
+  h += `<section class="q"><h2><span class="n">2.</span>Is performance degrading?</h2>
+    <p class="lede">Ingress response times, streaming services excluded — a stream's
+    lifetime is not a response time. Full detail on the
+    <a href="./response.html">response page</a>.</p><div class="grid">`;
+  // MEASURED headline. p99 over four coarse buckets returns 0.1x0.99 for every
+  // service whose requests all land under 100 ms, so a dozen services read an
+  // identical "0.099 s" that looks measured and is arithmetic. This counts.
+  h += `<div class="card c3"><h3>Under 100 ms</h3><p class="d">Share of requests finishing inside the fastest bucket.</p>
+        ${r.fast_share_all===null||r.fast_share_all===undefined?UNK:val(pct(r.fast_share_all), r.fast_share_all<0.8?"crit":r.fast_share_all<0.95?"warn":"good")}
+        <div class="sub">counted, not interpolated — buckets are ${r.bucket_edges.join(" / ")} s</div></div>`;
+  h += `<div class="card c3"><h3>Worst p99</h3><p class="d">Slowest service that actually served requests.</p>
+        ${r.worst_p99===null?UNK:val(p99s(r.worst_p99), r.worst_p99>3?"crit":r.worst_p99>1?"warn":"good")}
+        <div class="sub">only meaningful INSIDE a bucket; under ${r.bucket_edges[0]} s it is arithmetic</div></div>`;
+  h += `<div class="card c3"><h3>Error ratio</h3><p class="d">5xx across those services.</p>
+        ${r.error_ratio===null?UNK:val(pct(r.error_ratio), r.error_ratio>0.05?"crit":r.error_ratio>0.01?"warn":"good")}
+        <div class="sub">failures are the other half of performance</div></div>`;
+  h += `<div class="card c6"><h3>Under 100 ms, by service</h3>
+        <p class="d">Slowest-first. Only services with traffic — an idle service is absent, never shown as fast.</p>
+        ${bars((r.fast_share_by_service||[]).slice().sort((a,b)=>a.value-b.value).slice(0,6),"pct")}</div>`;
+  h += canaryCards(d.canary);
+  h += `</div></section>`;
+
+  // ── 3 ───────────────────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">3.</span>How much do we have to spare?</h2>
+    <p class="lede">Headroom is the whole point of declaring a capacity. Without one,
+    everything here is blank — which is the honest answer, not a broken panel.</p><div class="grid">`;
+  h += `<div class="card c4"><h3>Downlink headroom</h3><p class="d">Declared capacity minus what is in use.</p>
+        ${p.headroom_rx_bps===null?UNK:val(bps(p.headroom_rx_bps), p.headroom_rx_bps<1e6?"crit":"good")}
+        <div class="sub">${capUnknown?'set <code>node_exporter_link_capacity</code> in group_vars':"spare downlink"}</div></div>`;
+  h += `<div class="card c4"><h3>Protected floor</h3><p class="d">Essential traffic that must never be shed.</p>
+        ${val(bps(sh.protected_bps))}<div class="sub">any capacity plan must clear this with margin</div></div>`;
+  // GREY, NOT AMBER. This counts hosts whose capacity is declared `unknown`,
+  // and that can be a WRITTEN DECISION rather than a job nobody got to: a site
+  // behind CGNAT on a shared LAN has a variable, unowned uplink figure, and
+  // putting a plausible number in group_vars to clear this card would
+  // manufacture confident utilisation percentages nobody stands behind — the
+  // fabrication ADR 1128 §3 forbids. Amber would say "something is broken here"
+  // about a panel that is working as designed. `unknown`
+  // is the class every other unstated fact on this page already uses.
+  //
+  // The count is also stated OVER its denominator. Bare "1" beside a separate
+  // line reading "1 host(s) reporting attribution" read as two unrelated
+  // facts; it is one — 1 of 1, the only host on this goatnet that reports
+  // attribution at all.
+  h += `<div class="card c4"><h3>Hosts with no declared capacity</h3>
+        <p class="d">Deliberate wherever nobody has measured the uplink. Such a host
+        shows raw bytes/s everywhere and no percentage anywhere — the honest answer,
+        not a broken panel.</p>
+        ${val(p.hosts_undeclared===null?null:String(p.hosts_undeclared), p.hosts_undeclared?"unknown":"good")}
+        <div class="sub">${p.hosts_reporting!==null?"of "+p.hosts_reporting+" host(s) reporting attribution · ":""}close it with an off-peak throughput test, then <code>source: measured</code> in group_vars — never a guessed figure</div></div>`;
+  h += `</div></section>`;
+
+  // ── 4 ───────────────────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">4.</span>What is causing it?</h2>
+    <p class="lede">Inside the tunnel, by category and by peer. This is the workload plane —
+    it explains the mesh portion above, and is never added to it.</p><div class="grid">`;
+  h += `<div class="card c6"><h3>By category</h3>
+        <p class="d">Socket categories plus the web plane. Excludes the relay tunnel and
+        Traefik's own sockets, both counted elsewhere.</p>
+        ${bars((d.workload||[]).concat(d.workload_http||[]).sort((a,b)=>b.value-a.value).slice(0,8))}</div>`;
+  h += `<div class="card c6"><h3>By peer — physical pipe</h3>
+        <p class="d">A peer that is high <em>and</em> relayed costs the most.</p>
+        <table><thead><tr><th>Peer</th><th>Path</th><th class="n">bit/s</th></tr></thead><tbody>
+        ${(d.peers_transport||[]).slice(0,8).map(x=>`<tr><td class="mono" title="${esc(x.name)}">${esc(x.name.replace(/\.netbird\.selfhosted$/,""))}</td>
+          <td><span class="chip ${x.class==="mesh-relayed"?"relay":"p2p"}">${x.class==="mesh-relayed"?"relayed":"direct"}</span></td>
+          <td class="n">${bps(x.value)}</td></tr>`).join("") || '<tr><td colspan="3" class="sub">no per-peer data</td></tr>'}
+        </tbody></table></div>`;
+  const pbc = d.peers_by_category||[];
+  h += `<div class="card c6"><h3>Which peers, inside which category</h3>
+        <p class="d">The drill-down: category and peer together, so a single noisy peer in
+        one category is visible.</p>
+        <table><thead><tr><th>Category</th><th>Peer</th><th class="n">bit/s</th></tr></thead><tbody>
+        ${pbc.slice(0,10).map(x=>`<tr><td class="mono">${esc(x.category||"?")}</td><td class="mono">${esc(x.name)}</td><td class="n">${bps(x.value)}</td></tr>`).join("")
+          || '<tr><td colspan="3" class="sub">no per-category peer data yet</td></tr>'}
+        </tbody></table></div>`;
+  const httpAbsent = !(d.services_http||[]).length && !(d.workload_http||[]).length;
+  h += `<div class="card c6"><h3>Which interaction — web services</h3>
+        <p class="d">For the web plane, the interaction type is the service behind Traefik.</p>
+        ${httpAbsent
+          ? `<p class="sub">No HTTP plane on this host. <code>goat-logship</code> is not
+             deployed here, so the Traefik access log is not being turned into byte metrics
+             and these rows have no source. <b>Absent, not zero</b> — zero would claim the
+             surfaces served nothing.</p>`
+          : bars((d.services_http||[]).slice(0,8))}</div>`;
+  h += `</div>`;
+
+  // coverage honesty — the map may not cover most traffic
+  const cov = tr.coverage_ratio;
+  if(cov!==null && cov < 0.5){
+    h += `<div class="note"><b>The category map explains only ${pct(cov)} of mesh traffic right now.</b>
+      The rest is real traffic in categories nobody has classified yet, so the breakdown above
+      is a partial view and question 5 cannot rank what it cannot see. This is the map being
+      incomplete, not the traffic being unknown — the fix is adding <code>category:</code> to
+      the node-class egress contract in group_vars.</div>`;
+  }
+  h += `</section>`;
+
+  // ── 5 ───────────────────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">5.</span>What do we turn down first?</h2>
+    <p class="lede">Declared policy paired with measured cost, so the trade is real.
+    Shed highest first; never shed the protected set.</p><div class="grid">`;
+  h += `<div class="card c6"><h3>Shed order</h3><p class="d">Declared in the category grammar, one home, read from there.</p>
+        <ol class="shed">${(sh.policy||[]).map(x=>`<li><code>${esc(x.key)}</code> <span class="chip">${esc(x.criticality)}</span><br><span style="color:var(--ink-3)">${esc(x.why)}</span></li>`).join("")}</ol>
+        <p class="sub">Never shed: ${(sh.essential||[]).map(k=>`<code>${esc(k)}</code>`).join(", ")} —
+        mesh control and time are what you need to fix everything else, and shedding
+        observability blinds the decision.</p></div>`;
+  h += `<div class="card c6"><h3>Reclaimable right now</h3>
+        <p class="d">What you would actually get back. Shed order says what is acceptable to
+        lose; this says what it is worth.</p>
+        ${sh.reclaimable_bps===null
+          ? `<p class="sub">Nothing sheddable is currently running, so there is nothing to reclaim.
+             That is not headroom — it means the traffic on this link is all in the
+             essential or unclassified groups, and shedding will not save you.</p>`
+          : val(bps(sh.reclaimable_bps))}
+        ${bars(sh.reclaimable_by_category||[])}</div>`;
+  h += `</div></section>`;
+
+  // ── trust ────────────────────────────────────────────────────────────────
+  h += `<section class="q"><h2><span class="n">6.</span>Is this measurement trustworthy?</h2>
+    <p class="lede">Blank is not zero. This block says which.</p><div class="grid">`;
+  const tiles = [
+    ["Sample age", secs(tr.attribution_age_s), tr.attribution_age_s>300?"crit":"good", "the 60 s collector timer"],
+    ["Sample gap", secs(tr.sample_gap_s), "", "the real interval each rate was divided by"],
+    ["Transport blind", tr.mesh_plane_blind===null?null:String(tr.mesh_plane_blind), tr.mesh_plane_blind?"crit":"good", "hosts where netbird status is unreadable"],
+    ["Peers sampled", tr.peers_sampled===null?null:String(tr.peers_sampled), "", "connected peers in the last sample"],
+    ["Sockets sampled", tr.sockets_sampled===null?null:String(tr.sockets_sampled), "", "TCP only — UDP has no byte counters"],
+    ["Attribution coverage", pct(tr.coverage_ratio), (tr.coverage_ratio!==null&&tr.coverage_ratio<0.5)?"warn":"good", "share of mesh traffic in a named category"],
+  ];
+  for(const [t2,v,c,s] of tiles)
+    h += `<div class="card c4"><h3>${t2}</h3>${val(v,c)}<div class="sub">${s}</div></div>`;
+  h += `</div></section>`;
+
+  $("#body").innerHTML = h;
+}
+
+fetch("netview.json?_=" + Date.now())
+  .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+  .then(render)
+  .catch(e => {
+    $("#body").innerHTML =
+      `<div class="note"><b class="err">Could not load netview.json.</b> ${esc(e.message)}.
+       The page is static; the data is written on the host by a timer. If this persists,
+       check <code>netview-poll.timer</code> on the mgmt host — no data is shown rather
+       than stale data being presented as current.</div>`;
+  });
+setTimeout(()=>location.reload(), 60000);
+</script>
+</body>
+</html>

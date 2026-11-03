@@ -1,0 +1,28 @@
+# Phase E Tier 2 WASM artifacts land here.
+#
+# Populated by the Dockerfile's `wasm-builder` stage (cargo build
+# --target wasm32-unknown-unknown -p flashlight-analytics --lib +
+# wasm-bindgen --target web --no-typescript). Output files are:
+#
+#   flashlight_analytics_bg.wasm    — the compiled WASM module
+#   flashlight_analytics.js         — wasm-bindgen JS glue (ES module)
+#
+# Embedded into the flashlight binary via `rust-embed` and served by
+# the `/api/wasm/*` route. Tier 1 page lazy-loads them when
+# conditions allow (Phase E follow-on PR wires the boot logic).
+#
+# Local non-Docker builds: this folder is empty by default and the
+# /api/wasm/* route 404s. To populate manually, from the repo root:
+#
+#   rustup target add wasm32-unknown-unknown
+#   cargo install --locked wasm-bindgen-cli --version "^0.2"
+#   cd crates
+#   cargo build --release --target wasm32-unknown-unknown \
+#       -p flashlight-analytics --lib
+#   wasm-bindgen --target web --no-typescript \
+#       --out-dir ../ops/flashlight/src/assets/wasm/ \
+#       target/wasm32-unknown-unknown/release/flashlight_analytics.wasm
+#
+# The .gitignore for ops/flashlight/src/assets/wasm/ excludes
+# everything except this .gitkeep so locally-built artifacts don't
+# leak into commits.

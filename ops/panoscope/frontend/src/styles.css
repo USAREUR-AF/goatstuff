@@ -1,0 +1,2233 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+:root {
+  /* Tacticool dark — deeper inky background, terminal-green accent,
+     muted desaturated chrome. Not actually a military theme, just a
+     restrained dark-ops feel. */
+  --bg: #07090c;
+  --bg-elevated: #0e1116;
+  --fg: #d7dfe6;
+  --fg-dim: #6c7682;
+  --accent: #6dd1a0;
+  --accent-glow: #6dd1a022;
+  --grid: #1a1f26;
+  --role-source: #f78166;
+  --role-sink: #58a6ff;
+  --role-deriver: #a371f7;
+  --role-topic: #4d5a6a;
+  --role-unknown: #6e7681;
+  /* Role-class palette (added).
+   * Pub/sub role keeps shape; role_class drives FILL color when the
+   * peer's schema-decl carries it. Sized to 6 distinct hues for the
+   * trial fabric's taxonomy (sensor / effector / data-service /
+   * c2 / observer / sink). Falls through to ROLE_COLORS in the
+   * renderer when role_class is absent (partner peers, pre-schema-
+   * decl peers). */
+  --role-class-sensor: #f78166;
+  --role-class-effector: #ef4444;
+  --role-class-data-service: #a371f7;
+  --role-class-c2: #38bdf8;
+  --role-class-observer: #2dd4bf;
+  --role-class-sink: #94a3b8;
+  /* Infrastructure (Zenoh router) — subdued desaturated indigo that
+   * reads as "substrate" rather than competing with peer fills. Used
+   * with the square shape from render.ts shapeFor() to give routers
+   * a distinct visual class. */
+  --role-class-infra: #475569;
+  --schema-lattice: #2ea043;
+  --schema-ecn: #d29922;
+  --schema-cot: #f85149;
+  --schema-community: #58a6ff;
+  --schema-caracal: #a371f7;
+  --schema-unknown: #6e7681;
+  /* Decoder-state palette for the Decoded stream view. Gray (unevaluated)
+     reuses --grid; amber (no-raw-bytes / mixed) reuses --schema-ecn. */
+  --state-working: #46c86e;
+  --state-failing: #dc5a5a;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", "Menlo", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* Tacticool scrollbars — thin track, accent thumb, no browser chrome.
+   WebKit (Chrome/Edge/Safari) + Firefox parity. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--grid) transparent;
+}
+*:hover {
+  scrollbar-color: var(--accent) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--grid);
+  border-radius: 0;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--grid);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.brand {
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: 0 0 6px var(--accent-glow);
+}
+
+.separator {
+  color: var(--fg-dim);
+}
+
+.subtitle {
+  color: var(--fg-dim);
+}
+
+.connection-indicator {
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  font-size: 10px;
+  background: transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.connection-indicator[data-state="connecting"] { color: var(--fg-dim); }
+.connection-indicator[data-state="live"] { color: var(--schema-lattice); }
+/* "quiet" — WS is live but no delta event landed in the last 10 s.
+   Sub-state of "live"; visually dim to read as "connected, fabric just
+   isn't currently producing." The WS-driven counterpart to the HTTP-
+   polling-honest STALE tag on the left sidebar. */
+.connection-indicator[data-state="quiet"] { color: var(--fg-dim); }
+.connection-indicator[data-state="lagged"] { color: var(--schema-ecn); }
+.connection-indicator[data-state="closed"] { color: var(--schema-cot); }
+
+main {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+}
+
+#graph {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: block;
+}
+
+.info-panel {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  /* Split view: half the viewport on a laptop, but never wider than the
+     content can use. Without the pixel cap the panel grows with the
+     screen — on a 3440px ultrawide it was a 1720px column of mono text
+     with the right third empty, and the graph lost half the screen for
+     nothing. 720px matches the widest overlays in this file; the graph
+     re-centres on the resize via its ResizeObserver. */
+  max-width: min(50%, 720px);
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px 20px;
+  background: var(--bg-elevated);
+  border-left: 2px solid var(--accent);
+  font-family: var(--font-mono);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4);
+}
+
+.info-panel.hidden { display: none; }
+
+.info-close {
+  position: absolute;
+  /* Anchored top-LEFT so it doesn't collide with the welcome.ts
+     Status pill (top-right of the main element, positioned absolute
+     to viewport). The split-view panel now begins right at the
+     pill's column. */
+  top: 8px;
+  left: 8px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 9px;
+  cursor: pointer;
+  border-radius: 2px;
+  z-index: 2;
+}
+.info-close:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* Console-wide UUID expand/shorten toggle — sits just right of the close
+   button. Shortened keys reclaim the scarce side-panel width by default;
+   the operator flips to full when they want to read/copy a whole key. */
+.info-uuid-toggle {
+  position: absolute;
+  top: 8px;
+  /* Top-RIGHT, not left:44px — at 44px it sat exactly where the title +
+     breadcrumb text begins (padding-left:36px) and overlapped them. The
+     title/breadcrumb reserve right-padding so a long value wraps before
+     reaching the toggle rather than running underneath it. */
+  right: 8px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 3px 7px;
+  cursor: pointer;
+  border-radius: 2px;
+  z-index: 2;
+}
+.info-uuid-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.info-uuid-toggle[data-expand="full"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* Shortened keys read as slightly de-emphasized but stay legible; the
+   abbreviated UUID run is just text so no special per-glyph styling. */
+.uuid-key {
+  cursor: inherit;
+}
+.info-panel h3#info-title {
+  /* Push the title right so it doesn't sit under the × close button, and
+     reserve room on the right for the UUID·short/full toggle. */
+  padding-left: 36px;
+  padding-right: 84px;
+}
+
+/* Inspection breadcrumb — sits between the × close button and the
+ * title; renders only when the operator has drilled at least one
+ * level (history.length >= 2). Lets a drill-down chain stay legible
+ * (peer › topic › decoded sample) and one click steps back. */
+.info-breadcrumb {
+  padding: 4px 84px 4px 36px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--grid);
+}
+.info-breadcrumb.hidden { display: none; }
+.info-breadcrumb-back,
+.info-breadcrumb-seg {
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+.info-breadcrumb-back {
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 6px;
+}
+.info-breadcrumb-back:hover,
+button.info-breadcrumb-seg:hover {
+  color: var(--accent);
+  background: var(--bg-elevated);
+}
+.info-breadcrumb-seg--current {
+  color: var(--fg);
+  cursor: default;
+}
+.info-breadcrumb-sep {
+  color: var(--grid);
+}
+
+/* Hears / Says / All scope toggle — sits above the RAW / DECODED
+ * toggle inside #info-stream. Same visual shape as the existing
+ * info-stream-mode group; hidden when the peer has only one
+ * direction (pure source / pure sink). */
+.info-stream-scope-host {
+  padding: 4px 8px 0 8px;
+}
+.info-stream-scope-host.hidden { display: none; }
+
+/* Panel collapse — toggled by `]` key. Slides the panel off-screen to
+ * the right but keeps selection state so re-opening restores the
+ * same content. */
+.info-panel.collapsed {
+  flex: 0 0 0;
+  max-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border-left-width: 0;
+}
+
+.info-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.info-stream {
+  margin-top: 10px;
+  border-top: 1px solid var(--grid);
+  padding-top: 8px;
+}
+.info-stream.hidden { display: none; }
+.info-stream h4 {
+  margin: 0 0 6px 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.info-stream-topic-label {
+  color: var(--fg-dim);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.info-stream-pause {
+  float: right;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 8px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.info-stream-pause:hover { color: var(--accent); border-color: var(--accent); }
+.info-stream-pause[aria-pressed="true"] {
+  color: var(--schema-ecn);
+  border-color: var(--schema-ecn);
+  background: rgba(210, 153, 34, 0.10);
+}
+
+/* Decoded/Raw toggle for the side-panel stream. Two-segment selector;
+   the active segment matches the .info-stream-pause hover accent so it
+   reads as a live affordance, not chrome. NO SCHEMA badge sits inline
+   to the right when the topic has no protobuf descriptor available. */
+.info-stream-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 4px;
+}
+.info-stream-mode {
+  display: inline-flex;
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.info-stream-mode-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 8px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 0;
+  border-right: 1px solid var(--grid);
+  cursor: pointer;
+}
+.info-stream-mode-btn:last-child { border-right: 0; }
+.info-stream-mode-btn:hover:not(:disabled) { color: var(--accent); }
+.info-stream-mode-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: rgba(120, 200, 255, 0.10);
+}
+.info-stream-mode-btn:disabled {
+  color: var(--fg-dim);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.info-stream-schema-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border: 1px solid var(--schema-ecn);
+  color: var(--schema-ecn);
+  background: rgba(210, 153, 34, 0.10);
+  border-radius: 2px;
+}
+
+/* Decoder-state summary pill — shows N decoded / N error / N raw-only
+   to the right of the toggle when DECODED is active. Tri-color hint:
+   green when all working, amber when some failing, red when none decoded. */
+.info-stream-state-summary {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--grid);
+  color: var(--fg-dim);
+}
+.info-stream-state-summary[data-state="working"] {
+  color: var(--state-working);
+  border-color: var(--state-working);
+  background: rgba(70, 200, 110, 0.10);
+}
+.info-stream-state-summary[data-state="mixed"] {
+  color: var(--schema-ecn);
+  border-color: var(--schema-ecn);
+  background: rgba(210, 153, 34, 0.10);
+}
+.info-stream-state-summary[data-state="failing"] {
+  color: var(--state-failing);
+  border-color: var(--state-failing);
+  background: rgba(220, 90, 90, 0.10);
+}
+
+/* jq-lite filter + pretty/compact toggle row, sandwiched between the
+   mode selector and the stream body when DECODED is active. */
+.info-stream-toolkit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding: 6px 8px;
+  background: rgba(60, 80, 110, 0.10);
+  border: 1px solid var(--grid);
+  border-radius: 3px;
+}
+.info-stream-toolkit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.info-stream-toolkit-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  width: 18px;
+  text-align: right;
+}
+.info-stream-filter {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 6px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  min-width: 0;
+}
+.info-stream-filter:focus { outline: 1px solid var(--accent); }
+.info-stream-filter-error {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--state-failing);
+  padding: 2px 0 0 22px;
+}
+
+/* Decoded-stream sample rows with per-state left gutters + copy button.
+   Each <div.stream-sample> is one decode result; the colored gutter
+   stripe answers "did this sample decode" at a glance. Header carries
+   the timestamp + topic + copy affordance; body is the formatted JSON. */
+.info-stream-body {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg);
+  margin: 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.stream-sample {
+  border-left: 3px solid var(--grid);
+  padding: 4px 6px 4px 8px;
+  margin-bottom: 4px;
+  background: rgba(40, 50, 70, 0.20);
+}
+.stream-sample--working { border-left-color: var(--state-working); }
+.stream-sample--failing { border-left-color: var(--state-failing); }
+.stream-sample--unevaluated { border-left-color: var(--grid); }
+.stream-sample--noraw { border-left-color: var(--schema-ecn); }
+.stream-sample-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--fg-dim);
+}
+.stream-sample-header-text { flex: 1; min-width: 0; word-break: break-all; }
+.stream-sample-copy {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  cursor: pointer;
+  opacity: 0.65;
+}
+.stream-sample-copy:hover { color: var(--accent); border-color: var(--accent); opacity: 1; }
+.stream-sample-copy[data-state="copied"] {
+  color: var(--state-working);
+  border-color: var(--state-working);
+  opacity: 1;
+}
+.stream-sample-body {
+  margin: 2px 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.stream-sample-body--error { color: var(--state-failing); }
+.stream-sample-body--note { color: var(--fg-dim); font-style: italic; }
+
+/* panoscope-stale-recall Layer A — stale stream pane. When the newest
+   rendered sample was recalled from Zenoh storage on an empty live ring
+   (B1) or is older than 4× the snapshot poll, the pane carries `.stale`
+   and a banner stamps "last seen Ns ago"; recalled/old rows carry
+   `.stream-sample--stale`. Reuses the fleet bar's stale vocabulary
+   (--schema-cot red, desaturate) so an idle or recalled topic never reads
+   as live. */
+.stream-stale-banner {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--schema-cot);
+  border: 1px dashed var(--schema-cot);
+  border-radius: 2px;
+  padding: 3px 6px;
+  margin-bottom: 6px;
+}
+.info-stream-body.stale .stream-sample-body {
+  filter: grayscale(0.4);
+  opacity: 0.82;
+}
+.stream-sample--stale { border-left-color: var(--schema-cot); }
+.stream-sample--stale .stream-sample-header-text::after {
+  content: " · STALE";
+  color: var(--schema-cot);
+  font-weight: 700;
+}
+
+/* JSON/text passthrough in the decoded view — NOT a protobuf decode. Cyan
+   gutter (distinct from green decoded / red error+stale / amber no-raw) plus
+   a loud per-row PASSTHROUGH tag and a pane-level prose note, so an operator
+   never mistakes raw-shown bytes for a schema-validated decode. */
+.stream-passthrough-note {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--role-class-c2);
+  border: 1px dashed var(--role-class-c2);
+  border-radius: 2px;
+  padding: 3px 6px;
+  margin-bottom: 6px;
+}
+.stream-sample--passthrough { border-left-color: var(--role-class-c2); }
+.stream-sample-passthrough-tag {
+  flex: none;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  border: 1px solid var(--role-class-c2);
+  border-radius: 2px;
+  color: var(--role-class-c2);
+}
+
+/* Source toggle + LEGEND button in fleet bar — same shape as the tier
+   badge but actionable. data-source: "all" = both notional + real
+   visible; "real" = notional hidden; "notional" = only synth-vendor.
+   Each state carries a distinct SOLID fill + dark text so the active
+   mode reads at a glance. The earlier transparent-fill +
+   colored-text variant blended into the dark gradient bar; the
+   "notional" state had no CSS rule at all, so it fell through to
+   currentColor (parent fg-dim gray) border + transparent bg and read
+   as nearly invisible. */
+button.fleet-tier-badge {
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+button.fleet-tier-badge[data-source="all"] {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+button.fleet-tier-badge[data-source="real"] {
+  color: var(--bg);
+  background: var(--schema-lattice);
+  border-color: var(--schema-lattice);
+}
+button.fleet-tier-badge[data-source="notional"] {
+  color: var(--bg);
+  background: var(--schema-ecn);
+  border-color: var(--schema-ecn);
+}
+/* Infra toggle — show / hide / isolate underlying infrastructure. Same
+   solid-fill-per-state vocabulary as the source toggle. "all" (default,
+   showing everything) uses the same accent as source/all; the two active
+   states use the desaturated substrate color so the bar visually says
+   "you're acting on infrastructure right now." */
+button.fleet-tier-badge[data-infra="all"] {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+button.fleet-tier-badge[data-infra="hide"] {
+  color: var(--fg);
+  background: transparent;
+  border-color: var(--role-class-infra);
+}
+button.fleet-tier-badge[data-infra="only"] {
+  color: var(--bg);
+  background: var(--role-class-infra);
+  border-color: var(--role-class-infra);
+}
+/* Vendor-collapse mass controls — visually paired with the source
+   toggle (solid accent fill on hover, transparent rest-state to
+   distinguish from the actively-applied source filter). Two buttons
+   read as a "pair of mass actions" rather than a single toggle. */
+button.fleet-tier-badge[data-vendor-action] {
+  color: var(--fg);
+  background: transparent;
+  border-color: var(--grid);
+  margin-right: 4px;
+}
+button.fleet-tier-badge[data-vendor-action]:hover {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* LEGEND button shares .fleet-tier-badge but never changes state
+   (data-tier="live" is hardcoded). Mirror the source-toggle solid
+   fill so the two actionable buttons in the bar read as a pair,
+   distinct from the passive TIER indicator. */
+button#fleet-legend-toggle.fleet-tier-badge[data-tier="live"] {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- KEYS button + overlay ---------- */
+/* KEYS button mirrors LEGEND's solid-accent treatment so the two
+   "open-a-reference-panel" buttons read as a pair. */
+button#fleet-keys-toggle.fleet-tier-badge[data-tier="live"] {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.keys-overlay {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 200;
+  width: min(480px, calc(100% - 32px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 18px 22px 22px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--grid);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.keys-overlay.hidden { display: none; }
+.keys-overlay h3 {
+  margin: 0 0 14px 0;
+  color: var(--accent);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  text-shadow: 0 0 6px var(--accent-glow);
+}
+.keys-overlay h4 {
+  margin: 14px 0 6px 0;
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  border-bottom: 1px solid var(--grid);
+  padding-bottom: 3px;
+}
+/* Tighter rows than the visual legend — keys list is dense + alike
+   visual structure (kbd-style left column, prose right column). */
+.keys-list li {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.keys-list .legend-key {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  padding: 1px 6px;
+  text-align: center;
+  letter-spacing: 0.04em;
+  align-self: start;
+}
+.keys-list .legend-desc {
+  color: var(--fg-dim);
+  align-self: center;
+}
+
+/* ---------- Fleet diagnostics overlay (click sidebar to open) ----------
+ * Left-anchored counterpart to the right-anchored KEYS overlay. Lives
+ * next to the fleet-stats sidebar that triggered it; same elevation /
+ * border treatment so the three reference surfaces (LEGEND center,
+ * KEYS right, DIAGNOSTICS left) read as a set. */
+.fleet-diagnostics-overlay {
+  position: absolute;
+  top: 72px;
+  left: 14px;
+  z-index: 200;
+  width: min(540px, calc(100% - 32px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 18px 22px 22px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--grid);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.fleet-diagnostics-overlay.hidden { display: none; }
+.fleet-diagnostics-overlay h3 {
+  margin: 0 0 14px 0;
+  color: var(--accent);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  text-shadow: 0 0 6px var(--accent-glow);
+}
+.fleet-diagnostics-overlay h4 {
+  margin: 14px 0 6px 0;
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  border-bottom: 1px solid var(--grid);
+  padding-bottom: 3px;
+}
+.fleet-diagnostics-overlay code {
+  background: var(--bg);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: var(--fg);
+}
+/* Cold-read lede under each h4: one sentence framing the section so the
+ * panel makes sense before the operator scans the rows. */
+.fleet-diagnostics-overlay .diag-section-lede {
+  margin: 4px 0 8px 0;
+  color: var(--fg-dim);
+  font-size: 10px;
+  line-height: 1.5;
+  font-style: italic;
+}
+/* Live-state values pop in the accent colour so the dynamic data is
+ * visually distinct from the surrounding static prose. */
+.fleet-diagnostics-overlay .diag-live-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+/* On-screen-effect notes inside PERF TIERS rows describe what the
+ * operator would actually see on the live page. Dim italic so they
+ * read as a sub-clause attached to the row. */
+.fleet-diagnostics-overlay .diag-onscreen {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg-dim);
+  font-style: italic;
+  font-size: 10px;
+}
+
+/* ---------- Legend overlay (visual reading guide) ---------- */
+.legend-overlay {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  width: min(720px, calc(100% - 32px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 18px 22px 22px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--grid);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.legend-overlay.hidden { display: none; }
+.legend-overlay h3 {
+  margin: 0 0 14px 0;
+  color: var(--accent);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  text-shadow: 0 0 6px var(--accent-glow);
+}
+.legend-overlay h4 {
+  margin: 14px 0 6px 0;
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  border-bottom: 1px solid var(--grid);
+  padding-bottom: 3px;
+}
+.legend-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 9px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.legend-close:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.legend-section-block {
+  margin-bottom: 4px;
+}
+.legend-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.legend-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  border-bottom: 1px dotted rgba(255,255,255,0.04);
+}
+.legend-list li:last-child { border-bottom: none; }
+.legend-icon {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+.legend-name,
+.legend-key {
+  flex: 0 0 140px;
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+}
+/* When an entry has no SVG icon (.legend-key rows), shift the key
+   over to compensate so labels still line up with icon-bearing rows. */
+.legend-list li:not(:has(.legend-icon)) .legend-key {
+  margin-left: 38px;
+}
+.legend-desc {
+  flex: 1;
+  color: var(--fg);
+  word-wrap: break-word;
+  min-width: 0;
+}
+
+/* SYNTHETIC badge on the per-peer detail panel. Subtle so it doesn't
+   distract from the data. */
+.synthetic-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--schema-ecn);
+  border: 1px solid var(--schema-ecn);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+/* INFRASTRUCTURE badge — Zenoh router. Subdued to match the desaturated
+   square shape on the canvas; reads as "substrate, not peer". */
+.infra-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--role-class-infra);
+  border: 1px solid var(--role-class-infra);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+/* Universal `**` observer — side-panel badge + canvas marker. These nodes
+   render edgeless (their per-topic fan-out is suppressed), so the dashed
+   ring + badge signal "watches everything, intentionally edgeless" rather
+   than "orphaned." */
+.universal-observer-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--role-class-observer);
+  border: 1px dashed var(--role-class-observer);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+g.node.universal-observer path.node-shape {
+  stroke-dasharray: 3 2;
+  opacity: 0.78;
+}
+/* FUTURE-DESIGN badge — applied in the side-panel title for topics
+   under reserved-but-not-active prefixes (currently `attest/**`).
+   Subdued to match the cluster-hull treatment so the cue reads as
+   "shape of the long-term fabric, not live application traffic." */
+.future-design-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  border: 1px solid var(--fg-dim);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+.info-stream-body {
+  margin: 0;
+  padding: 10px 12px;
+  background: #04060a;
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  /* In split-view the panel fills its half; the stream takes whatever
+     vertical room remains under the metadata. flex-grow on the parent
+     would be cleaner but the panel uses block flow; explicit
+     calc keeps it readable without nested flex juggling. */
+  height: calc(100vh - 280px);
+  min-height: 240px;
+  overflow-y: auto;
+  /* No horizontal scrollbar — wrap long JSON lines. word-break:
+     break-all wraps mid-token which is correct for opaque payload
+     hex/base64; for the JSON preview the pretty-printing introduces
+     line breaks already so wrap-only-at-word-end isn't required. */
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+/* Lead-in note under the CANVAS shortcut list in the KEYS panel —
+   states the one-rule mental model so the table reads as a reminder,
+   not a spec to decode. */
+.keys-note {
+  margin: 6px 0 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg-dim);
+}
+.keys-note strong { color: var(--accent); }
+
+/* Fold/unfold control row in the side panel — discoverable twin of the
+   canvas double-click gesture. Monospace + accent-on-hover to match the
+   stream PAUSE/LIVE button family. */
+.fold-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 4px 0;
+}
+.fold-action-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 9px;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.fold-action-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+.fold-action-warn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--schema-ecn);
+}
+
+/* Row titles (dt) are absent by default — the value column (dd) reads
+   flush-left as a clean list. Hovering anywhere in the panel reveals ALL
+   titles at once, left-aligned and preceding their values (the title
+   column expands from 0 → max-content and the labels fade in). Rows align
+   on the baseline so a wrapping value stays level with its title. */
+.info-panel dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 0 1fr;
+  align-items: baseline;
+  column-gap: 0;
+  row-gap: 4px;
+  font-size: 12px;
+  transition: grid-template-columns 120ms ease, column-gap 120ms ease;
+}
+
+.info-panel dt {
+  color: var(--fg-dim);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.info-panel:hover dl {
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+}
+.info-panel:hover dt {
+  opacity: 1;
+}
+
+.info-panel dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+/* Non-pair children of the grid (the sibling-action row, the fold-action
+   row, any future block) must span the full width — otherwise each lone
+   element consumes a single grid cell and throws off the dt/dd column
+   parity, pushing value cells into the collapsed title column. */
+.info-panel dl > :not(dt):not(dd) {
+  grid-column: 1 / -1;
+}
+
+.info-panel ul {
+  margin: 4px 0 0 0;
+  padding-left: 16px;
+}
+
+.drilldown-list {
+  padding-left: 0;
+  list-style: none;
+}
+.drilldown-list-item {
+  padding: 3px 6px;
+  margin: 1px 0;
+  cursor: pointer;
+  border-left: 2px solid var(--grid);
+  font-size: 11px;
+  color: var(--fg);
+  transition: background 100ms, border-color 100ms, color 100ms;
+}
+.drilldown-list-item:hover {
+  background: var(--accent-glow);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Topic list with per-row format pill + schema-page link. Two-column
+   flex row: topic name on the left grows to fill, metadata column
+   anchored to the right adjusted edge. */
+.topic-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+.topic-list-item .topic-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+  word-break: break-all;
+}
+.topic-list-item .topic-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.topic-format {
+  display: inline-block;
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: transparent;
+  line-height: 1.4;
+  min-width: 3.5ch;
+  text-align: center;
+}
+.topic-list-overflow {
+  margin-top: 2px;
+}
+.topic-list-overflow > summary {
+  cursor: pointer;
+  padding: 3px 6px;
+  margin: 1px 0;
+  font-size: 11px;
+  color: var(--fg-dim);
+  border-left: 2px solid var(--grid);
+  list-style: none;
+  user-select: none;
+  transition: background 100ms, border-color 100ms, color 100ms;
+}
+.topic-list-overflow > summary::-webkit-details-marker { display: none; }
+.topic-list-overflow > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  width: 1ch;
+  color: var(--fg-dim);
+}
+.topic-list-overflow[open] > summary::before { content: "▾ "; }
+.topic-list-overflow > summary:hover {
+  background: var(--accent-glow);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+.topic-list-overflow[open] > summary { color: var(--accent); }
+.topic-list-overflow > ul { margin-top: 0; }
+
+.topic-format-json     { color: var(--schema-community); }
+.topic-format-protobuf { color: var(--schema-caracal); }
+.topic-format-cbor     { color: var(--schema-ecn); }
+.topic-format-text     { color: var(--accent); }
+.topic-format-hex      { color: var(--fg-dim); }
+.topic-format-empty    { color: var(--fg-dim); opacity: 0.6; }
+.topic-format-unknown  { color: var(--fg-dim); opacity: 0.5; }
+
+/* Per-topic sibling icon links (schema / diagnose / tail). Compact
+   icon-only squares; the inlined SVG fills with currentColor so the
+   color + hover rules below theme it for light and dark. */
+.topic-schema-link,
+.topic-diagnose-link,
+.topic-tail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  padding: 2px;
+}
+.topic-schema-link:hover,
+.topic-diagnose-link:hover,
+.topic-tail-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+/* Shared icon glyph — block so it sits flush, currentColor inherited. */
+.sibling-icon {
+  display: block;
+  fill: currentColor;
+}
+
+/* Per-selection sibling action row (diagnose / tail / schema). Icon +
+   label, consistent icon set, themed via currentColor. */
+.sibling-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px 0;
+}
+.sibling-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  padding: 3px 8px;
+}
+.sibling-action:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 6px 16px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--grid);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.legend-section {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-label {
+  color: var(--fg-dim);
+}
+
+/* A legend cell whose value needs an operator — currently the slot-alias
+   registry when it is disabled / unreached / stale (ADR 1039 honesty arm).
+   Amber, not red: rendering UUIDs is degraded, never broken. The `title`
+   attribute carries the reason and the fix. */
+.legend-warn {
+  color: var(--schema-ecn, #d29922);
+  cursor: help;
+}
+
+.legend-section::before {
+  content: "[";
+  color: var(--fg-dim);
+  margin-right: 2px;
+}
+.legend-section::after {
+  content: "]";
+  color: var(--fg-dim);
+  margin-left: 2px;
+}
+
+/* ---------- Data-COP fleet status bar ---------- */
+.fleet-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 16px;
+  background: linear-gradient(180deg, #0a0e14 0%, #0e1116 100%);
+  border-bottom: 1px solid var(--grid);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+}
+.fleet-bar .fleet-label { color: var(--fg-dim); }
+.fleet-bar .fleet-value {
+  color: var(--accent);
+  text-shadow: 0 0 4px var(--accent-glow);
+  font-weight: 700;
+  min-width: 4ch;
+  display: inline-block;
+}
+.fleet-bar .fleet-section { display: inline-flex; align-items: baseline; gap: 6px; }
+.fleet-bar .fleet-section::before {
+  content: "▶";
+  color: var(--accent);
+  font-size: 8px;
+  margin-right: 3px;
+}
+
+.fleet-tier-badge {
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  font-size: 9px;
+}
+.fleet-tier-badge[data-tier="live"]      { color: var(--accent); }
+.fleet-tier-badge[data-tier="slow"]      { color: var(--schema-ecn); }
+.fleet-tier-badge[data-tier="degraded"]  { color: var(--schema-ecn); background: rgba(210, 153, 34, 0.10); }
+.fleet-tier-badge[data-tier="austere"]   { color: var(--schema-cot); background: rgba(248, 81, 73, 0.10); }
+
+/* ---------- Left sidebar: fleet stats (peers/topics/msg-s/total/vendors) ----------
+   Top offset clears the header (~30px) + fleet-bar (~30px) so the
+   sidebar no longer overlays the PANOSCOPE brand text + topmost nodes
+   in the canvas's upper-left corner. */
+.fleet-stats-sidebar {
+  position: absolute;
+  top: 72px;
+  left: 14px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 14px;
+  background: rgba(14, 17, 22, 0.78);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--grid);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  /* Clickable: the whole sidebar opens the diagnostics overlay
+     (installFleetDiagnostics). Sidebar real estate is small + always-
+     occupied by the HUD; the prior `pointer-events: none` (preventing
+     canvas-click pass-through) is no longer the right trade-off now
+     that clicking IS the affordance. */
+  cursor: pointer;
+  transition: border-left-color 120ms ease;
+}
+.fleet-stats-sidebar:hover {
+  border-left-color: var(--fg);
+}
+.fleet-stat-diagnostics-hint {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  margin-top: -4px;
+  pointer-events: none;
+}
+.fleet-stats-sidebar:hover .fleet-stat-diagnostics-hint {
+  opacity: 0.75;
+}
+.fleet-stat {
+  text-align: left;
+  min-width: 78px;
+}
+.fleet-stat-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--fg-dim);
+  margin-bottom: 2px;
+}
+.fleet-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: 0 0 6px var(--accent-glow);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Self-aware staleness — when the fleet-bar refresh has failed N times
+ * or the last successful refresh is older than 2× the snapshot poll
+ * interval, the sidebar carries `.stale`. Values desaturate, freshness
+ * tag pops, and a top stripe signals the counters are not live.
+ * Operator-visible answer to "are these numbers true right now?" */
+.fleet-stats-sidebar .fleet-stat-freshness {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--fg-dim);
+  border-top: 1px dashed var(--grid);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+.fleet-stats-sidebar.stale {
+  border-left-color: var(--schema-cot);
+  background: rgba(40, 17, 17, 0.78);
+}
+.fleet-stats-sidebar.stale .fleet-stat-value {
+  color: var(--fg-dim);
+  text-shadow: none;
+  filter: grayscale(0.4);
+}
+.fleet-stats-sidebar.stale .fleet-stat-freshness {
+  color: var(--schema-cot);
+  border-top-color: var(--schema-cot);
+  font-weight: 700;
+}
+
+/* Self-aware watchful-tier explanatory badge — when fleet rate is in
+ * the 50-200 msg/s "watchful" band AND no edge is selected, packet-dot
+ * animation is gated to selection (see render.ts emitPacket). Without
+ * this badge the operator sees "no flow" and assumes broken; with it
+ * the degradation is legible. Hidden by default; main.ts toggles
+ * `.visible` based on renderer.isWatchfulWithoutSelection(). */
+.fleet-watchful-badge {
+  display: none;
+  padding: 1px 7px;
+  border: 1px solid var(--schema-ecn);
+  border-radius: 2px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  font-size: 9px;
+  /* Solid amber fill + dark text — the prior 10% translucent fill +
+     amber text on the dark fleet-bar read as light-on-light at the
+     visible badge size. */
+  color: var(--bg);
+  background: var(--schema-ecn);
+}
+#fleet-watchful-section.visible { display: inline-flex; }
+#fleet-watchful-section.visible .fleet-watchful-badge { display: inline-block; }
+#fleet-watchful-section { display: none; }
+
+/* Saturated rate gate (>200 msg/s) — same badge shape as WATCHFUL but a
+   hotter color (drop, not ECN-amber) so the two read as distinct states:
+   amber = "select to see flow", hot = "fabric is genuinely this busy". */
+.fleet-saturated-badge {
+  border-color: var(--schema-cot);
+  background: var(--schema-cot);
+}
+#fleet-saturated-section.visible { display: inline-flex; }
+#fleet-saturated-section.visible .fleet-watchful-badge { display: inline-block; }
+#fleet-saturated-section { display: none; }
+
+/* AUSTERE viz strip — companion to POLICY.austere in perf.ts. The
+ * policy table already kills polling + animation + force layout; this
+ * class also strips edges + hull fills + dot layer so the operator
+ * sees only the topology skeleton + their selected slice. Without
+ * the strip, AUSTERE is visually identical to LIVE (just frozen) and
+ * the "what's left is the most important + live" contract fails. */
+svg#graph.austere-mode g.edges { display: none; }
+svg#graph.austere-mode g.dots  { display: none; }
+svg#graph.austere-mode .hulls path.hull { fill-opacity: 0; }
+/* When a selection IS active under austere, restore edges incident to
+ * it so the operator can investigate their slice. */
+svg#graph.austere-mode g.edges line.edge.selected { display: inline; }
+
+/* ---------- Cluster hulls + labels ---------- */
+.hulls path.hull {
+  fill: var(--accent);
+  fill-opacity: 0.04;
+  stroke: var(--accent);
+  stroke-opacity: 0.25;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  cursor: pointer;
+  transition: fill-opacity 200ms, stroke-opacity 200ms;
+}
+.hulls path.hull:hover {
+  fill-opacity: 0.08;
+  stroke-opacity: 0.45;
+}
+.hulls path.hull.dimmed {
+  fill-opacity: 0.02;
+  stroke-opacity: 0.10;
+}
+.hull-labels g.hull-label text.hull-label-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  fill: var(--accent);
+  opacity: 0.7;
+  pointer-events: none;
+  text-shadow: 0 0 4px var(--accent-glow);
+}
+/* Future-design hull treatment — applied to clusters whose top-level
+ * key_expr prefix is reserved on the fabric but NOT lit up on
+ * this fabric (currently: `attest/**`). Goal: a first-time COP viewer
+ * doesn't read the schema-decl heartbeat cluster as live application
+ * traffic. Subdued stroke (gray instead of accent green), tighter
+ * dash, lower opacity, plus a two-line label with a "FUTURE DESIGN"
+ * subtitle rendered by render.ts (an extra <text> in the same <g>). */
+.hulls path.hull.hull-future {
+  fill: var(--fg-dim);
+  fill-opacity: 0.02;
+  stroke: var(--fg-dim);
+  stroke-opacity: 0.20;
+  stroke-dasharray: 2 5;
+}
+.hulls path.hull.hull-future:hover {
+  fill-opacity: 0.04;
+  stroke-opacity: 0.35;
+}
+.hull-labels g.hull-label-future text.hull-label-name {
+  fill: var(--fg-dim);
+  opacity: 0.55;
+  text-shadow: none;
+}
+.hull-labels g.hull-label text.hull-label-subtitle {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  fill: var(--fg-dim);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* ---------- Selection states on nodes + edges ---------- */
+g.node { cursor: pointer; }
+g.node text.node-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--fg);
+  pointer-events: none;
+  /* Hidden by default — only visible on .selected / .neighbor / hover */
+  opacity: 0;
+  transition: opacity 150ms;
+}
+g.node:hover text.node-label,
+g.node.selected text.node-label {
+  opacity: 1;
+}
+g.node.neighbor text.node-label {
+  opacity: 0.5;
+}
+g.node.selected path.node-shape {
+  filter: drop-shadow(0 0 6px var(--accent));
+  stroke-width: 3;
+}
+g.node.dimmed {
+  opacity: 0.22;
+}
+g.node.dimmed text.node-label { opacity: 0; }
+
+/* Vendor-collapse super-node: always-on label (overrides the default
+   peer-label opacity:0), uppercase mono so the chunky rounded
+   rectangle reads as "panel you can click to expand." Drop-shadow on
+   hover hints at clickability. */
+g.node.vendor-super text.node-label {
+  opacity: 1;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  fill: var(--fg);
+}
+g.node.vendor-super path.node-shape {
+  transition: filter 150ms;
+}
+g.node.vendor-super:hover path.node-shape {
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+/* The dimmed/neighbor cascade still applies so a super-node fades
+   alongside its surroundings under a non-related selection — but the
+   label opacity is always on so the vendor name stays legible even
+   when dimmed. */
+g.node.vendor-super.dimmed text.node-label { opacity: 0.5; }
+
+/* Singletons-super: stacked-disc badge for a collapsed 1-msg-fanout
+   group. Label always on (it's the only representation of the folded
+   group). Hover shadow mirrors vendor-super so both "click-me-to-
+   expand" affordances feel related. */
+g.node.singleton-super text.node-label {
+  opacity: 1;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  fill: var(--fg);
+  transition: font-size 120ms ease;
+}
+/* Name grows on hover so the operator can read the group's identity
+   without committing to a selection. */
+g.node.singleton-super:hover text.node-label,
+g.node.vendor-super:hover text.node-label {
+  font-size: 13px;
+}
+g.node.singleton-super path.node-shape {
+  transition: filter 150ms;
+}
+g.node.singleton-super:hover path.node-shape {
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+g.node.singleton-super.dimmed text.node-label { opacity: 0.5; }
+
+/* Inner-dot indicator: a darker circle in the center of any node that
+   has hidden contents — auto-collapsed singletons OR manually-folded
+   peers. Default hidden; the renderer toggles the parent class. */
+g.node circle.inner-dot {
+  display: none;
+  fill: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+g.node.has-collapsed-singletons circle.inner-dot,
+g.node.manually-collapsed circle.inner-dot {
+  display: block;
+}
+
+/* Hover-count badge: the folded-singleton count, revealed only while
+   the cursor is over the singletons-super and drawn just above the
+   glyph. A background-colored stroke under the fill (paint-order:
+   stroke) gives the number a clean outline so it reads against edges,
+   the glyph, and the name label without colliding. */
+g.node g.peek-halo {
+  display: none;
+  pointer-events: none;
+}
+g.node.singleton-super:hover g.peek-halo { display: block; }
+g.node g.peek-halo text.peek-halo-count {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  fill: var(--accent);
+  stroke: var(--bg, #07090c);
+  stroke-width: 3px;
+  paint-order: stroke;
+}
+g.node g.peek-halo text.peek-halo-count.warn { fill: var(--danger, #f85149); }
+g.node g.peek-halo text.peek-halo-warn {
+  font-size: 9px;
+  fill: var(--danger, #f85149);
+  letter-spacing: 0.03em;
+  stroke: var(--bg, #07090c);
+  stroke-width: 3px;
+  paint-order: stroke;
+}
+
+line.edge {
+  cursor: pointer;
+  transition: stroke-opacity 200ms;
+}
+line.edge.dimmed { stroke-opacity: 0.10 !important; }
+line.edge.selected { stroke-opacity: 1 !important; }
+
+.packet-dot { pointer-events: none; }
+
+/* ---------- Lasso rect ---------- */
+rect.lasso-rect {
+  fill: var(--accent);
+  fill-opacity: 0.06;
+  stroke: var(--accent);
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+/* ---------- Search overlay ---------- */
+.search-overlay {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  width: min(520px, calc(100% - 32px));
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--grid);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  font-family: var(--font-mono);
+}
+.search-overlay.hidden { display: none; }
+.search-overlay-label {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+.search-overlay input {
+  width: 100%;
+  background: #04060a;
+  border: 1px solid var(--grid);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 6px 8px;
+  outline: none;
+}
+.search-overlay input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+.search-overlay-hint {
+  margin-top: 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--fg-dim);
+}
+.search-overlay-matches {
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+.search-overlay-match {
+  padding: 3px 6px;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 2px;
+}
+.search-overlay-match:hover,
+.search-overlay-match.active {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+
+.legend-sub {
+  color: var(--fg-dim);
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+/* Welcome / empty-state overlay --------------------------------------- */
+
+.welcome-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(640px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--grid);
+  border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  padding: 24px 28px;
+  z-index: 10;
+}
+
+.welcome-card-fade {
+  transition: opacity 800ms ease-out, transform 800ms ease-out;
+}
+
+.welcome-card-hidden {
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 16px));
+  pointer-events: none;
+}
+
+.welcome-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.welcome-header h1 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.welcome-subtitle {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+
+.welcome-dismiss {
+  margin-left: auto;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.welcome-dismiss:hover { color: var(--fg); border-color: var(--fg-dim); }
+
+.welcome-section + .welcome-section { margin-top: 18px; }
+
+.welcome-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.welcome-section p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fg);
+}
+
+.welcome-section p + p { margin-top: 8px; }
+
+.welcome-section code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.welcome-status {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  align-items: baseline;
+}
+
+.welcome-status dt {
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.welcome-status dd {
+  margin: 0;
+  font-size: 12px;
+}
+
+.welcome-status-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.welcome-badge {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.welcome-badge[data-state="ok"]   { background: var(--schema-lattice); }
+.welcome-badge[data-state="wait"] { background: var(--fg-dim); }
+.welcome-badge[data-state="warn"] { background: var(--schema-ecn); }
+.welcome-badge[data-state="fail"] { background: var(--schema-cot); }
+
+.welcome-footer {
+  margin-top: 12px !important;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+
+.welcome-footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.welcome-footer a:hover { text-decoration: underline; }
+
+.welcome-pill {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--grid);
+  border-radius: 14px;
+  color: var(--fg-dim);
+  font-size: 11px;
+  padding: 4px 12px;
+  cursor: pointer;
+  z-index: 9;
+}
+
+.welcome-pill:hover {
+  color: var(--fg);
+  border-color: var(--fg-dim);
+}
+
+.welcome-pill.hidden { display: none; }
+
+/* Render-error banner — sticky overlay surfaced when a WS-handler
+ * throws (TDZ / type confusion / etc). Pairs with the row-render
+ * line in the welcome STATUS panel: the banner is loud and dismissible,
+ * the status row is quiet and persistent. */
+.render-error-banner {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 80vw;
+  padding: 8px 14px;
+  background: #3a1414;
+  color: #ffd5d5;
+  border: 1px solid #8a1d1d;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.render-error-banner.hidden { display: none; }
+
+/* The server regrouped or closed opened groups to stay under its element cap.
+   Informational, not an error: amber on the canvas ground, below the fleet bar. */
+.view-truncated {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  max-width: min(80vw, 640px);
+  padding: 6px 12px;
+  background: #2e2508;
+  color: #ffe6a6;
+  border: 1px solid #8a6a12;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.view-truncated.hidden { display: none; }
+
+/* Component isolation: the canvas is deliberately showing a slice, so the
+   banner is always on screen while it is, and carries its own way out. */
+.focus-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(80vw, 700px);
+  padding: 6px 12px;
+  background: #0d2b2b;
+  color: #9ff0e4;
+  border: 1px solid #1f6f6a;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.focus-banner-label { letter-spacing: 0.04em; }
+.focus-banner-exit {
+  background: transparent;
+  border: 1px solid #1f6f6a;
+  border-radius: 4px;
+  color: #9ff0e4;
+  font: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.focus-banner-exit:hover { background: #12403c; color: #ffffff; }
+.render-error-banner-msg { white-space: pre-wrap; word-break: break-word; }
+.render-error-banner-dismiss {
+  background: transparent;
+  border: none;
+  color: #ffd5d5;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.render-error-banner-dismiss:hover { color: #ffffff; }
+
+/* D3 graph styling — driven by attributes set at render time */
+
+.node circle {
+  stroke: var(--fg);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.node:hover circle {
+  stroke-width: 2.5;
+}
+
+.node text {
+  font-size: 11px;
+  fill: var(--fg);
+  text-anchor: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.edge {
+  stroke-opacity: 0.6;
+  fill: none;
+  pointer-events: none;
+}
+
+.packet-dot {
+  fill: var(--fg);
+  pointer-events: none;
+}
+
+/* ─── Namespace inspector (4th side-panel mode) ──────────────────────
+   Block panoscope-namespace-inspector: a virtualized, searchable list
+   browser for a folded singletons-super namespace. Graph viz is for
+   relationships; this list is for inventory at namespace scale. */
+.ns-inspector-count {
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-weight: 400;
+}
+.ns-inspector-stats {
+  margin: 6px 8px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border-left: 2px solid var(--grid);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.ns-inspector-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+}
+.ns-inspector-stat-k { color: var(--fg-dim); }
+.ns-inspector-stat-v {
+  color: var(--fg);
+  text-align: right;
+  word-break: break-word;
+}
+.ns-inspector-search {
+  margin: 6px 8px 4px;
+}
+.ns-inspector-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 6px;
+}
+.ns-inspector-search-input::placeholder { color: var(--fg-dim); }
+.ns-inspector-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Scroll container. Fixed-ish height so the windowed renderer has a
+   stable viewport; position:relative anchors the absolute viewport. */
+.ns-inspector-list {
+  position: relative;
+  margin: 0 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+}
+.ns-inspector-list-spacer { width: 1px; }
+.ns-inspector-list-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+/* Height MUST equal NS_ROW_HEIGHT (30) in main.ts — the windowed
+   renderer computes the visible window against it. box-sizing keeps the
+   1px border inside the 30px so the math stays exact. */
+.ns-inspector-row {
+  box-sizing: border-box;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--grid);
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fg);
+  transition: background 100ms, color 100ms;
+}
+.ns-inspector-row:hover {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+.ns-inspector-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.ns-inspector-row-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ns-inspector-row-events {
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.ns-inspector-empty {
+  padding: 10px 8px;
+  color: var(--fg-dim);
+  font-style: italic;
+  font-size: 11px;
+}
+.ns-inspector-actions {
+  margin: 6px 8px 0;
+}
+.ns-inspector-explode-note {
+  color: var(--fg-dim);
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.8;
+}
+.ns-inspector-btn {
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: 2px;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 100ms, border-color 100ms;
+}
+.ns-inspector-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---- Pub/sub hygiene block (publisher side panel) ----------------------
+   Verdict badge + lazily-fetched findings/fixes + the storage retrievability
+   probe line. See docs/design/pubsub-hygiene-diagnostic.md. */
+.hygiene-block {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #30363d);
+  border-radius: 4px;
+  font-size: 11px;
+}
+.hygiene-badge {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.hygiene-good { color: var(--accent, #22c55e); }
+.hygiene-review { color: var(--schema-ecn, #f0b429); }
+.hygiene-poor { color: var(--danger, #f85149); }
+.hygiene-detail { margin-top: 4px; color: var(--fg-dim, #8b949e); }
+.hygiene-retrieval { margin: 3px 0; }
+.hygiene-ret-confirmed { color: var(--accent, #22c55e); }
+.hygiene-ret-unconfirmed { color: var(--schema-ecn, #f0b429); }
+.hygiene-finding { margin-top: 5px; }
+.hygiene-sev-warn .hygiene-msg { color: var(--danger, #f85149); }
+.hygiene-sev-advisory .hygiene-msg { color: var(--schema-ecn, #f0b429); }
+.hygiene-fix { color: var(--fg-dim, #8b949e); font-style: italic; margin-top: 2px; }
+
+/* ---- History lens (docs/design/panoscope-history-lens.md) -------------------
+   Window selector in the fleet bar + faded rendering for in-window-but-quiet
+   peers, so live vs historical is unmistakable. */
+.fleet-window-select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 14px;
+}
+/* Aged peer: published within the selected window but not currently live.
+   Faded but still legible; a live peer must never look this way. */
+g.node.aged {
+  opacity: 0.42;
+}
+g.node.aged text {
+  font-style: italic;
+}
+/* Selection always wins over the aged fade so a clicked historical node is
+   still clearly highlighted. */
+g.node.aged.selected {
+  opacity: 1;
+}
+
+/* --- sibling-page nav (COP / TOP / WHO), shared across all three headers --- */
+.page-nav {
+  display: inline-flex;
+  gap: 10px;
+  margin-left: 18px;
+}
+.page-nav a {
+  color: var(--text-dim, #8b93a7);
+  text-decoration: none;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.page-nav a.active,
+.page-nav a:hover {
+  color: var(--text, #dbe1ee);
+}

@@ -1,0 +1,744 @@
+/*
+ * flashlight — Tier 1 page styles. Composes on top of the canonical
+ * Block 91 design system (colors_and_type.css + components.css inlined
+ * earlier in the <head>). Adds only what's specific to the live-tail
+ * surface: header focus echo, event-rate sparkline, event table,
+ * connection-status pill.
+ *
+ * Keep this file thin — the budget for Tier 1 is ≤ 200 KB first paint
+ * (per docs/design/minimalism-under-network-constraints.md), and the
+ * design-system tokens already give us color, type, spacing.
+ */
+
+/* Design-system token aliases. This stylesheet was authored against a
+ * local token vocabulary (--bg-base / --bg-elevated / --fg-base /
+ * --border-base / --warn / --fail / bare --bg / --fg / --bg-elev) that
+ * the inlined design-system files (colors_and_type.css + components.css)
+ * do NOT define — they expose --bg-page / --bg-panel / --fg-body /
+ * --c-line / --c-amber / --c-red etc. Without this block every one of
+ * those var() lookups resolved to nothing, so the whole surface fell
+ * back to browser defaults (dark theme lost) and — the symptom that
+ * surfaced this — the pinned, sticky .sample-detail payload panel had a
+ * transparent background, so the live event rows scrolled straight
+ * THROUGH it (text-on-text collision). Aliasing onto the theme-aware
+ * design-system tokens fixes the theme AND makes the sticky panel opaque
+ * in one move. var() references resolve at computed-value time, so the
+ * declaration order vs. the rules below does not matter. */
+:root {
+  --bg-base:      var(--bg-page);
+  --bg-elevated:  var(--bg-panel);
+  --bg-elev:      var(--bg-panel);
+  --bg:           var(--bg-page);
+  --fg-base:      var(--fg-body);
+  --fg:           var(--fg-body);
+  --border-base:  var(--c-line);
+  --warn:         var(--c-amber);
+  --fail:         var(--c-red);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-mono);
+  background: var(--bg-base);
+  color: var(--fg-base);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+header.top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-elevated);
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.focus {
+  flex: 1;
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focus strong {
+  color: var(--fg-base);
+}
+
+.status-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid var(--border-base);
+  background: var(--bg-base);
+  color: var(--fg-muted);
+}
+
+.status-pill.live {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.status-pill.reconnecting {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.status-pill.offline,
+.status-pill.error {
+  color: var(--fail);
+  border-color: var(--fail);
+}
+
+/* Block 94 cross-surface deep-link contract — header sibling links
+   (panoscope · stethoscope). Shared visual treatment via the
+   `.sibling-link` class so adding more siblings later doesn't
+   re-duplicate the rules. `.panoscope-link` / `.stethoscope-link`
+   stay as semantic hooks. */
+.sibling-link,
+.panoscope-link,
+.stethoscope-link {
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-decoration: none;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sibling-link:hover,
+.panoscope-link:hover,
+.stethoscope-link:hover {
+  color: var(--accent);
+}
+
+main {
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+  grid-template-rows: auto 1fr;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.sparkline-wrap {
+  border: 1px solid var(--border-base);
+  background: var(--bg-elevated);
+  padding: 8px;
+}
+
+.sparkline-wrap .label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+
+canvas#sparkline,
+canvas#t2-sparkline {
+  display: block;
+  width: 100%;
+  height: 48px;
+  background: var(--bg-base);
+}
+
+/* The Tier 2 sparkline section's label inlines the T2 tag in front of
+ * the caption — give the tag its standard inline styling and align
+ * the label items as a flex row. */
+.sparkline-wrap .label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Peak / now stats next to the sparkline label (Block 89 UX polish
+ * ). Anchored to the right so the operator can read current
+ * + max numeric values without an explicit numeric y-axis. */
+.sparkline-wrap .label .stats {
+  margin-left: auto;
+  color: var(--fg-base);
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.events-table {
+  border: 1px solid var(--border-base);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.events-table .controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-base);
+}
+
+.events-table .controls .count {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.events-table .controls button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  color: var(--fg-base);
+  cursor: pointer;
+}
+
+.events-table .controls button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.events-table .controls button.paused {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.events-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+}
+
+.events-table th,
+.events-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.events-table th {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  font-weight: normal;
+  background: var(--bg-base);
+}
+
+.events-table td {
+  font-size: 12px;
+  color: var(--fg-base);
+}
+
+.events-table td.ts {
+  color: var(--fg-muted);
+  width: 80px;
+  white-space: nowrap;
+}
+
+.events-table td.key {
+  color: var(--fg-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.events-table td.len {
+  color: var(--fg-muted);
+  width: 60px;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.events-table tr.lagged td {
+  color: var(--warn);
+  background: rgba(255, 170, 0, 0.04);
+}
+
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.help-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.help-link:hover {
+  text-decoration: underline;
+}
+
+/* ----- Tier 2 augmentation surfaces (Phase E) ------------------------ */
+/* `.tier-2-only` elements stay hidden by default; app.js's Tier 2 boot
+ * block removes the `hidden` attribute when the WASM module is loaded
+ * (or when ?compute=server's first /api/compute response lands). When
+ * Tier 2 evicts (WASM crash / OOM / timeout), the `hidden` attribute
+ * comes back and the augmentation surface disappears — Tier 1 keeps
+ * running unchanged. Per docs/design/flashlight.md §Tier 2. */
+
+.t2-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 4px;
+  border: 1px solid var(--border-base);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 18px;
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+}
+
+.t2-badge[hidden] {
+  display: none;
+}
+
+.t2-tag {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.t2-label {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 10px;
+  color: var(--fg-muted);
+}
+
+.t2-value {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* `.warn` modifier on `.t2-badge` — paints the badge in the warn
+ * color when an operator-visible threshold is crossed. Anomaly:
+ * |z-score| >= 2. Schema diff: any drift event observed. */
+.t2-badge.warn .t2-tag {
+  background: var(--warn);
+  color: var(--bg);
+}
+
+.t2-badge.warn .t2-value {
+  color: var(--warn);
+}
+
+/* ----- Format column + clickable rows + raw payload viewer ----------- */
+/* The event table gained a `fmt` icon column and clickable rows; clicking
+ * a row fetches GET /api/sample/{seq} and fills the detail panel below
+ * the table. Per docs/design/flashlight.md §"Tier 1 surfaces". */
+
+.events-table .controls .hint {
+  font-size: 10px;
+  color: var(--fg-muted);
+  margin-left: auto;
+  margin-right: 8px;
+  font-style: italic;
+}
+
+.events-table td.fmt {
+  width: 34px;
+  text-align: center;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.events-table tr.ev {
+  cursor: pointer;
+}
+
+.events-table tr.ev:hover td {
+  background: var(--bg-elevated);
+}
+
+.events-table tr.ev.selected td {
+  background: rgba(32, 150, 79, 0.10);
+  border-bottom-color: var(--accent);
+}
+
+.events-table tr.ev.selected td.fmt {
+  color: var(--accent);
+}
+
+/* Payload viewer — pinned at the TOP of the focused view (operator UX
+ * ). The first iteration docked it at the bottom of the
+ * up-to-500-row auto-growing table, so it sat off-screen and drifted as
+ * the tail accumulated. Top placement + sticky keeps the current payload
+ * (newest while running, selected while paused) in view right beside the
+ * freshest rows; its body scrolls internally under a height cap. */
+.sample-detail {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  margin: 0 16px 12px;
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  border: 1px solid var(--accent);
+  background: var(--bg-elevated);
+  /* Opaque fill (above) covers the rows that scroll up behind the pinned
+   * panel; the downward shadow gives it a depth cue so it reads as
+   * floating over the live tail rather than fused to the first row. */
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.sample-detail[hidden] {
+  display: none;
+}
+
+.sample-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-base);
+}
+
+.sample-detail-title {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sample-detail-meta {
+  font-size: 11px;
+  color: var(--fg-muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sample-detail-views {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.sample-detail-views[hidden] {
+  display: none;
+}
+
+.view-toggle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-base);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.view-toggle.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.sample-detail-close {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--border-base);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.sample-detail-close:hover {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* Body is the scroll container holding the two panes (decoded + raw);
+ * the panel's max-height caps it, the non-scrolling head sits above. */
+.sample-detail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sample-pane {
+  border-bottom: 1px solid var(--border-base);
+}
+
+.sample-pane[hidden] {
+  display: none;
+}
+
+.sample-pane-label {
+  position: sticky;
+  top: 0;
+  padding: 3px 12px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border-base);
+}
+
+.sample-pane-body {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-base);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ----- Navigate-anywhere: header jump box + directory landing ------- */
+/* Make the HTML `hidden` attribute authoritative even on elements that
+ * otherwise carry a display rule (sparkline-wrap, events-table,
+ * directory toggle between modes). */
+[hidden] {
+  display: none !important;
+}
+
+form.jump {
+  margin: 0;
+  display: flex;
+  position: relative; /* anchor for the absolutely-positioned results */
+}
+
+#jump-input {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 3px 8px;
+  width: 260px;
+  max-width: 36vw;
+  background: var(--bg-base);
+  border: 1px solid var(--border-base);
+  color: var(--fg-base);
+}
+
+/* Custom suggestion dropdown (replaces the native <datalist>, which only
+ * prefix-matched the whole option value). Substring matches in both
+ * directions are rendered here by app.js. */
+.jump-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  width: 460px;
+  max-width: 70vw;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.jump-result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.jump-result:last-child {
+  border-bottom: none;
+}
+
+.jump-result.active,
+.jump-result:hover {
+  background: rgba(32, 150, 79, 0.12);
+}
+
+.jump-kind {
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border: 1px solid var(--border-base);
+  border-radius: 2px;
+  padding: 0 4px;
+  line-height: 1.5;
+}
+
+.jump-val {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jump-val mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+#jump-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#jump-input::placeholder {
+  color: var(--fg-muted);
+}
+
+.directory {
+  margin: 12px 16px;
+}
+
+.directory-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid var(--border-base);
+}
+
+.directory-title {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.directory-sub {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.directory-body {
+  padding-top: 12px;
+}
+
+.directory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.dir-section-label {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin: 16px 0 8px;
+  border-bottom: 1px solid var(--border-base);
+  padding-bottom: 4px;
+}
+
+.dir-section-count {
+  color: var(--fg-muted);
+  opacity: 0.7;
+}
+
+.dir-vendor {
+  border: 1px solid var(--border-base);
+  background: var(--bg-elevated);
+}
+
+.dir-vendor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-base);
+  background: var(--bg-base);
+}
+
+.dir-vendor-name {
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.dir-vendor-name:hover {
+  text-decoration: underline;
+}
+
+.dir-vendor-count {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+ul.dir-topics {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.dir-topic {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-base);
+  text-decoration: none;
+  color: var(--fg-base);
+}
+
+.dir-topic:hover {
+  background: rgba(32, 150, 79, 0.08);
+}
+
+.dir-fmt {
+  width: 30px;
+  flex: 0 0 30px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.dir-key {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dir-meta {
+  flex: 0 1 auto;
+  color: var(--fg-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}

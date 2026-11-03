@@ -1,0 +1,99 @@
+# Standalone Cargo workspace for flashlight. Sibling to ops/panoscope/
+# — same trust-domain + build-isolation rationale. It depends on the shared
+# substrate via path.
+#
+# Block 89 Phase C per docs/design/flashlight.md.
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "flashlight"
+version = "0.0.1-alpha"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Focus-oriented inspection surface for the nova Zenoh fabric — URL declares the focused slice, server narrows the subscription, Tier 1 HTML+SSE renders live events. Block 89 Phase C per docs/design/flashlight.md."
+repository = "https://github.com/usareur-af/goatcore"
+keywords = ["zenoh", "observability", "sse", "pubsub"]
+categories = ["network-programming"]
+
+[dependencies]
+# Substrate-layer concerns (peer registry, role taxonomy, audit-event
+# parsing, Zenoh TLS config, portal client) live in panoscope-core
+# alongside panoscope + stethoscope. flashlight consumes the same
+# crate via path dep — Phase C wiring builds on Phase B's shared crate.
+panoscope-core = { git = "https://github.com/usareur-af/goatcore", tag = "goatcore/v0.1.0" }
+
+# Phase D Tier 2 analytics core — the same crate the browser-side
+# WASM module compiles from, linked natively here so the
+# `/api/compute` endpoint can run the same `Engine` against
+# operator-supplied event sequences without round-tripping through
+# the browser. Path-dep'd at the standalone-workspace boundary;
+# wasm-bindgen is wasm-target-only inside flashlight-analytics so
+# the server linkage stays clean.
+flashlight-analytics = { path = "../../crates/flashlight-analytics" }
+
+# Zenoh SDK pinned to the host image build per
+# docs/design/zenoh-version-pinning.md.
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+
+# Async runtime — full multi-thread; request-shaped service per
+# ADR 0112.
+tokio = { version = "1", features = ["full"] }
+# `tokio-stream` provides `BroadcastStream` — wraps a broadcast::Receiver
+# as a `Stream` for the SSE handler.
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+
+# HTTP + SSE (Tier 1 is canonical workhorse per ADR 0862). The
+# `compression-br` + `compression-gzip` features are both on so
+# Accept-Encoding negotiation picks the best per-client codec; SSE
+# responses prefer Brotli per the minimalism doctrine.
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = [
+    "cors",
+    "trace",
+    "compression-br",
+    "compression-gzip",
+] }
+hyper = "1"
+
+# Frontend bundle embedding for Tier 1 HTML + ~20 KB vanilla JS
+# (Phase C).
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"
+
+# Serde for filter struct + SSE event payload.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Safe HTML escaping for user-supplied URL parameters before they hit
+# the SSR template (same shape stethoscope uses).
+html-escape = "0.2"
+
+# Structured logging.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling.
+anyhow = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

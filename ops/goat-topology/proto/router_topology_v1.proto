@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Canonical schema for the zenoh topology surface (ADR 1160,
+// docs/design/zenoh-topology-surface.md). Published by goat-topology:
+//   ops/fabric/topology/<site>/<node>  -> RouterTopologyV1
+//
+// This .proto is the human-facing / schema-viewer source of truth. The
+// goat-topology Rust binary encodes equivalent prost-derive structs
+// (src/wire.rs); keep the two in lock-step (same field tags). The portal
+// topic.format is `protobuf:RouterTopologyV1`.
+//
+// ONE ROUTER DESCRIBES ONLY ITSELF. There is deliberately no field for "what I
+// think another router's config is": a router cannot observe another router's
+// gateway config, and a field for it would invite a guess. The surface joins the
+// per-router snapshots; it does not ask any router to speak for another.
+
+syntax = "proto3";
+
+package goat.fabric.topology.v1;
+
+// How this router's `gateway.south` is configured, read from the DECLARED
+// config file on the router host — never inferred from observed regions.
+//
+// The distinction is load-bearing: `Preset(Auto)` and a `Custom` list whose
+// filters match nothing produce THE SAME observable regions, and the second is
+// a real misconfiguration. A publisher that could not read the config reports
+// UNREADABLE and the surface renders that honestly, rather than reporting a
+// fault as healthy (ADR 1036: never a false green).
+enum GatewayMode {
+  GATEWAY_MODE_UNSPECIFIED = 0;
+  // No `gateway` key in the config -> zenoh's Preset(Auto) default. This is
+  // what every goat router runs today.
+  GATEWAY_MODE_AUTO = 1;
+  // `gateway.south` is an explicit Custom list; see custom_subregions.
+  GATEWAY_MODE_CUSTOM = 2;
+  // The config file could not be read or parsed. NOT "auto".
+  GATEWAY_MODE_UNREADABLE = 3;
+}
+
+// Which filter axes one `gateway.south` filter uses.
+//
+// SECURITY NOTE, and the reason this is modelled per-axis rather than as an
+// opaque blob: `zids` and `region_names` are values THE PEER ASSERTS ABOUT
+// ITSELF (ADR 1041 citing ADR 0844). A filter using either routes differently
+// and authorizes nothing. The surface raises finding T-001 on their use. The
+// filter VALUES are deliberately not carried — the surface needs to know an
+// axis is in use, not what it matches, and shipping ZID allow-lists onto the
+// bus would be a needless disclosure.
+message GatewayFilterV1 {
+  bool uses_modes = 1;
+  bool uses_interfaces = 2;
+  bool uses_zids = 3;          // peer-asserted
+  bool uses_region_names = 4;  // peer-asserted
+  bool negated = 5;
+}
+
+// One entry of the `gateway.south` Custom list.
+//
+// `index` IS the region id — zenoh assigns `south:<index>:<mode>` from the
+// entry's position in the list (zenoh-1.9.0 net/runtime/region.rs:124-136), so
+// reordering the list renumbers live regions.
+message GatewaySubregionV1 {
+  uint32 index = 1;
+  // Absent `filters` matches every peer; an EMPTY list matches none, which
+  // makes the subregion inert and is finding T-002.
+  bool filters_present = 2;
+  repeated GatewayFilterV1 filters = 3;
+}
+
+// One session this router holds, and the region it was assigned.
+message SessionV1 {
+  string peer_zid = 1;
+  string whatami = 2;   // router | peer | client
+  string region = 3;    // north | south:<id>:<mode> | local
+  repeated string link_dst = 4;
+}
+
+// One region's link-state graph, as this router sees it.
+//
+// `route_successor_count` on the parent message should equal the sum of
+// v*(v-1) across these regions — the invariant measured in M-112. The surface
+// checks it (T-005) rather than assuming it.
+message RegionV1 {
+  string name = 1;              // north | south:<id>:<mode>
+  uint32 link_state_v = 2;      // nodes in this region's link-state graph
+  uint32 link_state_e = 3;      // edges
+  repeated string member_zids = 4;
+  uint32 session_count = 5;     // sessions this router holds in this region
+}
+
+message RouterTopologyV1 {
+  // --- identity -----------------------------------------------------------
+  string zid = 1;
+  string site = 2;              // the <site> segment of the key
+  string node = 3;              // the <node> segment of the key
+  string zenoh_version = 4;     // from the adminspace, so skew is visible
+
+  // --- freshness ----------------------------------------------------------
+  uint64 ts_unix_ms = 5;
+  uint32 interval_secs = 6;     // how often to expect the next one; the surface
+                                // grades a router stale after 3 of these
+
+  // --- declared config (from the file) ------------------------------------
+  GatewayMode gateway_mode = 7;
+  repeated GatewaySubregionV1 custom_subregions = 8;
+  // Why the config could not be read, when gateway_mode is UNREADABLE. Free
+  // text for an operator, never parsed.
+  string gateway_read_error = 9;
+
+  // --- observed state (from the adminspace) -------------------------------
+  repeated RegionV1 regions = 10;
+  uint32 route_successor_count = 11;
+  repeated SessionV1 sessions = 12;
+
+  // Set when the adminspace read itself failed; regions/sessions are then
+  // empty and the surface must render this router as unknown, not as isolated.
+  string observe_error = 13;
+}

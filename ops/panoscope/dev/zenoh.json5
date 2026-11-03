@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Zenoh router config for local panoscope dev. No mTLS — deliberately
+// lax for `docker compose up` workflows; production uses the Ansible
+// role's TLS-required config.
+{
+  mode: "router",
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"],
+  },
+  scouting: {
+    multicast: { enabled: false },
+  },
+  plugins: {
+    rest: {
+      http_port: 8000,
+    },
+  },
+}

@@ -1,0 +1,296 @@
+{
+ "https://c2sp.org/age": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "age"
+ },
+ "https://coredns.io/manual/toc/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "coredns"
+ },
+ "https://coredns.io/plugins/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "coredns"
+ },
+ "https://csrc.nist.gov/projects/post-quantum-cryptography": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "pqc"
+ },
+ "https://csrc.nist.gov/pubs/fips/203/final": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "pqc"
+ },
+ "https://csrc.nist.gov/pubs/fips/204/final": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "pqc"
+ },
+ "https://developer.hashicorp.com/terraform/docs": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "terraform"
+ },
+ "https://developer.hashicorp.com/terraform/language/state": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "terraform"
+ },
+ "https://doc.traefik.io/traefik/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "traefik"
+ },
+ "https://docs.ansible.com/ansible/latest/tips_tricks/ansible_tips_tricks.html": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "ansible"
+ },
+ "https://docs.ansible.com/ansible/latest/user_guide/index.html": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "ansible"
+ },
+ "https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "minio"
+ },
+ "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp.html": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "aws-vault"
+ },
+ "https://docs.docker.com/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "containers"
+ },
+ "https://docs.docker.com/engine/storage/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "containers"
+ },
+ "https://docs.haproxy.org/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "haproxy-rathole"
+ },
+ "https://docs.netbird.io/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "netbird"
+ },
+ "https://docs.podman.io/en/latest/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "containers"
+ },
+ "https://github.com/99designs/aws-vault": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "aws-vault"
+ },
+ "https://github.com/FiloSottile/age": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "age"
+ },
+ "https://github.com/coredns/coredns": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "coredns"
+ },
+ "https://github.com/coturn/coturn": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "stun-turn"
+ },
+ "https://github.com/eclipse-zenoh/zenoh": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "zenoh"
+ },
+ "https://github.com/minio/minio": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "minio"
+ },
+ "https://github.com/netbirdio/netbird": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "netbird"
+ },
+ "https://github.com/pgEdge/spock": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "postgres"
+ },
+ "https://github.com/rapiz1/rathole": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "haproxy-rathole"
+ },
+ "https://github.com/rosenpass/rosenpass": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "rosenpass"
+ },
+ "https://github.com/spiffe/spire": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "spiffe"
+ },
+ "https://letsencrypt.org/how-it-works/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "traefik"
+ },
+ "https://matrix.org/docs/matrix-concepts/elements-of-matrix/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "matrix"
+ },
+ "https://matrix.org/docs/matrix-concepts/end-to-end-encryption/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "matrix"
+ },
+ "https://min.io/docs/minio/linux/index.html": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "minio"
+ },
+ "https://rosenpass.eu/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "rosenpass"
+ },
+ "https://spec.matrix.org/latest/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "matrix"
+ },
+ "https://spiffe.io/docs/latest/spiffe-about/overview/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "spiffe"
+ },
+ "https://spiffe.io/docs/latest/spire-about/spire-concepts/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "spiffe"
+ },
+ "https://www.oauth.com/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "ory"
+ },
+ "https://www.ory.sh/docs/hydra/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "ory"
+ },
+ "https://www.ory.sh/docs/kratos/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "ory"
+ },
+ "https://www.postgresql.org/docs/current/logical-replication.html": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "postgres"
+ },
+ "https://www.postgresql.org/docs/current/wal-intro.html": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "postgres"
+ },
+ "https://www.rfc-editor.org/rfc/rfc8489": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "stun-turn"
+ },
+ "https://www.rfc-editor.org/rfc/rfc8656": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "stun-turn"
+ },
+ "https://www.wireguard.com/#conceptual-overview": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "wireguard"
+ },
+ "https://www.wireguard.com/papers/wireguard.pdf": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "wireguard"
+ },
+ "https://www.wireguard.com/quickstart/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "wireguard"
+ },
+ "https://zenoh.io/docs/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "zenoh"
+ },
+ "https://zenoh.io/docs/getting-started/first-app/": {
+  "checked": "2026-08-17",
+  "code": "200",
+  "ok": true,
+  "tech": "zenoh"
+ }
+}

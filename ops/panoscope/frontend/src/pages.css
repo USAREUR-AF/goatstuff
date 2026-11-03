@@ -1,0 +1,238 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * Shared styles for the sibling top/who pages. Imports ride on
+ * styles.css (theme variables + header); this file adds only the
+ * table/strip/panel shapes those pages need. Honesty palette matches
+ * the TUI: grounded colors bright, idle/unmetered dim — a page must
+ * never render a green it can't ground.
+ */
+
+.page-body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* .page-nav styles live in styles.css — shared with the COP header. */
+
+.page-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panel {
+  background: var(--bg-elevated, #151a26);
+  border: 1px solid var(--border, #232a3a);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.panel h2 {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim, #8b93a7);
+  margin: 0 0 8px;
+}
+
+/* --- env weather strip --- */
+.env-strip {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.env-chip {
+  background: var(--bg-elevated, #151a26);
+  border: 1px solid var(--border, #232a3a);
+  border-radius: 6px;
+  padding: 8px 12px;
+  min-width: 130px;
+}
+.env-chip .domain {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim, #8b93a7);
+  text-transform: uppercase;
+}
+.env-chip .state {
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.env-chip .meta {
+  font-size: 11px;
+  color: var(--text-dim, #8b93a7);
+}
+
+/* Honesty palette. idle/unmetered/no-verdict are DIM, never colored. */
+.state-green { color: var(--ok, #38c172); }
+.state-amber { color: var(--warn, #e2a03f); }
+.state-red { color: var(--bad, #e05252); }
+.state-cyan { color: #4fc3d9; }
+.state-dim { color: var(--text-dim, #8b93a7); opacity: 0.75; }
+
+/* --- class-load bars --- */
+.class-row {
+  display: grid;
+  grid-template-columns: 40px 90px 1fr 140px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.class-bar {
+  height: 10px;
+  background: var(--border, #232a3a);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.class-bar > div {
+  height: 100%;
+  border-radius: 5px;
+}
+.class-bar-green > div { background: var(--ok, #38c172); }
+.class-bar-amber > div { background: var(--warn, #e2a03f); }
+.class-bar-red > div { background: var(--bad, #e05252); }
+.class-note {
+  font-size: 13px;
+  color: var(--text-dim, #8b93a7);
+}
+
+/* --- tables --- */
+.table-scroll { overflow-x: auto; }
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.data-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim, #8b93a7);
+  border-bottom: 1px solid var(--border, #232a3a);
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #232a3a) 50%, transparent);
+  white-space: nowrap;
+}
+.data-table th.num, .data-table td.num { text-align: right; }
+.data-table tbody tr:hover { background: color-mix(in srgb, var(--border, #232a3a) 35%, transparent); }
+.data-table tbody tr.selected { background: color-mix(in srgb, var(--border, #232a3a) 70%, transparent); }
+.data-table .anchor-sub {
+  font-size: 11px;
+  color: var(--text-dim, #8b93a7);
+}
+
+.producer-filter {
+  width: 260px;
+  margin-bottom: 8px;
+  background: var(--bg, #0d1118);
+  color: var(--text, #dbe1ee);
+  border: 1px solid var(--border, #232a3a);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.totals {
+  font-size: 12px;
+  color: var(--text-dim, #8b93a7);
+  padding: 4px 2px;
+}
+
+.empty-note, .portal-note {
+  font-size: 12px;
+  color: var(--text-dim, #8b93a7);
+  padding: 6px 2px;
+}
+
+/* Scoped-view honesty note: a filtered table must never read as the
+ * whole fabric. */
+.restricted-note {
+  border: 1px solid var(--warn, #e2a03f);
+  border-radius: 6px;
+  color: var(--warn, #e2a03f);
+  font-size: 12px;
+  padding: 8px 12px;
+}
+
+/* Full-page state for 403 / hard errors — explicit, never a blank. */
+.full-error {
+  margin: 40px auto;
+  max-width: 560px;
+  border: 1px solid var(--border, #232a3a);
+  border-radius: 8px;
+  padding: 24px 28px;
+  font-size: 14px;
+  color: var(--text, #dbe1ee);
+  background: var(--bg-elevated, #151a26);
+}
+.full-error h2 { margin-top: 0; font-size: 15px; }
+.full-error p { color: var(--text-dim, #8b93a7); }
+
+/* Subset disclosure: the web pages are the read-only slice of the goat
+ * CLI's toolset — say so, so nobody mistakes the page for the whole tool. */
+.cli-note {
+  flex: none;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim, #8b93a7);
+  border-top: 1px solid var(--border, #232a3a);
+  padding: 8px 18px 10px;
+}
+.cli-note code {
+  color: var(--text, #dbe1ee);
+  font-size: 11px;
+}
+
+/* freshness tag mirrors the COP fleet bar */
+.freshness { font-size: 11px; }
+.freshness.stale { color: var(--bad, #e05252); }
+
+/* --- who page layout --- */
+.who-layout {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 14px;
+}
+.who-roster { flex: 3; min-width: 0; }
+.who-detail { flex: 2; max-width: 460px; position: sticky; top: 0; }
+.who-detail dl { margin: 0; font-size: 13px; }
+.who-detail dt {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim, #8b93a7);
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+.who-detail dd { margin: 2px 0 0; word-break: break-all; }
+.grant-list { margin: 4px 0 0; padding-left: 16px; font-size: 12px; }
+.grant-list li { margin: 2px 0; word-break: break-all; }
+.grant-layer { color: var(--text-dim, #8b93a7); }
+
+@media (max-width: 900px) {
+  .who-layout { flex-direction: column; }
+  .who-detail { max-width: none; position: static; }
+}
+
+/* Catalog fold toggle: the "nothing declared" rows are hidden by default
+   (catalog-filter.ts); this line under the search box unfolds them. */
+.catalog-fold {
+  display: block;
+  margin: 4px 0 8px;
+  color: var(--fg-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.catalog-fold input {
+  margin-right: 6px;
+  vertical-align: middle;
+}

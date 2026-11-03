@@ -1,0 +1,129 @@
+# peerview — what class of thing is each ingress service, and what is a probe.
+#
+# ONE HOME for the policy question these pages turn on: "is peer usage of the
+# browsing surfaces competing with the core services?" That question is only
+# answerable if `browse` and `core` are DECLARED somewhere an operator can read
+# and argue with, rather than inferred by a regex buried in a poller. This is
+# that place.
+#
+# Matched against the POST-NORMALISATION service name — `nova-portal@file`
+# becomes `portal` (peerview-poll.py `norm_service`, coupled to the same `nova-`
+# strip that prometheus.yml applies at ingest). Patterns are full-match
+# regexes.
+#
+# A service that matches nothing is `unclassified`. It is counted, it is named
+# on the page, and it is never quietly folded into a class it might not belong
+# in. Seeing a name in that list is the signal to add it here.
+
+# ── Synthetic traffic, removed before any demand figure is computed ────────
+# Checked BEFORE the service classes and against the request PATH, because a
+# probe and a page load hit the same service and only the path separates them.
+#
+# Without this the surfaces read as busy when nobody is using them: a blackbox
+# exporter probing `GET /healthz` four times a minute forever is a monitoring
+# artefact, not usage, and counting it makes every unused surface look equally
+# popular.
+probe_paths:
+  - "/healthz"
+  - "/health"
+  - "/healthz/.*"
+  - "/-/healthy"
+  - "/-/ready"
+  - "/api/health"
+  - "/ping"
+  - "/livez"
+  - "/readyz"
+
+# ── Services whose duration is a STREAM LIFETIME, not a response time ──────
+# Their requests and bytes are counted normally. Their DURATIONS are excluded
+# from every percentile, every mean, and the contention test.
+#
+# Traefik times a connection open-to-close, so one held-open gRPC stream
+# records as a single enormous "request". Measured,
+# before this list existed: the contention test reported a core-service p95 of
+# 675,687 ms — eleven minutes — and it was one signal stream's lifetime, not
+# anything anybody waited for. netview's percentiles carry the same exclusion
+# for the same reason (mesh-bandwidth-attribution.md); this is the second half
+# of one fact and the two lists must be changed together.
+#
+# Names are POST-NORMALISATION (`signal@file` -> `signal`).
+stream_services:
+  - "signal"
+  - "portal"
+
+classes:
+
+  core:
+    why: >-
+      The substrate a peer needs in order to be a peer at all: it exchanges
+      signal to build tunnels, it re-registers with management, it authenticates.
+      A peer generates this whether or not a person is touching it, which is
+      exactly why it is the BASELINE half of the cost split. Most of it arrives
+      through the relay ingress tunnel and is therefore unattributable at this
+      vantage (ADR 1085) — that is a property of the plane, not a measurement
+      failure.
+    match:
+      - "signal"
+      - "mgmt"
+      - "hydra"
+      - "auth"
+      - "kratos"
+      # The unclassified panel names a service carrying real traffic and
+      # matching no declared class until someone decides where it belongs.
+      # Kratos's public API is authentication, so it is baseline.
+      - "kratos-api"
+      - "selfservice"
+      - "oauth2.*"
+      - "relay-metrics-ingest"
+
+  browse:
+    why: >-
+      Surfaces a person opens in a browser. This is the ACTIVE half of the cost
+      split and the only plane where per-peer attribution works, because these
+      requests arrive over the mesh entrypoint carrying the peer's own address.
+      Inspection surfaces sit here rather than in `core` deliberately: panoscope
+      is the one surface that queries the fabric on request (ADR 1123), so
+      demand on it is the demand most worth watching.
+    match:
+      - "panoscope"
+      - "netvis"
+      - "flashlight"
+      - "stethoscope"
+      - "microscope"
+      - "goat-map"
+      - "portal"
+      - "brief"
+      - "isitup.*"
+      - "dataflows"
+      - "demogame"
+      - "goat-docs"
+      - "gym"
+      - "zenoh-sandbox-web"
+      - "trust-sandbox"
+
+  admin:
+    why: >-
+      Operator and administrative consoles. Split out from `browse` because
+      their demand is small, bursty and tied to a named operator action rather
+      than to fleet size — averaging them into browsing demand would make a
+      single admin session look like a usage trend.
+    match:
+      - "id-admin-console"
+      - "id-admin-console-onboard"
+      - "consistency-console"
+      - "compliance"
+      - "grafana"
+      - "minio-console.*"
+      - "dashboard"
+      - "relay-health"
+
+  artifact:
+    why: >-
+      Bulk artifact and image pulls. Kept separate because one client fetching
+      one release moves more bytes than a day of browsing, and a byte-ranked
+      "heavy user" table that mixes the two ranks the person who ran an install
+      above the person who left six dashboards open.
+    match:
+      - "goat-get"
+      - "registry"
+      - "oci.*"

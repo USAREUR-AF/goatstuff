@@ -1,0 +1,229 @@
+/* goat gym — one stylesheet, inlined into every page.
+   No web fonts, no CDN: the surface has to render at an edge with no internet,
+   which is the situation the training is for. */
+
+:root {
+  --bg:        #f7f5f0;
+  --bg-soft:   #efece4;
+  --card:      #ffffff;
+  --fg:        #16150f;
+  --fg-soft:   #5b5850;
+  --fg-faint:  #8a867c;
+  --rule:      #ded9cc;
+  --accent:    #8a5a00;
+  --accent-bg: #f6ecd8;
+  --warn:      #a8620a;
+  --warn-bg:   #fdf2df;
+  --good:      #2f6b3f;
+  --code-bg:   #f1eee6;
+  --shadow:    0 1px 2px rgba(20,18,10,.05), 0 8px 24px rgba(20,18,10,.05);
+  --radius:    12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #14141a;
+    --bg-soft:   #1a1a21;
+    --card:      #1d1d25;
+    --fg:        #eceae4;
+    --fg-soft:   #a8a49a;
+    --fg-faint:  #7d7a72;
+    --rule:      #2f2f3a;
+    --accent:    #e3b061;
+    --accent-bg: #2a2318;
+    --warn:      #e0a44e;
+    --warn-bg:   #2b2317;
+    --good:      #7fc08d;
+    --code-bg:   #23232c;
+    --shadow:    0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#14141a; --bg-soft:#1a1a21; --card:#1d1d25; --fg:#eceae4; --fg-soft:#a8a49a;
+  --fg-faint:#7d7a72; --rule:#2f2f3a; --accent:#e3b061; --accent-bg:#2a2318;
+  --warn:#e0a44e; --warn-bg:#2b2317; --good:#7fc08d; --code-bg:#23232c;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.25);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 17px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: "kern" 1;
+}
+
+/* ── chrome ───────────────────────────────────────────────────────────── */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--rule);
+}
+.topbar .in {
+  max-width: 78rem; margin: 0 auto; padding: .7rem 1.5rem;
+  display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
+}
+.brand {
+  font-weight: 700; letter-spacing: -.02em; font-size: 1.05rem;
+  color: var(--fg); text-decoration: none; white-space: nowrap;
+}
+.brand span { color: var(--accent); }
+.topnav { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .9rem; }
+.topnav a { color: var(--fg-soft); text-decoration: none; }
+.topnav a:hover, .topnav a[aria-current] { color: var(--accent); }
+
+.wrap { max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.5rem 6rem; }
+.narrow { max-width: 46rem; }
+
+/* ── type ─────────────────────────────────────────────────────────────── */
+h1 { font-size: clamp(1.8rem, 1.3rem + 1.6vw, 2.6rem); line-height: 1.15; letter-spacing: -.025em; margin: 0 0 .5rem; }
+h2 { font-size: 1.45rem; line-height: 1.25; letter-spacing: -.015em; margin: 2.8rem 0 .8rem; }
+h3 { font-size: 1.12rem; margin: 2rem 0 .5rem; letter-spacing: -.01em; }
+h4 { font-size: 1rem; margin: 1.4rem 0 .4rem; color: var(--fg-soft); }
+p { margin: .8rem 0; }
+a { color: var(--accent); text-underline-offset: 2px; }
+.lead { font-size: 1.15rem; line-height: 1.55; color: var(--fg-soft); margin: 0 0 1.4rem; }
+.eyebrow { font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; color: var(--fg-faint); margin: 0 0 .5rem; }
+.crumb { font-size: .85rem; color: var(--fg-faint); margin: 0 0 1.2rem; }
+.crumb a { color: var(--fg-soft); text-decoration: none; }
+.crumb a:hover { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
+
+code {
+  background: var(--code-bg); padding: .12em .38em; border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px;
+  padding: .9rem 1.1rem; overflow-x: auto; line-height: 1.5;
+}
+pre code { background: none; padding: 0; font-size: .86rem; }
+blockquote {
+  margin: 1.2rem 0; padding: .1rem 1.1rem; border-left: 3px solid var(--rule);
+  color: var(--fg-soft);
+}
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .93rem; }
+th, td { border-bottom: 1px solid var(--rule); padding: .55rem .7rem; text-align: left; vertical-align: top; }
+th { font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-faint); font-weight: 600; }
+
+/* ── chips ────────────────────────────────────────────────────────────── */
+.chips { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin: .2rem 0 0; }
+.chip {
+  font-size: .74rem; letter-spacing: .03em; padding: .18rem .55rem; border-radius: 999px;
+  border: 1px solid var(--rule); color: var(--fg-faint); background: var(--card); white-space: nowrap;
+}
+.chip.level-mastery { border-color: var(--accent); color: var(--accent); }
+.chip.safety-admin, .chip.safety-writes { border-color: var(--warn); color: var(--warn); }
+.chip.open { border-color: var(--good); color: var(--good); }
+.chip.gated { border-color: var(--warn); color: var(--warn); }
+/* A machine door — no web page behind the name, so the name is not a link. */
+.chip.machine { border-style: dashed; }
+
+/* ── cards ────────────────────────────────────────────────────────────── */
+.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); }
+.card {
+  display: block; background: var(--card); border: 1px solid var(--rule);
+  border-radius: var(--radius); padding: 1.15rem 1.25rem; text-decoration: none;
+  color: inherit; box-shadow: var(--shadow); transition: transform .12s ease, border-color .12s ease;
+}
+a.card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.card h3 { margin: 0 0 .35rem; font-size: 1.08rem; }
+.card p { margin: .25rem 0 .6rem; font-size: .92rem; color: var(--fg-soft); }
+.card .meta { font-size: .78rem; color: var(--fg-faint); }
+
+/* ── module page ──────────────────────────────────────────────────────── */
+.steps { counter-reset: step; list-style: none; padding: 0; margin: 1rem 0; }
+.steps > li {
+  counter-increment: step; position: relative; padding: 0 0 1.3rem 2.6rem; margin: 0;
+  border-left: 1px solid var(--rule); margin-left: .9rem;
+}
+.steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.steps > li::before {
+  content: counter(step); position: absolute; left: -.9rem; top: 0;
+  width: 1.8rem; height: 1.8rem; border-radius: 999px; background: var(--accent-bg);
+  color: var(--accent); border: 1px solid var(--rule);
+  display: grid; place-items: center; font-size: .82rem; font-weight: 700;
+}
+.steps .do { margin: .1rem 0 .3rem; font-weight: 600; }
+.steps .note { margin: 0; color: var(--fg-soft); font-size: .95rem; }
+.steps pre { margin: .45rem 0; }
+
+.quirk {
+  background: var(--warn-bg); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-left: 3px solid var(--warn); border-radius: 0 10px 10px 0;
+  padding: .9rem 1.1rem; margin: .9rem 0;
+}
+.quirk .so { margin: .5rem 0 0; }
+.quirk .so b { color: var(--warn); }
+.quirk .src { display: block; margin-top: .5rem; font-size: .8rem; color: var(--fg-faint); }
+
+.drill {
+  background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 1.1rem 1.25rem; box-shadow: var(--shadow);
+}
+.drill h3 { margin-top: 0; }
+.drill .pass { color: var(--fg-soft); }
+
+.linklist { list-style: none; padding: 0; margin: .6rem 0; }
+.linklist li { padding: .5rem 0; border-bottom: 1px solid var(--rule); }
+.linklist li:last-child { border-bottom: 0; }
+.linklist .why { display: block; font-size: .9rem; color: var(--fg-soft); }
+.linklist .unhosted { color: var(--fg-faint); }
+
+.pager { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem; font-size: .95rem; }
+.pager a { text-decoration: none; }
+.pager .l::before { content: "← "; }
+.pager .r::after { content: " →"; }
+
+.filter {
+  width: 100%; padding: .7rem .9rem; font-size: 1rem; border-radius: 10px;
+  border: 1px solid var(--rule); background: var(--card); color: var(--fg); margin: .8rem 0;
+}
+.filter:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.rowlist { list-style: none; padding: 0; margin: 0; }
+.rowlist li { display: flex; gap: .8rem; align-items: baseline; padding: .6rem 0; border-bottom: 1px solid var(--rule); }
+.rowlist li.planned { color: var(--fg-faint); }
+.rowlist .n { color: var(--fg-faint); font-variant-numeric: tabular-nums; font-size: .85rem; min-width: 1.4rem; }
+.rowlist a { text-decoration: none; font-weight: 600; }
+.rowlist li > span:nth-child(2) { flex: 1; min-width: 0; }
+.rowlist .why { display: block; color: var(--fg-soft); font-size: .92rem; margin-top: .15rem; }
+.linklist .why { margin-top: .15rem; }
+
+footer {
+  border-top: 1px solid var(--rule); margin-top: 4rem; padding-top: 1.2rem;
+  font-size: .85rem; color: var(--fg-faint);
+}
+footer code { font-size: .8em; }
+
+@media (max-width: 42rem) {
+  body { font-size: 16px; }
+  .wrap { padding: 1.75rem 1.1rem 4rem; }
+  .rowlist li { flex-wrap: wrap; }
+}
+
+/* A document we cannot host. It has to read as a real entry with a next step,
+   not as a greyed-out dead link — the previous treatment did, and readers took
+   it for breakage. */
+.linklist li.offsite { padding: .9rem 0 1rem; }
+.linklist .t { display: block; font-weight: 600; color: var(--fg); }
+.linklist .preview {
+  margin: .55rem 0 .55rem; padding: .55rem .85rem;
+  border-left: 2px solid var(--rule); background: var(--bg-soft);
+  border-radius: 0 8px 8px 0; color: var(--fg-soft); font-size: .93rem;
+}
+.linklist .preview.withheld { color: var(--fg-faint); font-style: italic; }
+.linklist .access { margin: .5rem 0 0; font-size: .9rem; color: var(--fg-soft); }
+.linklist .access .chip { margin-right: .35rem; }
+.linklist .access .soon { color: var(--accent); }
+
+/* Said once per page, not under every entry. */
+.soon-note {
+  margin: .9rem 0 0; padding: .6rem .9rem; border-radius: 8px;
+  background: var(--accent-bg); border: 1px solid var(--rule);
+  color: var(--fg-soft); font-size: .9rem;
+}

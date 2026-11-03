@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>topology · zenoh routing domains</title>
+<!--
+  MARKUP ONLY. Styles are in app.css, behaviour in app.js, and the design system
+  is served from its own URL rather than copied here — one source of truth, and
+  each asset gets its own cache lifetime instead of a copy edit re-sending the
+  whole bundle.
+
+  ORDER: verdict, then the graph as the orientation device, then findings,
+  changes, routers, and the carve planner. The graph leads because it answers
+  "where am I" before any of the words do; the verdict above it means nobody has
+  to read a picture to learn whether anything is wrong.
+
+  SELF-CONTAINED BY REQUIREMENT. No CDN, no webfont, no external fetch: this is
+  a mesh-only operator surface and must not attempt egress on page load. Tests
+  assert it. Everything reads /api/topology, which the server answers from
+  bytes built on the write path — a page view does no work at all, let alone
+  fabric work (ADR 1160 §5, ADR 1123).
+-->
+<link rel="stylesheet" href="/assets/design-system.css">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+
+
+<header class="masthead">
+  <div class="brand"><span class="dot"></span><h1>topology</h1></div>
+  <span class="t-label">zenoh routing domains</span>
+  <span class="t-mono-sm" id="scope">—</span>
+  <span class="t-mono-sm" id="clock" style="margin-left:auto">—</span>
+</header>
+
+<main>
+  <div class="verdict" id="verdict"></div>
+
+  <section>
+    <div class="sec-head">
+      <h2 class="t-h4">Routing graph</h2>
+      <span class="t-label" id="graph-note">—</span>
+    </div>
+    <div class="stage stage--hero">
+      <svg id="graph" viewBox="0 0 900 380" role="img"
+           aria-label="Routers, and the region each connection was assigned to"></svg>
+      <div class="legend">
+        <span><i class="k-north"></i>routed link — both ends share a routing group</span>
+        <span><i class="k-south"></i>terminated link — one end sits below the other</span>
+        <span><i class="k-stale"></i>gone quiet</span>
+        <span style="color:var(--fg-faint)">amber arc = applications connected here · click a router to plan a carve</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2 class="t-h4">Findings</h2>
+      <span class="t-label">what is wrong, and what to do about it</span>
+      <div class="filters" id="filters"></div>
+    </div>
+    <details class="glossary">
+      <summary>What these words mean</summary>
+      <dl>
+        <dt>router</dt><dd>The process that carries messages between applications. One or more per site.</dd>
+        <dt>routing group</dt><dd>A set of routers that share a map of each other. Called a <em>region</em> in the configuration. Splitting routers into groups is what keeps the maps small.</dd>
+        <dt>north / south</dt><dd>Two halves of a router's world. <em>North</em> is the group it belongs to as an equal. <em>South</em> is everything hanging below it, which it terminates rather than routes through.</dd>
+        <dt>route entry</dt><dd>One line in a router's table saying "to reach X, send to Y". A group of N routers costs every member N×(N−1) of them.</dd>
+        <dt>ZID</dt><dd>A name a zenoh process announces for itself. Useful for telling processes apart. <strong>Not a credential</strong> — nothing verifies it.</dd>
+        <dt>stale</dt><dd>This router has not reported recently. Its numbers are the last ones we saw, not current ones.</dd>
+      </dl>
+    </details>
+    <div id="findings"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2 class="t-h4">Changes</h2>
+      <span class="t-label" id="since">—</span>
+    </div>
+    <div class="feed" id="feed"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2 class="t-h4">Routers</h2>
+      <span class="t-label">declared configuration, and what is actually running</span>
+    </div>
+    <div class="scroll"><table class="table" id="routers"></table></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2 class="t-h4">Carve planner</h2>
+      <span class="t-label">what a region would cost, on the measured model</span>
+    </div>
+    <div class="plan">
+      <p class="t-body-sm" style="margin:0;color:var(--fg-muted)">
+        Pick the routers you would put in one south subregion. The rest stay north.
+      </p>
+      <div class="picks" id="picks"></div>
+      <div class="plan-out" id="planout"></div>
+      <p class="caveat" id="plancaveat"></p>
+    </div>
+  </section>
+</main>
+<script type="module" src="/assets/app.js"></script>
+</body>
+</html>

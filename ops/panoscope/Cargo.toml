@@ -1,0 +1,108 @@
+# Standalone Cargo workspace for panoscope. Deliberately NOT a member of
+# the goat-relay root workspace at the repo root — trust-domain separation
+# (trial fabric vs production) and build isolation (panoscope's heavy zenoh
+# deps don't slow `cargo check` for goat-relay developers). Matches the
+# zenoh-plugins/ pattern of own-workspace.
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "panoscope"
+version = "0.0.1-alpha"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Live visualization of a goatnet Zenoh fabric — peers as nodes, topic flows as animated edges with schema-color coding. Block 82Q per docs/design/panoscope.md."
+repository = "https://github.com/usareur-af/goatcore"
+readme = "README.md"
+keywords = ["zenoh", "visualization", "observability", "d3", "pubsub"]
+categories = ["network-programming", "visualization"]
+
+[dependencies]
+# Shared substrate factor-out, consolidating across two phases:
+#   - Wave 1 (stethoscope Phase B, Block 90): portal HTTP client, audit-
+#     event NDJSON shape, S3 audit-tail walker.
+#   - Wave 2 (flashlight Phase B, Block 89, PR #522): peer registry +
+#     role taxonomy + Zenoh TLS config + key-expression helpers.
+# This PR finishes the consolidation panoscope-side by replacing the
+# inline minio_replay S3+XML walker with panoscope_core::AuditTail so
+# the walker mechanics live in one place. Behavior-preserving.
+panoscope-core = { git = "https://github.com/usareur-af/goatcore", tag = "goatcore/v0.1.0" }
+
+# Zenoh SDK pinned to the host image's build per ADR 0708.
+# Plugin features (internal/plugins/runtime_plugins) are NOT needed —
+# panoscope is a Zenoh client peer, not an in-process plugin.
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+
+# Async runtime — full multi-thread runtime; this is a request-shaped
+# service (per ADR 0112) not the data-plane single-threaded shape that
+# goat-relay uses.
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# HTTP + WebSocket server.
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+hyper = "1"
+
+# Frontend bundle embedding (filled in at 82Q.6).
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"
+
+# Schema-resolver HTTP client (talks to the vendor portal's /api/schemas).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
+
+# Dynamic protobuf decode for the side-panel "Decoded" stream view.
+# prost-reflect walks a FileDescriptorSet (.fds) fetched from the portal
+# and decodes raw message bytes into a serde-friendly DynamicMessage —
+# panoscope owns the decode loop end-to-end rather than proxying to the
+# portal's /api/topics/decoded so the operator sees the literal bytes
+# panoscope is buffering, not portal-vantaged samples. Design memo:
+# docs/design/panoscope.md §"Decoded stream view".
+prost-reflect = { version = "0.14", features = ["serde"] }
+prost = "0.13"
+
+# Config + serde.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Structured logging.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling.
+anyhow = "1"
+thiserror = "1"
+
+# MinIO replay on boot — re-hydrates the in-RAM peer registry from the
+# audit-subscriber's NDJSON history when the container restarts. The S3
+# walker mechanics (rusty-s3 + quick-xml + url + chrono) live in
+# `panoscope-core::audit_tail` per the stethoscope Phase B factor-out;
+# panoscope's `minio_replay.rs` is now just the apply-to-topology
+# adapter that the panoscope-core walker feeds events into. Rationale
+# captured in docs/design/panoscope.md §"MinIO replay on boot".
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+axum-test = "16"
+# Build a synthetic FileDescriptorSet in decoder tests to exercise
+# multi-message-.fds selection (the F-162 fix). prost (already a dep)
+# encodes it; prost-types provides the descriptor message types.
+prost-types = "0.13"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
