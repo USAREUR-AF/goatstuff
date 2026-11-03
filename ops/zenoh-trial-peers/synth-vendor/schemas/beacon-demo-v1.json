@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "community/beacon-demo/hello/v1",
+  "title": "beacon-demo hello",
+  "description": "Synthetic low-rate beacon for the nova trial fabric. Also subscribes to goat/** to exercise the cross-vendor read posture.",
+  "type": "object",
+  "required": ["beacon_id", "ts_ms", "uptime_s", "message"],
+  "properties": {
+    "beacon_id": {"type": "string"},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "uptime_s": {"type": "integer", "minimum": 0},
+    "message": {"type": "string"},
+    "observed_goat_topics": {
+      "type": "array",
+      "description": "Recent topic key-expressions observed on the goat/** prefix in the last 30s — proves subscriber liveness.",
+      "items": {"type": "string"}
+    }
+  }
+}

@@ -1,0 +1,29 @@
+// homemade-sensors/garage/temperature/v1 — periodic temperature +
+// humidity reading from a small battery-powered sensor in a garage.
+// Worked example of "low-rate sensor data with battery state for
+// power-budget awareness."
+//
+// Producer: ops/zenoh-trial-peers/synth-vendor — Personality::GarageTemp
+// Wire format on the fabric: JSON.
+
+syntax = "proto3";
+
+package homemade_sensors.garage.v1;
+
+message TemperatureReading {
+  // Producer-supplied sensor identifier, free-text.
+  string sensor_id = 1;
+
+  // Producer-local wall-clock, milliseconds since Unix epoch.
+  uint64 ts_ms = 2;
+
+  // Air temperature at the sensor, degrees Celsius.
+  double temp_c = 3;
+
+  // Relative humidity, percent [0, 100].
+  double humidity_pct = 4;
+
+  // Battery terminal voltage, volts. Drops over the sensor's life and
+  // is the primary signal the operator watches for swap-out.
+  double battery_v = 5;
+}

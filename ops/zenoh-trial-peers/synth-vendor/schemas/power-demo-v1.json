@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "goat/power-demo/site-nova/v1",
+  "title": "power-demo site telemetry",
+  "description": "Synthetic per-site power telemetry for nova Zenoh trial fabric demo.",
+  "type": "object",
+  "required": ["site_id", "ts_ms", "load_kw", "soc_pct", "grid_state"],
+  "properties": {
+    "site_id": {"type": "string"},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "load_kw": {"type": "number", "minimum": 0},
+    "soc_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    "grid_state": {"type": "string", "enum": ["online", "islanded", "degraded"]},
+    "temp_c": {"type": "number"}
+  }
+}

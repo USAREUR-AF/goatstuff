@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+// CryptoPostureV1 — evidence-based crypto posture of a Zenoh fabric router,
+// published on `ops/fabric/crypto/<site>` (ADR 1079 / zenoh-pqc-tls.md).
+//
+// The whole point of this message is that EVERY field is observed evidence
+// with a freshness stamp, never a hardcoded assertion. Two independent
+// evidence sources, deliberately kept separate because they have different
+// natures and different trust:
+//
+//   kx_*    — a LIVE raw-TLS handshake this publisher just performed against
+//             the router with a PQ-capable client. `kx_group` is the group
+//             the router actually negotiated. This is strong, reproducible,
+//             remotely-observable evidence: it cannot be faked by a config
+//             flag because it is the wire result.
+//
+//   attest_* — HOST-side self-attestation read from a file the deploy writes
+//             (the router's boot FIPS marker + the running image digest).
+//             FIPS-mode is not remotely observable by design, so this is
+//             honestly labelled self-attested and freshness-graded; a stale
+//             or missing attestation degrades the color, never silently.
+//
+// A reader colors the posture from the evidence (see `color`), degrading to
+// "unknown" (grey) when either source is stale — honesty over green-washing.
+message CryptoPostureV1 {
+  string site          = 1;
+  int64  ts_unix_ms    = 2;   // when THIS message was assembled
+
+  // ---- live key-exchange probe ----
+  bool   kx_ok         = 3;   // the probe handshake completed
+  string kx_group      = 4;   // e.g. "X25519MLKEM768" | "secp256r1" | "" if !kx_ok
+  bool   kx_group_fips = 5;   // the probe's provider marks the group fips=true
+  bool   kx_pq         = 6;   // negotiated group is post-quantum (hybrid ML-KEM)
+  int64  kx_probed_ms  = 7;   // unix ms of the probe (freshness of kx evidence)
+  string kx_error      = 8;   // handshake error if !kx_ok
+  string router_version = 9;  // router self-reported version (REST admin), e.g. "1.9.0-modified"
+
+  // ---- host-side FIPS self-attestation ----
+  bool   attest_present   = 10;  // an attestation file was found
+  bool   attest_fips_marker = 11; // deploy saw "goat FIPS: AWS-LC FIPS module active"
+  string attest_digest    = 12;  // running image digest at deploy
+  int64  attest_at_ms     = 13;  // unix ms the attestation was written (freshness)
+  string attest_module    = 14;  // human string, e.g. "AWS-LC FIPS 3.1.0 (CMVP #5298)"
+
+  // ---- reader-facing rollup ----
+  // "fips-pq" | "pq" | "classical" | "unknown"
+  // fips-pq  = PQ negotiated live AND fresh FIPS attestation with marker
+  // pq       = PQ negotiated live, no FIPS attestation (non-FIPS PQ image)
+  // classical= handshake ok, classical group (no PQ router, or classical-only)
+  // unknown  = probe failed or evidence stale (grey; never green on no data)
+  string color         = 15;
+  string headline      = 16;  // one-line human summary for a band/chip
+}

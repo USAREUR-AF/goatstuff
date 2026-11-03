@@ -1,0 +1,39 @@
+# Standalone — not a member of the repo-root goat-relay workspace.
+[workspace]
+
+[package]
+name = "feeds-shim"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "feeds-shim"
+path = "src/main.rs"
+
+[dependencies]
+# Pin Zenoh client API to match the deployed router fleet (eclipse/zenoh:1.0.4
+# / our in-tree build). See zenoh-plugins/Cargo.toml for the same pin.
+zenoh = { version = "=1.0.4", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+
+# Pin zenoh transitive deps to 1.0.4 — without this, cargo resolves
+# zenoh-transport to 1.9.0 which has incompatible trait signatures vs
+# zenoh 1.0.4 internals. We don't reference these crates from our own
+# code; the deps exist purely to constrain version resolution.
+zenoh-transport = "=1.0.4"
+zenoh-protocol = "=1.0.4"
+zenoh-result = "=1.0.4"
+zenoh-config = "=1.0.4"
+zenoh-keyexpr = "=1.0.4"
+zenoh-buffers = "=1.0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1

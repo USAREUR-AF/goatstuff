@@ -1,0 +1,441 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+:root {
+  --bg: #0a0e14;
+  --panel: rgba(16, 22, 31, 0.82);
+  --edge: rgba(148, 172, 204, 0.16);
+  --ink: #e6edf6;
+  --ink-dim: #8fa3ba;
+  --ink-faint: #5d7089;
+  --live: #34d399;
+  --dead: #f43f5e;
+
+  --aff-unknown: #f0b429;
+  --aff-friend: #38bdf8;
+  --aff-hostile: #fb7185;
+  --aff-neutral: #34d399;
+  --aff-other: #a5b4fc;
+
+  --r: 12px;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+#map { position: absolute; inset: 0; }
+
+/* `display: flex` on a class outranks the user-agent's `[hidden] {display:none}`,
+   so a panel toggled with `.hidden = true` stayed laid out and kept swallowing
+   clicks meant for whatever replaced it. The mode tabs looked dead as a result.
+   Restated at higher specificity so hiding actually hides. */
+[hidden] { display: none !important; }
+
+/* ---------- top bar ---------- */
+.bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 18px;
+  background: linear-gradient(180deg, rgba(10, 14, 20, 0.92) 0%, rgba(10, 14, 20, 0) 100%);
+  pointer-events: none;
+}
+.bar > * { pointer-events: auto; }
+
+.brand { display: flex; align-items: baseline; gap: 9px; letter-spacing: 0.01em; }
+.brand .mark {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--aff-unknown);
+  box-shadow: 0 0 0 4px rgba(240, 180, 41, 0.18);
+  align-self: center;
+}
+.brand .name { font-weight: 620; font-size: 15px; }
+.brand .sep { color: var(--ink-faint); }
+.muted { color: var(--ink-dim); font-size: 13px; }
+
+.bar-stats { display: flex; align-items: center; gap: 20px; }
+.stat { display: flex; align-items: baseline; gap: 6px; }
+.stat .num { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; }
+.stat .lbl { color: var(--ink-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+.link {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+}
+.link .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dead); }
+.link-up .dot { background: var(--live); box-shadow: 0 0 8px var(--live); }
+.link-up { color: var(--ink); }
+.link-down { color: var(--ink-dim); }
+
+/* ---------- track list ---------- */
+.panel {
+  position: absolute;
+  top: 62px; right: 16px; bottom: 92px;
+  z-index: 5;
+  width: 268px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--edge);
+}
+.panel-head h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-dim); font-weight: 600; }
+
+.ghost {
+  border: 1px solid var(--edge);
+  background: transparent;
+  color: var(--ink-dim);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ghost:hover { color: var(--ink); border-color: rgba(148, 172, 204, 0.4); }
+
+.track-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+.track-list li {
+  display: grid;
+  grid-template-columns: 3px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.track-list li:hover { background: rgba(148, 172, 204, 0.08); }
+.track-list li.sel { background: rgba(148, 172, 204, 0.14); }
+.track-list .swatch { width: 3px; height: 26px; border-radius: 2px; }
+.track-list .id { font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+.track-list .sub { color: var(--ink-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.track-list .age { color: var(--ink-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.empty { margin: 0; padding: 18px 14px; color: var(--ink-faint); font-size: 12.5px; }
+
+/* ---------- detail card ---------- */
+.detail {
+  position: absolute;
+  left: 16px; top: 62px;
+  z-index: 5;
+  width: 296px;
+  padding: 14px 16px 16px;
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+.detail h3 { margin: 0 0 10px; font-size: 15px; font-weight: 620; }
+.detail dl { margin: 0; display: grid; grid-template-columns: 96px 1fr; gap: 5px 12px; font-size: 12.5px; }
+.detail dt { color: var(--ink-faint); }
+.detail dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.close {
+  position: absolute; top: 8px; right: 10px;
+  border: 0; background: transparent; color: var(--ink-faint);
+  font-size: 20px; line-height: 1; cursor: pointer;
+}
+.close:hover { color: var(--ink); }
+
+/* ---------- legend ---------- */
+.legend {
+  position: absolute;
+  left: 16px; bottom: 16px;
+  z-index: 5;
+  max-width: 420px;
+  padding: 11px 14px;
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+.keys { display: flex; flex-wrap: wrap; gap: 12px; }
+.key { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-dim); }
+.key i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.note { margin: 9px 0 0; font-size: 11px; line-height: 1.5; color: var(--ink-faint); }
+
+.maplibregl-ctrl-attrib { font-size: 10px; }
+
+@media (max-width: 760px) {
+  .panel { display: none; }
+  .detail { width: auto; right: 16px; }
+  .legend { right: 16px; max-width: none; }
+}
+
+/* Provenance banner — states what the picture is NOT showing. */
+.provenance {
+  position: absolute;
+  top: 56px; left: 50%; transform: translateX(-50%);
+  z-index: 6;
+  padding: 6px 14px;
+  border: 1px solid rgba(240, 180, 41, 0.45);
+  border-radius: 999px;
+  background: rgba(52, 38, 8, 0.9);
+  backdrop-filter: blur(12px);
+  color: #f0b429;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.track-list .sim {
+  font-style: normal;
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  color: var(--bg);
+  background: var(--aff-unknown);
+  border-radius: 3px;
+  padding: 1px 4px;
+  vertical-align: middle;
+}
+
+/* ── readiness ─────────────────────────────────────────────────────────────
+   The chain shows where a site's capability stops and whether stopping there
+   matters. Colour alone is not the signal: a solid connector means the chain
+   carried, a DOTTED one means it stopped on purpose, and past a break it fades
+   out entirely — we cannot see a sensor through a host that is offline, and
+   drawing it as failed would be inventing an observation.                   */
+:root {
+  --rd-ok: #34d399;
+  --rd-rest: #7d90a8;
+  --rd-break: #fb923c;
+  --rd-unknown: #4c5d73;
+  --rd-attest: #f0b429;
+}
+
+/* The tablist is a sibling of the map, which is `position: absolute`. Left in
+   normal flow it painted UNDERNEATH the map canvas and the Readiness tab could
+   not be clicked at all — the canvas swallowed every press. Every other chrome
+   element here is a positioned overlay for exactly this reason; this one has to
+   join them. */
+.mode-tabs { position: absolute; top: 48px; left: 18px; z-index: 6;
+  display: flex; gap: 2px;
+  padding: 3px; border-radius: 8px;
+  background: rgba(10, 14, 20, 0.72); backdrop-filter: blur(10px);
+  border: 1px solid var(--edge); }
+.mode-tabs button {
+  background: transparent; border: 1px solid var(--edge); color: var(--ink-dim);
+  font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px;
+  cursor: pointer;
+}
+.mode-tabs button[aria-selected="true"] { background: rgba(56,189,248,.14); color: var(--ink); }
+.mode-tabs button:focus-visible { outline: 2px solid var(--aff-friend); outline-offset: 1px; }
+
+/* Readiness is a different job from the track list and needs a different
+   width: the track panel shows one short line per track, this shows a chain of
+   evidence per subject. Sharing the 268px sidebar was what forced the
+   truncation in the first place. Capped against the viewport so it stays a
+   panel rather than becoming the page. */
+#rd-panel { width: min(420px, calc(100vw - 32px)); }
+
+.rd-list { list-style: none; margin: 0; padding: 0; display: flex;
+  flex-direction: column; gap: 10px; }
+.rd-site {
+  border: 1px solid var(--edge); border-radius: 10px; overflow: hidden;
+  background: rgba(10,14,20,.5);
+}
+.rd-hd { display: flex; align-items: center; gap: 8px; padding: 9px 11px;
+  cursor: pointer; border: 0; width: 100%; background: transparent;
+  color: inherit; font: inherit; text-align: left; }
+.rd-hd:focus-visible { outline: 2px solid var(--aff-friend); outline-offset: -2px; }
+.rd-name { font-weight: 600; flex: none; }
+.rd-hd .rd-reason { flex: 1; text-align: right; }
+/* Keeps the badge hard right when a site has no reason line. */
+.rd-hd .rd-verdict { margin-left: auto; }
+.rd-verdict { font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; padding: 2px 6px; border-radius: 4px; }
+.v-ready   { background: rgba(52,211,153,.16); color: var(--rd-ok); }
+.v-at-rest { background: rgba(125,144,168,.18); color: var(--rd-rest); }
+.v-broken  { background: rgba(251,146,60,.16); color: var(--rd-break); }
+.v-unknown { background: rgba(76,93,115,.22); color: var(--rd-unknown); }
+
+.rd-body { padding: 2px 11px 11px; display: flex; flex-direction: column; gap: 12px; }
+.rd-chain-name { font-size: 11px; color: var(--ink-faint); margin-bottom: 5px; }
+
+/* The chain runs DOWN, not across.
+   Laid out horizontally it needed eight columns inside a 268px sidebar, so
+   every label truncated to "Co…", the detail text — which is the part that
+   tells an operator what to do — was clipped entirely, and a scrollbar sat
+   where the explanation should have been. Reading order top-to-bottom costs
+   nothing, fits any number of rungs, and leaves each one a full line of room
+   for its evidence. */
+.chain { display: flex; flex-direction: column; }
+.rung { display: grid; grid-template-columns: 13px minmax(0, 1fr);
+  column-gap: 11px; align-items: start;
+  padding-bottom: 9px; position: relative; }
+.rung:last-child { padding-bottom: 0; }
+.rung .dot { grid-column: 1; width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--rd-unknown); background: var(--bg);
+  z-index: 1; margin-top: 3px; }
+/* The connector descends from THIS dot to the next, so its styling describes
+   the step that was taken, not the one before it. */
+.rung::before { content: ""; position: absolute; left: 5px; top: 15px;
+  bottom: -1px; width: 2px; background: var(--rd-unknown); opacity: .3; }
+.rung:last-child::before { display: none; }
+
+.rung.att .dot { background: var(--rd-ok); border-color: var(--rd-ok); }
+.rung.att::before { background: var(--rd-ok); opacity: .85; }
+/* Stopped on purpose: dotted, so at-rest reads as intent rather than failure. */
+.rung.rest .dot { background: transparent; border-color: var(--rd-rest);
+  border-style: dotted; }
+.rung.rest::before { background: none; opacity: .8;
+  background-image: linear-gradient(180deg, var(--rd-rest) 45%, transparent 45%);
+  background-size: 2px 6px; }
+.rung.brk .dot { background: var(--rd-break); border-color: var(--rd-break);
+  box-shadow: 0 0 0 4px rgba(251,146,60,.18); }
+.rung.brk::before { background: none; opacity: .9;
+  background-image: linear-gradient(180deg, var(--rd-break) 55%, transparent 55%);
+  background-size: 2px 5px; }
+/* Past a break we cannot see, so the line fades rather than reporting failure. */
+.rung.unk .dot { border-style: dashed; opacity: .5; }
+.rung.unk::before { opacity: .15; }
+
+.rung .body { grid-column: 2; display: flex; align-items: baseline;
+  flex-wrap: wrap; gap: 6px; min-width: 0; }
+.rung .lab { font-size: 11.5px; line-height: 1.3; color: var(--ink-faint); }
+.rung.att .lab { color: var(--ink-dim); }
+.rung.brk .lab { color: var(--rd-break); font-weight: 650; }
+.rung .det { grid-column: 2; font-size: 10.5px; color: var(--ink-faint);
+  line-height: 1.35; margin-top: 1px; }
+.rung .src { font-size: 8px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--rd-attest);
+  background: rgba(240,180,41,.14); padding: 1px 4px; border-radius: 3px; }
+/* Inferred: deliberately quieter than attested, and never the gold that means
+   a person put their name to it. */
+.rung .src.imp { color: var(--ink-faint); background: transparent;
+  border: 1px dashed var(--rd-unknown); font-weight: 600; }
+/* A derived rung reads as a ring, not a filled dot — carried, but not read. */
+.rung.att.derived .dot { background: var(--bg); border-color: var(--rd-ok);
+  box-shadow: inset 0 0 0 2px rgba(52,211,153,.30); }
+.rung.att.derived::before { opacity: .45; }
+.rung.att.derived .lab { color: var(--ink-faint); }
+
+.rd-reason { font-size: 10.5px; color: var(--ink-faint); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.rd-note { font-size: 12px; padding: 7px 9px; border-radius: 6px;
+  border-left: 3px solid var(--rd-rest); background: rgba(125,144,168,.09);
+  color: var(--ink-dim); }
+.rd-note.brk { border-left-color: var(--rd-break);
+  background: rgba(251,146,60,.09); color: var(--ink); }
+
+.rd-attest { border-top: 1px solid var(--edge); padding-top: 8px; }
+.rd-attest h4 { margin: 0 0 5px; font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-faint); font-weight: 650; }
+.rd-arow { display: flex; align-items: baseline; gap: 7px; font-size: 12px;
+  padding: 3px 0; }
+.rd-arow .nm { flex: 1; color: var(--ink-dim); }
+.rd-astate { font-size: 9px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; padding: 1px 5px; border-radius: 3px; }
+.a-running { background: rgba(52,211,153,.16); color: var(--rd-ok); }
+.a-degraded { background: rgba(240,180,41,.16); color: var(--rd-attest); }
+.a-down { background: rgba(251,146,60,.16); color: var(--rd-break); }
+.a-none { background: rgba(76,93,115,.22); color: var(--rd-unknown); }
+.rd-age { font-size: 11px; color: var(--ink-faint); }
+.rd-age.exp { text-decoration: line-through; opacity: .65; }
+
+.rd-scope { font-size: 11px; color: var(--ink-faint); padding: 6px 2px 0; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Partial-view badge. Sits ABOVE the provenance pill rather than on top of it
+   — both are absolutely positioned at the same offset, so without this they
+   overlap and the scope notice is what gets hidden.
+
+   Deliberately NOT amber: a scoped view is correct behaviour, not a fault.
+   Amber here would train people to read their own permissions as an error and
+   go looking for a problem that does not exist. Slate + blue reads as
+   information, which is what it is. */
+.provenance.scope {
+  top: 24px;
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(8, 34, 52, 0.92);
+  color: #38bdf8;
+}
+
+
+/* Lasso controls + hint. Sits with the other status pills; the hint reuses
+   .provenance so all transient map messages look like one family. */
+.lasso-controls {
+  position: absolute; top: 52px; right: 24px; z-index: 7;
+  display: flex; gap: 8px;
+}
+.lasso-controls button {
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(8, 34, 52, 0.92); color: #38bdf8;
+  font-size: 11.5px; letter-spacing: 0.02em;
+  backdrop-filter: blur(12px);
+}
+.lasso-controls button:hover { border-color: rgba(56, 189, 248, 0.9); }
+/* READOUTS ARE NOT CONTROLS.
+   Every button in this UI is a pill with a cyan border. Anything that merely
+   reports state must therefore NOT be pill-shaped and must not carry a border
+   in the control colour, or an operator cannot tell what is clickable. The
+   lasso hint and the sensor readout were both pills; both are now square-edged
+   plates with a left accent bar, which no button here uses. */
+.provenance.lasso {
+  top: 92px; right: 24px; left: auto; transform: none;
+  max-width: 340px; white-space: normal; text-align: right;
+  border: 0; border-right: 2px solid rgba(240, 180, 41, 0.5);
+  border-radius: 2px; background: rgba(10, 14, 20, 0.82);
+  padding: 5px 10px; cursor: default;
+}
+/* Clustered results read AMBER, not the informational blue: a cluster is a
+   caveat about what you are looking at, not a neutral status. */
+.provenance.lasso.agg {
+  border-color: rgba(240, 180, 41, 0.55);
+  background: rgba(52, 38, 8, 0.92); color: #f0b429;
+}
+.provenance.lasso.warn {
+  border-color: rgba(251, 113, 133, 0.55);
+  background: rgba(60, 12, 22, 0.92); color: #fb7185;
+}
+
+/* Sensor readout — square, left-barred, never pill. */
+.readout.sensor {
+  position: absolute; top: 88px; left: 18px; z-index: 6;
+  max-width: 42vw; padding: 5px 10px;
+  border-radius: 2px; border: 0; border-left: 3px solid;
+  background: rgba(10, 14, 20, 0.86); backdrop-filter: blur(12px);
+  font-size: 11.5px; letter-spacing: 0.01em; cursor: default;
+}
+/* Live alert keeps the alarm colour. */
+.readout.sensor.live { border-left-color: #fb7185; color: #fb7185; }
+/* Stale drops to muted grey: an old alert is history, not an alarm. Leaving it
+   red is how a surface cries wolf forever after a sensor goes quiet. */
+.readout.sensor.stale { border-left-color: #64748b; color: #94a3b8; }
+
+
+/* A chain with nothing measured explains itself. Muted, not alarming: a silent
+   node is a gap in evidence, not a fault we have observed. */
+.rd-silent {
+  margin: 2px 0 6px; padding: 4px 8px;
+  border-left: 3px solid #64748b; border-radius: 2px;
+  background: rgba(100, 116, 139, 0.10);
+  color: #94a3b8; font-size: 11px; line-height: 1.45;
+}

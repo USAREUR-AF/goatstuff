@@ -1,0 +1,50 @@
+# dataflows — Data Flow Patterns deck (local-dev compose)
+#
+# Build context is the repo root so the Dockerfile can COPY from anywhere
+# in the tree (mirrors the brief pattern; today dataflows only pulls from
+# ops/serve/dataflows/, but keeping the same context shape lets it grow
+# the same way without revisiting Dockerfile paths).
+#
+# Local smoke test:
+#   docker compose -f ops/serve/dataflows/docker-compose.yml build
+#   docker compose -f ops/serve/dataflows/docker-compose.yml up -d
+#   open http://localhost:8089
+#
+# Production:
+#   Do NOT use this compose in production. The Ansible role at
+#   ops/ansible/roles/dataflows/ renders a separate compose at
+#   /opt/dataflows/docker-compose.yml on the host that uses
+#   `image: ghcr.io/usareur-af/dataflows:latest` (no build) and
+#   wires Traefik via file-provider config — same pattern as brief
+#   / panoscope / demogame. Deploy via
+#   ops/ansible/dataflows-deploy.yml.
+
+services:
+  dataflows:
+    build:
+      context: ../../..
+      dockerfile: ops/serve/dataflows/Dockerfile
+    container_name: dataflows
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8089:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-netbird_netbird}"
+      - "traefik.http.routers.dataflows.rule=Host(`dataflows.nova.netbird.nova.example`)"
+      - "traefik.http.routers.dataflows.entrypoints=websecure"
+      - "traefik.http.routers.dataflows.tls=true"
+      - "traefik.http.routers.dataflows.middlewares=mesh-only"
+      - "traefik.http.services.dataflows.loadbalancer.server.port=80"
+    networks:
+      - traefik
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-netbird_netbird}

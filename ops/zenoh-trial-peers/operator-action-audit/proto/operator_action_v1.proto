@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// OperatorActionV1 — one normalized operator-action event, emitted from
+// every operator surface (chokepoint: `goat admin`), attributed to a
+// person, onto ops/audit/operator/<actor>. See
+// docs/design/operator-action-audit.md §3 and F-207.
+//
+// This file is the CANONICAL schema. goat-cli hand-writes a prost-derive
+// struct matching it (no protoc / build.rs codegen — same convention as
+// fabric-health's proto/fabric_health_v1.proto and time-health's
+// proto/env_health_v1.proto). Any change here MUST be mirrored field-for-
+// field, tag-for-tag, in crates/goat-cli/src/cmd/audit.rs or the wire
+// breaks silently.
+//
+// On-wire envelope (§7 encryption layer): the bytes published to the bus
+// are NOT a bare OperatorActionV1. They are the age-CIPHERTEXT of the
+// protobuf-encoded OperatorActionV1 — i.e. `age(encode(OperatorActionV1))`,
+// encrypted to the operator age roster (40-dev-ca-operators.envrc). The
+// whole serialized message is encrypted, so even a mis-set read ACL leaks
+// only opaque ciphertext to a non-operator; only an operator holding a
+// roster identity can decrypt + decode. There is no separate ciphertext
+// field in the message itself — the encryption wraps the entire encoded
+// body before it touches the wire.
+
+syntax = "proto3";
+
+package goat.audit.operator.v1;
+
+message OperatorActionV1 {
+  // The PERSON who acted (operator handle, e.g. `pat-operator`) — never a
+  // shared label. Also the <actor> sub-key of ops/audit/operator/<actor>.
+  string actor        = 1;
+  // Where it was captured: goat-cli | portal | ansible | bundle-create |
+  // host | minio.
+  string surface      = 2;
+  // Semantic verb: admin.onboard | admin.revoke | vendor.create |
+  // vendor.delete | cert.mint | access.topic.read | ...
+  string action       = 3;
+  // What it acted on: handle | vendor prefix | cert CN | topic key | host.
+  string target       = 4;
+  // goatnet: the goatnet id
+  string env          = 5;
+  // started | ok | failed.
+  string outcome      = 6;
+  // Human error string on a failed outcome (empty otherwise).
+  string error_msg    = 7;
+  // Where it ran: operator-laptop hostname / mgmt-host id.
+  string host         = 8;
+  // Source path / working directory the action was launched from.
+  string src          = 9;
+  // SHA-256 hex of a REDACTED argument summary — never raw secrets.
+  string args_digest  = 10;
+  // Emit time, unix epoch milliseconds.
+  int64  ts_unix_ms   = 11;
+}

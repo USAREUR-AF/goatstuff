@@ -1,0 +1,25 @@
+{
+  "name": "zenoh-sandbox",
+  "private": true,
+  "type": "module",
+  "version": "0.2.0",
+  "description": "goat's warm, explanatory browser playground for Zenoh pub/sub \u2014 built on @eclipse-zenoh/zenoh-ts. See docs/design/zenoh-sandbox-ux.md",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@eclipse-zenoh/zenoh-ts": "1.9.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7",
+    "vite-plugin-top-level-await": "^1.5.0",
+    "vite-plugin-wasm": "^3.4.1"
+  },
+  "overrides": {
+    "@swc/core": "1.15.47"
+  }
+}

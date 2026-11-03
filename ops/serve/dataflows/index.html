@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Flow Patterns</title>
+<link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+
+<div id="deck">
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  1  —  Title
+════════════════════════════════════════════════════ -->
+<div class="slide slide-title-page active"
+     data-section="Opening" data-bullets="0">
+
+  <div class="title-eyebrow">GOAT · GOAT-Net</div>
+  <div class="title-main">Data Flow<br>Patterns</div>
+  <div class="title-accent-bar"></div>
+  <div class="title-sub">Four ways systems move data — and where GOAT-Net sits</div>
+  <div class="title-meta">
+    <span>2026</span>
+    <span>~10 minutes</span>
+    <span>10 slides</span>
+  </div>
+
+  <div class="kb-hint">
+    ← → or Space to navigate<br>
+    F = fullscreen
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  2  —  Why this matters
+════════════════════════════════════════════════════ -->
+<div class="slide" data-section="Opening" data-bullets="3">
+  <div class="slide-header">
+    <span class="section-tag">Opening</span>
+    <span class="slide-title">Every Integration Is a Wire Choice</span>
+  </div>
+  <div class="slide-body">
+    <ul class="bullet-list">
+      <li class="bullet"><span>The right pattern scales. The wrong one rots <em>quietly</em>.</span></li>
+      <li class="bullet"><span>Four families cover the field: <em>internal-only</em>, <em>ICDs</em>, <em>APIs</em>, <em>event-driven</em>.</span></li>
+      <li class="bullet"><span>Each is right somewhere. None is right everywhere.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  3  —  Pattern 1: Internal-only (INTERACTIVE)
+════════════════════════════════════════════════════ -->
+<div class="slide slide-interactive"
+     data-section="The Patterns" data-bullets="0" data-interactive="true">
+  <div class="slide-header">
+    <span class="section-tag">The Patterns</span>
+    <span class="slide-title">1 · Internal-Only — Data Never Leaves the Box</span>
+  </div>
+  <div class="slide-main">
+    <div class="iframe-wrapper">
+      <iframe data-src="iframes/pattern-internal.html" data-scale-key="pattern-internal.html"
+              sandbox="allow-scripts allow-same-origin"
+              scrolling="no"
+              style="width:100%; height:100%;"></iframe>
+      <div class="iframe-hint">Click "Show the outside world" to see what the rest of the network sees from this device</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  4  —  Pattern 2: ICD (INTERACTIVE)
+════════════════════════════════════════════════════ -->
+<div class="slide slide-interactive"
+     data-section="The Patterns" data-bullets="0" data-interactive="true">
+  <div class="slide-header">
+    <span class="section-tag">The Patterns</span>
+    <span class="slide-title">2 · Point-to-Point ICDs — Bespoke Wires</span>
+  </div>
+  <div class="slide-main">
+    <div class="iframe-wrapper">
+      <iframe data-src="iframes/pattern-icd.html" data-scale-key="pattern-icd.html"
+              sandbox="allow-scripts allow-same-origin"
+              scrolling="no"
+              style="width:100%; height:100%;"></iframe>
+      <div class="iframe-hint">Click the system-count buttons — watch the wire count grow as N×(N−1)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  5  —  Pattern 3: APIs (INTERACTIVE)
+════════════════════════════════════════════════════ -->
+<div class="slide slide-interactive"
+     data-section="The Patterns" data-bullets="0" data-interactive="true">
+  <div class="slide-header">
+    <span class="section-tag">The Patterns</span>
+    <span class="slide-title">3 · Request / Response APIs</span>
+  </div>
+  <div class="slide-main">
+    <div class="iframe-wrapper">
+      <iframe data-src="iframes/pattern-api.html" data-scale-key="pattern-api.html"
+              sandbox="allow-scripts allow-same-origin"
+              scrolling="no"
+              style="width:100%; height:100%;"></iframe>
+      <div class="iframe-hint">Three scenarios — single GET, many clients to one server, the polling problem</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  6  —  APIs: when right / when wrong
+════════════════════════════════════════════════════ -->
+<div class="slide" data-section="The Patterns" data-bullets="2">
+  <div class="slide-header">
+    <span class="section-tag">The Patterns</span>
+    <span class="slide-title">APIs — When They're Right, When They Aren't</span>
+  </div>
+  <div class="slide-body">
+    <ul class="bullet-list">
+      <li class="bullet"><span><strong>Right:</strong> banking, billing, lookups, CRUD on a record — <em>stable contract, known counterparty, one authoritative source.</em></span></li>
+      <li class="bullet"><span><strong>Wrong:</strong> perishable data, fan-out to unknown consumers, partition-tolerant operation — anywhere "ask and wait" misses the moment.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  7  —  Pattern 4: Event-driven (INTERACTIVE)
+════════════════════════════════════════════════════ -->
+<div class="slide slide-interactive"
+     data-section="Event-Driven" data-bullets="0" data-interactive="true">
+  <div class="slide-header">
+    <span class="section-tag">Event-Driven</span>
+    <span class="slide-title">4 · Event-Driven — Pub / Sub</span>
+  </div>
+  <div class="slide-main">
+    <div class="iframe-wrapper">
+      <iframe data-src="iframes/pattern-pubsub.html" data-scale-key="pattern-pubsub.html"
+              sandbox="allow-scripts allow-same-origin"
+              scrolling="no"
+              style="width:100%; height:100%;"></iframe>
+      <div class="iframe-hint">Click subscriber-count buttons — the producer's publish call doesn't change</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  8  —  Pub/sub up close (short)
+════════════════════════════════════════════════════ -->
+<div class="slide" data-section="Event-Driven" data-bullets="3">
+  <div class="slide-header">
+    <span class="section-tag">Event-Driven</span>
+    <span class="slide-title">Decoupled in Time, Identity, Cardinality</span>
+  </div>
+  <div class="slide-body">
+    <ul class="bullet-list">
+      <li class="bullet"><span><em>Family:</em> sockets, message queues, streams, pub/sub fabrics — producers emit, fabric carries, consumers subscribe.</span></li>
+      <li class="bullet"><span><em>Contract</em> moves from the wire to the <em>topic + schema</em>. Late joiners can replay. Partitioned sites keep flowing locally.</span></li>
+      <li class="bullet"><span><em>Cost:</em> schema discipline — published, versioned, evolved — or the fabric becomes a swamp.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  9  —  Where GOAT-Net sits
+════════════════════════════════════════════════════ -->
+<div class="slide" data-section="Where We're Headed" data-bullets="4">
+  <div class="slide-header">
+    <span class="section-tag">Where We're Headed</span>
+    <span class="slide-title">GOAT-Net — Event-Driven by Default</span>
+  </div>
+  <div class="slide-body">
+    <ul class="bullet-list">
+      <li class="bullet"><span>The data fabric is <em>pub/sub</em> (Zenoh) inside an identity-bound mesh. Every system integrates <em>once</em>.</span></li>
+      <li class="bullet"><span>Legacy ICD systems stay — behind a <em>shim</em> that translates their wire to topics on the fabric.</span></li>
+      <li class="bullet"><span>APIs belong on control-plane CRUD; pub/sub belongs on data in motion.</span></li>
+      <li class="bullet"><span><em>Island mode</em> is the default: WAN dies, local pubs keep flowing. Link returns, fabric reconciles.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     S L I D E  10  —  Close / Questions
+════════════════════════════════════════════════════ -->
+<div class="slide slide-questions"
+     data-section="Close" data-bullets="0">
+  <div class="questions-big">Questions?</div>
+  <div class="questions-sub">GOAT-Net · Data Flow Patterns · 2026</div>
+</div>
+
+</div><!-- #deck -->
+
+<!-- Menu button -->
+<button id="menu-btn" title="Table of Contents">&#9776;</button>
+
+<!-- Sidebar -->
+<div id="sidebar-overlay"></div>
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <span id="sidebar-title">Contents</span>
+    <button id="sidebar-close">&#10005;</button>
+  </div>
+  <nav id="toc"></nav>
+</aside>
+
+<!-- Navigation -->
+<nav id="nav">
+  <button class="nav-btn" id="btn-prev" title="Previous  ←">&#8592;</button>
+  <div id="nav-center">
+    <div id="nav-section"></div>
+    <div id="nav-counter"></div>
+    <input id="nav-jump" type="number" min="1">
+  </div>
+  <button class="nav-btn" id="btn-next" title="Next  → or Space">&#8594;</button>
+</nav>
+
+<!-- Floating next button (interactive slides only) -->
+<button id="next-float">Next Slide &#8594;</button>
+
+<!-- Progress bar -->
+<div id="progress"><div id="progress-fill"></div></div>
+
+<!-- Lightbox (unused but JS expects the elements) -->
+<div id="lightbox">
+  <div id="lb-overlay"></div>
+  <img id="lb-img" src="" alt="">
+  <button id="lb-close">&#10005;</button>
+</div>
+
+<script src="js/app.js"></script>
+
+</body>
+</html>

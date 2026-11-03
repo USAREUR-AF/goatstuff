@@ -1,0 +1,45 @@
+# goat-mesh-health — the mesh domain of the environment-health surface.
+#
+# ADR 1042 (mesh-link health domain) + ADR 1036 (env-health contract). A normal
+# mTLS Zenoh client peer, templated on goat-time-health: it reads the host-side
+# `netbird status --json` snapshot (written atomically by the mesh-health-snapshot
+# systemd timer the mesh-health role installs, bind-mounted read-only), grades
+# each WireGuard mesh link with the 5-state honesty colors, and publishes a
+# per-site reading on ops/mesh/health/<site> as EnvHealthV1{domain:"mesh"}.
+# Passive — rides netbird's own link measurement, injects no probes. Subscribes
+# nothing. Persists nothing.
+#
+# protobuf via prost-derive on hand-written structs (no protoc/build.rs); the
+# canonical schema is ops/zenoh-trial-peers/time-health/proto/env_health_v1.proto
+# (MeshDetailV1, oneof arm 12). zenoh pinned =1.9.0
+# (docs/design/zenoh-version-pinning.md).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen, same rationale as the time-health
+# sibling — IO-bound service where whole-program LTO buys negligible runtime.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-mesh-health"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Mesh domain of the environment-health surface — per-site WireGuard link-health roll-up from the vantage host's netbird status (ADR 1042/1036)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+humantime = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

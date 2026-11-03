@@ -1,0 +1,29 @@
+// pangolin/observer/heartbeat/v1 — pure-subscriber heartbeat. The
+// observer peer subscribes to `**` and emits a small heartbeat summary
+// so it appears as a peer in panoscope (otherwise pure-sub peers have
+// no outgoing edges to render).
+//
+// Producer: ops/zenoh-trial-peers/synth-vendor — Personality::Observer
+// Wire format on the fabric: JSON.
+
+syntax = "proto3";
+
+package pangolin.observer.v1;
+
+message Heartbeat {
+  // Producer-supplied observer identifier, free-text.
+  string observer_id = 1;
+
+  // Producer-local wall-clock, milliseconds since Unix epoch.
+  uint64 ts_ms = 2;
+
+  // Observer uptime, seconds since this peer started its loop.
+  uint64 uptime_s = 3;
+
+  // Count of distinct key-expressions received in the last ~30s.
+  uint64 distinct_topics_30s = 4;
+
+  // First-N sample of those topics (truncated to 8 for readability);
+  // the full count is exposed via distinct_topics_30s.
+  repeated string sample_topics = 5;
+}

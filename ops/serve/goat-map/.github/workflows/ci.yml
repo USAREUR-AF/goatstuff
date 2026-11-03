@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Lint + test. Carried with the source so it survives extraction into its own
+# repo unchanged.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install
+        run: pip install pytest ruff jsonschema
+      - name: lint
+        run: ruff check goatmap tests-public
+      - name: test
+        run: pytest tests-public -q
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: syntax-check the front end
+        run: node --check web/app.js
+      - name: basemap style must reference no external host
+        # The page is served on a mesh-only surface with no egress; a style
+        # that reaches for a CDN would fail silently as a blank basemap.
+        run: |
+          if grep -oE 'https?://[^"]+' web/basemap/style-dark.json | grep -v 'openstreetmap.org' ; then
+            echo "external URL in basemap style — vendor it instead" >&2
+            exit 1
+          fi
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck deploy/deploy.sh

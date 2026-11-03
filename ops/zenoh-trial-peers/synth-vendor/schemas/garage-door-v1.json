@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "homemade-sensors/garage/door-state/v1",
+  "title": "homemade-sensors garage door state",
+  "description": "Synthetic reed-switch garage-door state with intra-vendor temperature correlation. Toggles ~20% per tick to exercise the inspector's live stream.",
+  "type": "object",
+  "required": ["sensor_id", "ts_ms", "state"],
+  "properties": {
+    "sensor_id": {"type": "string"},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "state": {"type": "string", "enum": ["open", "closed"]},
+    "last_change_ms": {"type": "integer", "minimum": 0},
+    "duration_s": {"type": "integer", "minimum": 0},
+    "related_topics_seen": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Topics this peer observed via the intra-vendor subscribe (e.g. the sibling temperature topic). Surfaces the cross-publisher correlation as data."
+    }
+  }
+}

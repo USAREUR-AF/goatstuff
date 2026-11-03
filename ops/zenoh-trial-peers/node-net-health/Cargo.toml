@@ -1,0 +1,42 @@
+# goat-node-net-health — the `net` domain of the environment-health surface.
+#
+# docs/design/node-net-health.md + ADR 1036. A normal mTLS Zenoh client peer,
+# templated on goat-mesh-health: it reads the classified per-node connection
+# snapshot (written atomically by the node-net-health-snapshot systemd timer —
+# ops/node-net-health/nnh-snapshot.py — bind-mounted read-only), grades it with
+# the 5-state honesty colors (undeclared connections => amber "N undeclared",
+# never silently green; stale/missing snapshot => unmetered), and publishes a
+# per-node reading on ops/net/health/<node> as EnvHealthV1{domain:"net"}.
+# Observation, not enforcement. Subscribes nothing. Persists nothing.
+#
+# protobuf via prost-derive on hand-written structs (no protoc/build.rs); the
+# canonical schema is ops/zenoh-trial-peers/time-health/proto/env_health_v1.proto
+# (NetDetailV1, oneof arm 14). zenoh pinned =1.9.0
+# (docs/design/zenoh-version-pinning.md).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-node-net-health"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Net domain of the environment-health surface — per-node connection inventory + 4-bucket classification roll-up (node-net-health.md/ADR 1036)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

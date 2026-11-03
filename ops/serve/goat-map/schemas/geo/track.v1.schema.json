@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goat.legacy.example/schemas/geo/track.v1.schema.json",
+  "title": "GeoTrackV1",
+  "description": "One geographically-located thing a sensor currently reports, in a form a map can draw without further lookup. Published per-track under <prefix>/geo/track/<sensor>/<uid>. Provenance is structural: producer_anchor is the key's own first chunk, admitted by the router ACL. Producer of record: usareur-af/goat-map (docs/design/goat-map.md). This is a DISPLAY schema, deliberately not a sensor-interchange standard: the interchange formats are the four canonicals the gateway-one kids emit (ASTERIX CAT-62, CoT, ISA, SAPIENT), and this is what those are reduced to once the enum lookups have been resolved.",
+  "type": "object",
+  "required": [
+    "id",
+    "kind",
+    "label",
+    "lat",
+    "lon",
+    "observed_at",
+    "producer_anchor",
+    "schema",
+    "source",
+    "synthetic"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "goat.geo.track.v1",
+      "description": "Version is a first-class field; subscribers gate on it."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[^:]+:.+$",
+      "description": "Stable identity, '<sensor>:<sensor-uid>'. Unique across sensors on one fabric."
+    },
+    "label": {
+      "type": "string",
+      "description": "What to draw next to the dot \u2014 the raw sensor uid, not the namespaced id."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "track",
+        "alert"
+      ],
+      "description": "From the topic leaf, not the payload. The map draws the two differently."
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "sensor",
+        "site",
+        "node"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sensor": {
+          "type": "string",
+          "description": "Sensor family, e.g. radar-a."
+        },
+        "site": {
+          "type": "string",
+          "description": "Site label, e.g. site-a."
+        },
+        "node": {
+          "type": "string",
+          "description": "Edge node that produced the canonical, e.g. node-a."
+        },
+        "goatnet": {
+          "type": "string",
+          "description": "Goatnet the reading belongs to."
+        }
+      }
+    },
+    "lat": {
+      "type": "number",
+      "minimum": -90,
+      "maximum": 90
+    },
+    "lon": {
+      "type": "number",
+      "minimum": -180,
+      "maximum": 180
+    },
+    "alt_m": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Height above ellipsoid, metres. null = not reported."
+    },
+    "course_deg": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees true. null means NOT REPORTED and is distinct from 0, which means due north."
+    },
+    "speed_mps": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Metres per second. null means NOT REPORTED and is distinct from 0, which means stationary."
+    },
+    "ce_m": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Circular error, metres. CoT's 9999999 'no usable estimate' sentinel is normalised to null so a consumer never draws a 10 000 km error circle."
+    },
+    "le_m": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Linear (vertical) error, metres. Same sentinel handling as ce_m."
+    },
+    "cot_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Originating CoT type string, carried for traceability. Consumers should read affiliation/dimension instead of re-parsing this."
+    },
+    "affiliation": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "unknown",
+        "assumed-friend",
+        "friend",
+        "neutral",
+        "suspect",
+        "hostile",
+        "joker",
+        "faker",
+        "none",
+        "other"
+      ],
+      "description": "Resolved from the CoT affiliation letter. Unrecognised letters degrade to 'unknown' rather than failing the record."
+    },
+    "dimension": {
+      "type": "string",
+      "enum": [
+        "space",
+        "air",
+        "ground",
+        "surface",
+        "subsurface",
+        "sof",
+        "other",
+        "unknown"
+      ],
+      "description": "Resolved from the CoT battle-dimension letter."
+    },
+    "how": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "CoT 'how' \u2014 provenance of the position (measured, estimated, ...)."
+    },
+    "descriptor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free-text description from the sensor chain, e.g. the CoT detail/uid Droid string."
+    },
+    "reported_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The SENSOR's own clock, verbatim and unrepaired. MAY BE WRONG \u2014 a sensor chain's clock can be arbitrarily far off. Never use for staleness or ordering; never silently correct it, because a repaired timestamp is indistinguishable from a real one downstream."
+    },
+    "stale_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Sensor-declared staleness horizon. Same trust caveat as reported_at."
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the producer received the bytes. This is the trustworthy clock and the one every age, fade and TTL is computed from."
+    },
+    "trail": {
+      "type": "array",
+      "description": "Recent positions, oldest first, as [lon, lat] pairs \u2014 GeoJSON axis order. Added by the producer's store, not present in the sensor payload.",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "updates": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many messages have contributed to this track since the producer first saw it."
+    },
+    "first_seen_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "observed_at of the first message for this id."
+    },
+    "synthetic": {
+      "type": "boolean",
+      "description": "TRUE means this track is simulated and must never be mistaken for a real detection. Set from the producer org's registry `synthetic` flag, not self-declared in the payload, so a real producer cannot accidentally (or deliberately) mark itself notional or vice versa. Renderers MUST mark synthetic tracks distinctly; a viewer who cannot tell simulation from reality is worse off than one with no map."
+    },
+    "producer_anchor": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "The 32-hex slot anchor that published this track \u2014 the FIRST chunk of the Zenoh key it arrived on. Structural, not asserted: the router's ACL only admits writes under a peer's own anchor, so this cannot be forged by the payload. This is the key `data.view.producer:<anchor>` scopes on (ADR 1074)."
+    },
+    "org": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Display name of the producing org, resolved from the registry for humans. NEVER an access-control input \u2014 scoping keys on producer_anchor, because ownership is mutable and names are not identities (ADR 1051: cert = born-as, registry = currently-is)."
+    }
+  }
+}

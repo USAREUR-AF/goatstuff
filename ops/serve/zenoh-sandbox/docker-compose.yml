@@ -1,0 +1,23 @@
+# Local-dev convenience for building + eyeballing the zenoh-sandbox web app.
+# The on-host deploy uses the Ansible role (ops/ansible/roles/zenoh-sandbox/),
+# which renders an image-based compose from templates and wires the isolated
+# router + remote_api plugin. This file just builds the web app.
+#
+#   docker compose -f ops/serve/zenoh-sandbox/docker-compose.yml up --build
+#   open http://localhost:8099
+#
+# For end-to-end pub/sub locally you also need a remote-api WebSocket on :10000.
+# The stock eclipse/zenoh image does NOT include the plugin; run the standalone
+# bridge from a zenoh-ts release instead (the Ansible role handles the .so for
+# the real deploy):
+#   ./zenoh-bridge-remote-api --ws-port 10000
+# Then in the app set the server URL to ws://localhost:10000 (the localhost default).
+#
+# Design: docs/design/zenoh-sandbox-ux.md
+services:
+  zenoh-sandbox-web:
+    build:
+      context: .
+    image: zenoh-sandbox:dev
+    ports:
+      - "8099:80"

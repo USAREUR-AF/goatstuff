@@ -1,0 +1,52 @@
+# goat-crypto-posture — evidence-based crypto-posture publisher for a Zenoh
+# router. ADR 1079 / docs/design/zenoh-pqc-tls.md §"Evidence-based visibility".
+#
+# A tiny peer that (1) performs a LIVE raw-TLS handshake against the router
+# with a PQ-capable rustls client and records the negotiated key-exchange
+# group, (2) reads a host-side FIPS self-attestation file, (3) reads the
+# router's self-reported version from the REST admin space, and publishes a
+# freshness-stamped CryptoPostureV1 on ops/fabric/crypto/<site>. Nothing is
+# hardcoded: every field is observed evidence, colored honestly and degraded
+# to grey when stale.
+#
+# The probe uses aws-lc-rs + prefer-post-quantum so a PQ router negotiates
+# X25519MLKEM768; against a classical or non-PQ router it negotiates a
+# classical group and the message says so. zenoh pinned =1.9.0 for the
+# publish client (same discipline as the sibling health peers). protobuf via
+# prost-derive on hand-written structs; canonical schema in
+# proto/crypto_posture_v1.proto.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-crypto-posture"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Evidence-based crypto-posture publisher for the goat fabric (ADR 1079)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", default-features = false }
+# Raw-TLS probe client. aws-lc-rs + prefer-post-quantum so a PQ router
+# negotiates X25519MLKEM768; ring kept so the same binary can also mount a
+# classical probe if ever needed. NOT the fips feature — the probe is a
+# client observing the ROUTER's posture; the router is where FIPS lives.
+rustls = { version = "0.23", default-features = false, features = ["std", "aws-lc-rs", "prefer-post-quantum", "logging", "tls12"] }
+rustls-pemfile = "2"
+rustls-pki-types = "1"

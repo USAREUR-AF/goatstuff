@@ -1,0 +1,14 @@
+$ORIGIN trust.local.
+$TTL 5
+@   IN  SOA ns.trust.local. admin.trust.local. (
+        2026061700 ; serial (orchestrator bumps it on burn-&-respawn)
+        7200       ; refresh
+        3600       ; retry
+        1209600    ; expire
+        5 )        ; minimum
+@   IN  NS  ns.trust.local.
+ns  IN  A   127.0.0.1
+; sensor-gw — the burn-&-respawn backing service. The orchestrator rewrites this
+; A record (and bumps the serial) on register / respawn; the placeholder below
+; is overwritten the first time the playground registers the backing service.
+sensor-gw   IN  A   10.99.0.1

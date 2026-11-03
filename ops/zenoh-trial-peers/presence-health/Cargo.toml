@@ -1,0 +1,43 @@
+# goat-presence-health — the presence domain of the environment-health surface.
+#
+# ADR 1040 gap 3 (liveliness presence) + ADR 1036 (env-health contract). A normal
+# mTLS Zenoh client peer, templated on goat-mesh-health: it declares a liveliness
+# subscriber on the fabric's presence-token keyexpr (`**/presence/**`, the
+# convention in crates/panoscope-core/src/presence.rs), tracks each token's
+# alive/dropped state with the 5-state honesty colors, and publishes a per-site
+# reading on ops/presence/health/<site> as EnvHealthV1{domain:"presence"}.
+# Liveliness is the native push-based presence primitive — watchers are told
+# the instant a token drops, the quiet-vs-dead distinction passive traffic
+# metering can't make. Persists nothing.
+#
+# protobuf via prost-derive on hand-written structs (no protoc/build.rs); the
+# canonical schema is ops/zenoh-trial-peers/time-health/proto/env_health_v1.proto
+# (PresenceDetailV1, oneof arm 13). zenoh pinned =1.9.0
+# (docs/design/zenoh-version-pinning.md).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen, same rationale as the time-health
+# sibling — IO-bound service where whole-program LTO buys negligible runtime.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-presence-health"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Presence domain of the environment-health surface — per-site liveliness presence roll-up from the fabric's native token set (ADR 1040 gap 3 / ADR 1036)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

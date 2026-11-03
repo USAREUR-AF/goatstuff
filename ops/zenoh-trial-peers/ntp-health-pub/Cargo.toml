@@ -1,0 +1,46 @@
+# goat-ntp-health-pub — per-host NTP-health attestation republisher.
+#
+# ADR 1036 (env-health time domain) + ADR 1037 (internal-sync foundation; this
+# feed is the attestation/enforcement plane) + F-184 (the publisher that was
+# resolved but never built). A normal mTLS Zenoh client peer,
+# templated on goat-fabric-health: it reads the local ntp-health-agent's signed
+# verdict over HTTP (:9753/health) and republishes it VERBATIM (never re-signs)
+# on `ops/time/attest/<host_id>` at a ~30s heartbeat. Persists nothing.
+#
+# Key is under the canonical operator namespace `ops/` (ADR 0844/1035), NOT
+# Zenoh's reserved `@/` adminspace — see F-184 + the universal-ntp-hygiene §9
+# note (the `@/ntp-health` decision predates ADR 1035 and `@/` is
+# router-introspection, not a pub/sub data topic).
+#
+# zenoh pinned per docs/design/zenoh-version-pinning.md (=1.9.0).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-ntp-health-pub"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Per-host NTP-health attestation republisher for the goat fabric (ADR 1036/1037, F-184)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.12", default-features = false }
+hostname = "0.4"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,0 +1,44 @@
+# Live notional-vendor topic → personality .proto manifest. Consumed by
+# bootstrap-notional-schemas.sh. Tab-separated.
+# Columns: topic_key_pattern	proto_file	message_name	wire_format
+#
+# 22 topics across 3 personality schemas:
+#   tracks_demo   — sensor + data-service stream (9 topics)
+#   power_demo    — effector + C2 stream         (9 topics)
+#   beacon_demo   — observer + sink heartbeat    (4 topics)
+#
+# wire_format is `json` for every row in this iteration — the synth-vendor
+# binary emits JSON on the wire even though the schema body the portal
+# stores is protobuf-fds. The portal's data-dictionary viewer renders the
+# .fds; the inspector's "decode samples" path requires topic.format ==
+# `protobuf:<MsgName>` and we leave it as `json` so the inspector doesn't
+# try to protobuf-decode JSON bytes. Future PR migrates the wire format.
+#
+# Sensors
+notional/tarsier/alpha-fob/contacts/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+notional/tarsier/bravo-fob/contacts/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+notional/mantis/alpha-fob/imagery/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+notional/echidna/alpha-fob/detections/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+notional/narwhal/alpha-fob/events/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+notional/kingfisher/bravo-fob/emissions/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+notional/axolotl/charlie-fob/composite/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+# Effectors
+notional/mongoose/alpha-fob/status/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+notional/wolverine/alpha-fob/engagements/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+notional/ibex/alpha-fob/launched/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+notional/aurochs/charlie-fob/launched/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+notional/basilisk/alpha-fob/deployed/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+# Data services
+notional/octopus/alpha-fob/tracks/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+notional/cuttlefish/theater/confirmed/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+notional/chameleon/theater/normalized/v1	proto-notional/notional_tracks_demo_v1.proto	notional.tracks_demo.v1.Entity	json
+# C2
+notional/condor/theater/orders/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+notional/peregrine/alpha-fob/orders/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+notional/falcon/bravo-fob/orders/v1	proto-notional/notional_power_demo_v1.proto	notional.power_demo.v1.PowerState	json
+# Observer
+notional/omniwatch/theater/heartbeat/v1	proto-notional/notional_beacon_demo_v1.proto	notional.beacon_demo.v1.Hello	json
+# Sinks (no_publish=true)
+notional/glass-display/theater/unused/v1	proto-notional/notional_beacon_demo_v1.proto	notional.beacon_demo.v1.Hello	json
+notional/archive-vault/theater/unused/v1	proto-notional/notional_beacon_demo_v1.proto	notional.beacon_demo.v1.Hello	json
+notional/audit-log/theater/unused/v1	proto-notional/notional_beacon_demo_v1.proto	notional.beacon_demo.v1.Hello	json

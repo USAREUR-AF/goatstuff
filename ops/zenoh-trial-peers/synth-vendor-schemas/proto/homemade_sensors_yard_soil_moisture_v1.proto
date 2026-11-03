@@ -1,0 +1,30 @@
+// homemade-sensors/yard/soil-moisture/v1 — soil moisture + soil
+// temperature + battery from a small outdoor sensor in a yard.
+// Distinguished from the other synth-vendor producers by emitting
+// CBOR (RFC 8949) on the wire instead of JSON — exercises the
+// inspector's CBOR decode path.
+//
+// Producer: ops/zenoh-trial-peers/synth-vendor — Personality::YardSoil
+// Wire format on the fabric: CBOR. (The fields below describe the
+// same logical record; CBOR map keys are the field names verbatim.)
+
+syntax = "proto3";
+
+package homemade_sensors.yard.v1;
+
+message SoilMoisture {
+  // Producer-supplied sensor identifier, free-text.
+  string sensor_id = 1;
+
+  // Producer-local wall-clock, milliseconds since Unix epoch.
+  uint64 ts_ms = 2;
+
+  // Volumetric water content, percent [0, 100].
+  double moisture_pct = 3;
+
+  // Soil temperature at the sensor probe depth, degrees Celsius.
+  double soil_temp_c = 4;
+
+  // Battery terminal voltage, volts.
+  double battery_v = 5;
+}

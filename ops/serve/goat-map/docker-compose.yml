@@ -1,0 +1,199 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# goat-map. Every goatnet-specific value comes from an env file — see
+# .env.example and deploy/goatnets/<goatnet>.env. Nothing in this file names
+# a site, a host, a zone or a sensor.
+#
+# Mesh-only: GOATMAP_BIND_IP must be the host's mesh IP, never 0.0.0.0, so
+# reachability is exactly mesh membership.
+
+services:
+  goat-map:
+    image: ${GOATMAP_IMAGE:-goat-map:local}
+    # Both image and build: a profile pinning a registry digest pulls it, and
+    # `deploy.sh --build` builds locally for a host with no CI image yet.
+    build: .
+    container_name: ${GOATMAP_CONTAINER:-goat-map}
+    restart: unless-stopped
+    environment:
+      GOATMAP_INGEST_ENDPOINT: "${GOATMAP_INGEST_ENDPOINT}"
+      GOATMAP_INGEST_MODE: "${GOATMAP_INGEST_MODE:-client}"
+      GOATMAP_SUBSCRIBE_KEY: "${GOATMAP_SUBSCRIBE_KEY}"
+      GOATMAP_FABRIC_ENDPOINT: "${GOATMAP_FABRIC_ENDPOINT:-}"
+      GOATMAP_FABRIC_CERT: "${GOATMAP_FABRIC_CERT:-}"
+      GOATMAP_FABRIC_KEY: "${GOATMAP_FABRIC_KEY:-}"
+      GOATMAP_FABRIC_CA: "${GOATMAP_FABRIC_CA:-}"
+      GOATMAP_FABRIC_SUBSCRIBE: "${GOATMAP_FABRIC_SUBSCRIBE:-*/geo/track/v1/*}"
+      GOATMAP_PRODUCER_ANCHOR: "${GOATMAP_PRODUCER_ANCHOR:-}"
+      # Registry lookup for anchor -> (org, synthetic). The token is a secret:
+      # it is appended to the on-host .env by deploy.sh from the operator's
+      # environment, never committed to a goatnet profile.
+      GOATMAP_PORTAL_URL: "${GOATMAP_PORTAL_URL:-}"
+      GOATMAP_PORTAL_TOKEN: "${GOATMAP_PORTAL_TOKEN:-}"
+      GOATMAP_STALE_AFTER_S: "${GOATMAP_STALE_AFTER_S:-180}"
+      GOATMAP_PUBLISH_PREFIX: "${GOATMAP_PUBLISH_PREFIX:-}"
+      GOATMAP_STORE_SOURCE: "${GOATMAP_STORE_SOURCE:-auto}"
+      GOATMAP_SENSOR: "${GOATMAP_SENSOR:-unknown-sensor}"
+      GOATMAP_SITE: "${GOATMAP_SITE}"
+      GOATMAP_NODE: "${GOATMAP_NODE}"
+      GOATMAP_GOATNET: "${GOATMAP_GOATNET}"
+      GOATMAP_TTL_S: "${GOATMAP_TTL_S:-120}"
+      GOATMAP_CENTER: "${GOATMAP_CENTER}"
+      GOATMAP_ZOOM: "${GOATMAP_ZOOM:-10}"
+      # Which committed extract under web/basemap/ this goatnet renders.
+      # NO DEFAULT, deliberately: an unset value serves no basemap and says
+      # so, because falling back to another environment's geography is the
+      # failure this variable exists to fix.
+      GOATMAP_BASEMAP: "${GOATMAP_BASEMAP:-}"
+      GOATMAP_LOG_LEVEL: "${GOATMAP_LOG_LEVEL:-INFO}"
+      # ── site readiness (docs/design/site-readiness-chain.md) ──────────────
+      # The declared estate: regions, sites, and the kit a person can attest
+      # for. Unset leaves the readiness view honestly empty rather than
+      # inventing an inventory.
+      GOATMAP_SITES_FILE: "${GOATMAP_SITES_FILE:-}"
+      GOATMAP_REGIONS_FILE: "${GOATMAP_REGIONS_FILE:-}"
+      # Append-only human reports for kit with no telemetry (generators).
+      GOATMAP_ATTEST_LOG: "${GOATMAP_ATTEST_LOG:-}"
+      # Real signals the readiness adapters read. Absent = that rung reads
+      # unknown, never a fault invented from our own inability to look.
+      GOATMAP_DISCOVERY_FILE: "${GOATMAP_DISCOVERY_FILE:-}"
+      GOATMAP_NODE_HEALTH_FILE: "${GOATMAP_NODE_HEALTH_FILE:-}"
+      # Node health arrives on the FABRIC — the publishers run on the sensor
+      # nodes, this service runs on the observability host.
+      GOATMAP_NODE_HEALTH_KEY: "${GOATMAP_NODE_HEALTH_KEY:-}"
+      GOATMAP_SITES_HEALTH_KEY: "${GOATMAP_SITES_HEALTH_KEY:-}"
+      # Per-viewer scoping of `/api/readiness` ONLY — not the track endpoints,
+      # which read no viewer at all. The name is broader than the behaviour;
+      # see the goatnet's profile in deploy/goatnets/ for which handlers are covered.
+      # `off` is byte-identical to no scoping and is the shipping default;
+      # `enforce` is fail-closed and REQUIRES the oauth2-proxy sidecar in
+      # front, or readiness drops every viewer to the floor.
+      GOATMAP_RBAC_MODE: "${GOATMAP_RBAC_MODE:-off}"
+    # DELIBERATELY NO HOST PORT. Publishing one would let anyone on the mesh
+    # dial the app directly and walk straight around the oauth2-proxy fence —
+    # the gate has to be the ONLY door, not the front one. The app is reachable
+    # only on the compose network; oauth2-proxy publishes the host port.
+    #
+    # This matters more now that GOATMAP_RBAC_MODE=enforce exists: that mode is
+    # fail-closed ONLY because the sidecar is the sole ingress. A published app
+    # port would let a viewer reach the app with no X-Forwarded-Groups at all
+    # and bypass the scoping entirely.
+    #
+    # Structural rather than a flag on purpose: a knob that re-exposes the app
+    # is a knob someone leaves on. An unfenced development instance should use
+    # a compose override written deliberately, not a variable it can forget.
+    volumes:
+      # Always a real directory. With the fabric leg unwired the profile
+      # leaves GOATMAP_CERT_DIR empty and this falls back to an empty dir in
+      # the repo, rather than a missing path compose would materialise itself.
+      - "${GOATMAP_CERT_DIR:-./deploy/empty-certs}:/certs:ro"
+      # Declared estate, read-only: this is config, and the service must never
+      # be able to rewrite what it is measured against.
+      - "./deploy/estate:/estate:ro"
+      # Attestation log, read-WRITE: the only thing this service persists.
+      - "${GOATMAP_ATTEST_DIR:-./deploy/estate}:/attest:rw"
+    # This runs on an observability host alongside Prometheus and Grafana. It is
+    # a single-threaded Python process holding a few hundred tracks; the ceilings are here so it can never become the reason that box
+    # is short of memory.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.50"
+    mem_limit: 256m
+    cpus: 0.50
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Synthetic track producer. OPT-IN: only starts when the goatnet profile sets
+  # COMPOSE_PROFILES=synth, so a goatnet with real sensors never accidentally
+  # publishes simulation onto its own picture.
+  #
+  # It publishes under its OWN org anchor, which the portal registry flags
+  # synthetic:true — so consumers derive "this is simulated" from the registry,
+  # not from anything this container asserts. See tools/synth_tracks.py.
+  synth:
+    image: ${GOATMAP_IMAGE:-goat-map:local}
+    build: .
+    container_name: ${GOATMAP_SYNTH_CONTAINER:-goat-map-synth}
+    restart: unless-stopped
+    profiles: ["synth"]
+    command: >
+      python tools/synth_tracks.py
+      --bundle /synth-certs
+      --endpoint ${GOATMAP_FABRIC_ENDPOINT}
+      --center ${GOATMAP_CENTER}
+      --radius-km ${GOATMAP_SYNTH_RADIUS_KM:-60}
+      --tracks ${GOATMAP_SYNTH_TRACKS:-6}
+      --site ${GOATMAP_SITE}
+      --seed ${GOATMAP_SYNTH_SEED:-42}
+    volumes:
+      - "${GOATMAP_SYNTH_CERT_DIR:-./deploy/empty-certs}:/synth-certs:ro"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # The fence. Present only when the goatnet profile turns it on, so a
+  # development instance can still run unfenced deliberately rather than by
+  # forgetting.
+  oauth2-proxy:
+    image: ${GOATMAP_OAUTH2_PROXY_IMAGE:-quay.io/oauth2-proxy/oauth2-proxy:v7.7.1}
+    container_name: ${GOATMAP_OAUTH2_CONTAINER:-oauth2-proxy-goat-map}
+    restart: unless-stopped
+    profiles: ["fenced"]
+    depends_on:
+      - goat-map
+    # OIDC discovery hits the issuer's mesh-DNS name; pin it so the proxy does
+    # not depend on the container's resolver reaching mesh CoreDNS.
+    extra_hosts:
+      - "${GOATMAP_OIDC_HOST_ENTRY:-invalid.invalid:127.0.0.1}"
+    env_file:
+      - oauth2-proxy.env
+    ports:
+      - "${GOATMAP_BIND_IP:-127.0.0.1}:${GOATMAP_PORT:-8081}:4180"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+    mem_limit: 128m
+    cpus: 0.25
+    # No healthcheck. The upstream oauth2-proxy image is distroless: it ships
+    # no shell, no wget and no curl, so every exec-based probe fails with
+    # `executable file not found` and the container is marked unhealthy
+    # forever while serving correctly.
+    #
+    # A permanently-red healthcheck is worse than none: it trains operators to
+    # ignore "unhealthy", and anything keying off container health acts on a
+    # signal that can never go green. Probing `/bin/oauth2-proxy --version`
+    # would execute (the binary is directly exec-able without a shell) but only
+    # proves the binary exists — and if the process dies the container exits
+    # anyway, since it is the entrypoint, so the restart policy already covers
+    # that case.
+    #
+    # Real liveness for this service belongs OUTSIDE the container, against
+    # `/ping` on its published bind — a blackbox target or an isitup row —
+    # because that is the only check that exercises the path a user takes.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

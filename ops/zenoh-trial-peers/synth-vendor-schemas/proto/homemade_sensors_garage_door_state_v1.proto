@@ -1,0 +1,35 @@
+// homemade-sensors/garage/door-state/v1 — garage door open/closed
+// state with a "correlated sibling topics" list to demonstrate
+// intra-vendor subscribe edges in panoscope.
+//
+// Producer: ops/zenoh-trial-peers/synth-vendor — Personality::GarageDoor
+// Wire format on the fabric: JSON.
+
+syntax = "proto3";
+
+package homemade_sensors.garage.v1;
+
+message DoorState {
+  // Producer-supplied sensor identifier, free-text.
+  string sensor_id = 1;
+
+  // Producer-local wall-clock, milliseconds since Unix epoch.
+  uint64 ts_ms = 2;
+
+  // Current door state — free-text in v1. Recognized values: "open",
+  // "closed". A future v2 may promote this to an enum.
+  string state = 3;
+
+  // Wall-clock at the most recent state transition, milliseconds since
+  // Unix epoch.
+  uint64 last_change_ms = 4;
+
+  // Seconds since the most recent state transition.
+  uint64 duration_s = 5;
+
+  // Sibling-topic key-expressions this peer has received samples for
+  // in the last ~30s. Exercises intra-vendor subscribe in the synth-
+  // vendor harness (door-state peer subscribes to its sibling
+  // temperature topic so panoscope shows an intra-vendor edge).
+  repeated string related_topics_seen = 6;
+}

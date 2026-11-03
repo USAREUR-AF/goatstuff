@@ -1,0 +1,39 @@
+# trust-sandbox Ory Hydra — OAuth2/OIDC provider (dev mode, memory DSN).
+# Issues the ID-token JWT (with the `groups` claim) that gate ④ turns on. The
+# login/consent provider is the orchestrator (a demo-persona picker) — Hydra
+# redirects the browser to the SPA pages, which call the orchestrator's /api to
+# accept login + consent against Hydra's admin API.
+#
+# The issuer is the browser-facing URL (proxied by nginx at /hydra), so the
+# token `iss` + the OIDC discovery / JWKS endpoints are reachable from the
+# browser. The orchestrator validates tokens against this issuer.
+serve:
+  public:
+    port: 4444
+  admin:
+    port: 4445
+  cookies:
+    same_site_mode: Lax
+
+urls:
+  self:
+    issuer: http://localhost:8100/hydra
+  login: http://localhost:8100/login.html
+  consent: http://localhost:8100/consent.html
+
+secrets:
+  system:
+    - trust-sandbox-throwaway-system-secret-do-not-reuse
+
+oidc:
+  subject_identifiers:
+    supported_types:
+      - public
+
+strategies:
+  access_token: jwt
+
+ttl:
+  id_token: 1h
+  access_token: 1h
+  auth_code: 10m

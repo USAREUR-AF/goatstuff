@@ -1,0 +1,125 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// FabricCardinalityV1 — the single lazy crawler's rollup
+// (docs/design/zenoh-cardinality-budget-and-lazy-crawler.md §4, layer 4).
+//
+// Published on: ops/fabric/cardinality/<site>   (protobuf, this schema)
+// Sibling key:  ops/fabric/census/<site>        (JSON, byte-faithful adminspace
+//               census mirror — {site, sampled_at_ms, selectors, entries:
+//               [{key, payload}]} — so census consumers keep their parse)
+//
+// CONVENTION (same as env_health_v1.proto): this file is the canonical,
+// documentation-grade schema. It is NOT compiled — no protoc, no build.rs.
+// The publisher (goat-fabric-crawler) and every consumer hand-write matching
+// prost-derive / decoder structs. Tags MUST stay in lock-step with
+// ops/zenoh-trial-peers/fabric-crawler/src/main.rs.
+//
+// Honesty contract:
+//   - truncated=true  => stored_keys_observed is a LOWER BOUND (enumeration
+//     stopped at lazy_threshold), never a total. A truncation IS the budget
+//     violation flag (the >100 exception tier).
+//   - skipped=true    => the owner was not queried this cycle (crawl
+//     wall-budget); stored_keys_observed is meaningless; budget_state is
+//     "unmeasured", never a tier claim.
+//   - stored keys are themselves a lower bound on routing edges; the
+//     authoritative edge count needs the router declare log
+//     (zenoh-wedge-instrumentation.md producer 3).
+//   - zenoh_session_state != "live" => admin_declarations, admin_census_ms
+//     and scoped_get_ms were NOT measured this cycle. Their zeros are
+//     placeholders, never observations (same rule as skipped above); the
+//     JSON band renders them null.
+
+syntax = "proto3";
+
+package goat.fabric.v1;
+
+message OwnerCardinalityV1 {
+  // First keyexpr chunk — the tenant anchor / namespace owner
+  // (ADR 1025 structure-in-the-namespace).
+  string owner = 1;
+  // Distinct stored keys observed under <owner>/** this cycle.
+  uint64 stored_keys_observed = 2;
+  // Enumeration stopped at the lazy threshold — the owner sprawls past it.
+  bool truncated = 3;
+  // Not queried this cycle (crawl wall-budget exhausted).
+  bool skipped = 4;
+  // Wall time of this owner's query (read-hold self-cost, visible).
+  uint32 query_ms = 5;
+  // "self" | "request" | "exception" | "unmeasured" — the cardinality-budget
+  // tier the observed count lands in (design §2 tier ladder; per-goatnet knobs — revised to 100/1,000/>1,000).
+  string budget_state = 6;
+  // Where this row's count came from: "rocksdb-exact" (secondary read of the
+  // live store, distinct keys in ONE column family — exact; the preferred
+  // router-host source, M-091 scenario C), "rocksdb-capped" (iteration hit
+  // the pathology cap; lower bound + estimate), "rocksdb-error" (store
+  // unreadable; skipped=true), "zenoh-walk" (bounded query fallback).
+  string source = 7;
+  // rocksdb estimate-num-keys O(1) ceiling — over-counts dead/un-compacted
+  // entries; 0 when not read via rocksdb. Never the count.
+  uint64 estimate = 8;
+  // Granted allowance from the topic-budget ALLOCATION (layer 2b): the
+  // per-tenant agreed distinct-key ceiling. 0 = no grant on record
+  // (budget_state renders "unmeasured"), NEVER "allowance zero, everything
+  // is a violation". Also 0 when no budget source is configured (legacy
+  // global-tier classification). With a grant in force, budget_state is
+  // grant-relative: "exception" = observed > granted (over what was agreed);
+  // within-grant rows are labeled by the allowance's APPROVAL tier —
+  // "self" (automatic block), "request" (sponsor-approved <= request tier),
+  // "granted" (platform-admin allowance above the request tier).
+  uint64 granted = 9;
+}
+
+message FabricCardinalityV1 {
+  string site = 1;
+  int64 sampled_at_ms = 2;
+  // Per-owner census, deterministic order (owner asc).
+  repeated OwnerCardinalityV1 owners = 3;
+  // Sum of stored_keys_observed — a lower bound (see honesty contract).
+  uint64 stored_keys_observed_total = 4;
+  uint32 owners_truncated = 5;
+  uint32 owners_skipped = 6;
+  // Admin census declaration count (wildcard-collapsed; the "847-class").
+  uint64 admin_declarations = 7;
+  // Wall time of the admin census queries (read-hold cost trend, H1 analog).
+  uint32 admin_census_ms = 8;
+  // Cheap scoped GET latency (contention baseline).
+  uint32 scoped_get_ms = 9;
+  // Total crawl wall time this cycle (observer-cost, visible).
+  uint32 crawl_ms = 10;
+  // Lazy sprawl threshold in force (aligned with the budget exception tier).
+  uint64 lazy_threshold = 11;
+  // |delta observed keys| / interval — NET-change proxy only (equal
+  // declares+undeclares invisible; weaker under truncation).
+  double declare_rate_proxy_per_s = 12;
+  int64 proxy_interval_s = 13;
+  // Topic-budget allowance source health (layer 2b): "none" (no source
+  // configured — legacy global-tier classification), "live", "stale" (re-read
+  // failed; classifying against the last good map), "unavailable" (never
+  // loaded; every owner reads unmeasured). Surfaced so a dead source cannot
+  // silently blank the exception alert.
+  string budget_source_state = 14;
+  // Health of the crawler's own zenoh session, measured as TRANSPORT
+  // reachability (is a router connected right now), never as "do we hold a
+  // Session object" — the object outlives the transport, so object-existence
+  // reported "live" straight through a four-minute router outage.
+  //
+  // EXACTLY TWO VALUES, load-bearing:
+  //   "live"        — a router is connected; the router-dependent facets were
+  //                   measured this cycle.
+  //   "unavailable" — no router reachable; admin_declarations, admin_census_ms
+  //                   and scoped_get_ms are placeholders NOT observations, and
+  //                   this rollup + the census mirror were not published.
+  // The rocksdb-direct census and the budget classification are
+  // router-independent and keep running either way.
+  //
+  // Do NOT add a third value meaning "stale/partial". Consumers map
+  // `!= "unavailable"` to trustworthy (ops/relay/health/zenoh-health-to-prom.py)
+  // so that an unknown future state cannot silently start paging — the same
+  // property means a new not-really-live state would be read as trustworthy.
+  // Invariant: state != "unavailable" <=> those three facets are real.
+  string zenoh_session_state = 15;
+  // Why, for triage only — NOTHING gates on this: "connected", "no-transport"
+  // (Session alive, all transports down, zenoh reconnecting underneath),
+  // "no-session" (open never succeeded — check certs/ACL/endpoint first).
+  string zenoh_session_detail = 16;
+}

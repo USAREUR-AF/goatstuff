@@ -1,0 +1,44 @@
+# goat-time-health — the time domain of the environment-health surface.
+#
+# ADR 1036 (env-health) + ADR 1037 (internal-sync; this rolls up the
+# attestation/enforcement plane into the non-enforcing viewing plane) + F-184.
+# A normal mTLS Zenoh client peer, templated on goat-fabric-health: it subscribes
+# the signed per-host attestations on ops/time/attest/**, rolls them up by host,
+# and publishes a per-site honesty-graded reading on ops/time/health/<site> as
+# EnvHealthV1{domain:"time"}. Persists nothing.
+#
+# protobuf via prost-derive on hand-written structs (no protoc/build.rs); the
+# canonical schema is proto/env_health_v1.proto. zenoh pinned =1.9.0
+# (docs/design/zenoh-version-pinning.md).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-time-health"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Time domain of the environment-health surface — per-site clock-health roll-up (ADR 1036/1037, F-184)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

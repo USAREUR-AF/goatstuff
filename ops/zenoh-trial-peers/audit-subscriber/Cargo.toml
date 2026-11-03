@@ -1,0 +1,61 @@
+# goat-audit-subscriber — external Zenoh audit subscriber per
+# docs/design/zenoh-audit-external-subscriber.md + ADR 0858.
+#
+# Standalone Rust service. Runs as a normal mTLS Zenoh client peer of the
+# router we're auditing; declares a subscriber on ** (or per-prefix
+# allowlist) and writes structured events to a MinIO bucket sized for
+# Object-Lock COMPLIANCE 1y per ADR 0811.
+#
+# Own-workspace, matching the synth-vendor + panoscope crate pattern. The
+# zenoh crate is pinned at one surface (this Cargo.toml) — the F-122
+# eight-surface coupling tax that hits in-process plugins does not hit
+# normal client-mode crates.
+#
+# Pinned zenoh version per docs/design/zenoh-version-pinning.md.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-audit-subscriber"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "External Zenoh audit subscriber for the goat fabric. Block 82S per docs/design/zenoh-audit-external-subscriber.md."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "tokio"] }
+prometheus = { version = "0.13", default-features = false }
+aws-config = { version = "1", default-features = false, features = ["rt-tokio", "rustls"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "rustls"] }
+aws-credential-types = "1"
+aws-smithy-runtime-api = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

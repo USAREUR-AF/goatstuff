@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "homemade-sensors/yard/soil-moisture/v1",
+  "title": "homemade-sensors yard soil moisture (CBOR-packed)",
+  "description": "Synthetic capacitive soil-moisture probe at ~5min cadence; payload is CBOR-encoded so the inspector's CBOR decoder path is exercised in the live demo. JSON schema describes the decoded shape.",
+  "type": "object",
+  "required": ["sensor_id", "ts_ms", "moisture_pct"],
+  "properties": {
+    "sensor_id": {"type": "string"},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "moisture_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    "soil_temp_c": {"type": "number"},
+    "battery_v": {"type": "number"}
+  }
+}

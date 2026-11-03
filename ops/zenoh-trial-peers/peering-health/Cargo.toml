@@ -1,0 +1,48 @@
+# goat-peering-health — the peering domain of the environment-health surface.
+#
+# The S4 G-6 gate of docs/project/cross-sovereign-federation-plan.md, and the
+# operator-side half of F-177 for a sovereign peering edge. Templated on
+# goat-node-net-health: it reads the peering-denial snapshot (written atomically
+# by the peering-denials-snapshot systemd timer — ops/peering-denials/pd-snapshot.py
+# — bind-mounted read-only), grades it with the 5-state honesty colors, and
+# publishes a per-edge reading on ops/peering/health/<edge> as
+# EnvHealthV1{domain:"peering"}.
+#
+# Reveal-only: the edge self-publishes and a passive reader rolls up. It queries
+# the router for nothing, so client demand never amplifies into fabric load
+# (ADR 1123). Subscribes nothing in publish mode. Persists nothing.
+#
+# protobuf via prost-derive on hand-written structs (no protoc/build.rs); the
+# canonical schema is ops/zenoh-trial-peers/time-health/proto/env_health_v1.proto
+# (PeeringDetailV1, oneof arm 16). zenoh pinned =1.9.0
+# (docs/design/zenoh-version-pinning.md).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen, same rationale as the node-net-health
+# sibling — IO-bound service where whole-program LTO buys negligible runtime.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-peering-health"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Peering domain of the environment-health surface — per-edge ACL denial observability at a sovereign peering edge."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+humantime = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

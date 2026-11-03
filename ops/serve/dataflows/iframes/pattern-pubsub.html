@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pattern 4 — Event-driven pub/sub</title>
+<style>
+  :root{
+    --bg:#0a0e14;--surface:#111827;--border:#1e2533;
+    --text:#c8ccd4;--muted:#8b95a5;
+    --accent:#00e5ff;--ok:#4caf50;--warn:#fbbf24;--danger:#f87171;
+  }
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow:hidden;}
+  #wrap{width:1000px;height:640px;display:flex;flex-direction:column;}
+  #controls{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);background:rgba(17,24,39,.6);flex-wrap:wrap;}
+  .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+  button{background:transparent;color:var(--text);border:1px solid var(--border);padding:6px 12px;border-radius:4px;cursor:pointer;font-size:13px;min-width:42px;}
+  button.active{background:rgba(0,229,255,.12);border-color:var(--accent);color:var(--accent);}
+  button:hover{border-color:var(--accent);}
+  #stage{flex:1;position:relative;}
+  svg{width:100%;height:100%;display:block;}
+  #counters{position:absolute;top:14px;right:18px;display:flex;gap:14px;background:rgba(17,24,39,.85);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:12px;}
+  #counters .b{display:flex;flex-direction:column;}
+  #counters .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+  #counters .v{font-size:18px;font-weight:700;color:var(--accent);margin-top:2px;}
+  #counters .v.ok{color:var(--ok);}
+  #footer{padding:10px 18px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);background:rgba(17,24,39,.6);}
+  #footer strong{color:var(--text);}
+  .node{stroke-width:1.5;}
+  .node.producer{fill:rgba(0,229,255,.18);stroke:var(--accent);}
+  .node.broker{fill:rgba(251,191,36,.18);stroke:var(--warn);}
+  .node.consumer{fill:rgba(76,175,80,.18);stroke:var(--ok);}
+  .lbl{fill:var(--text);font-size:12px;font-weight:600;text-anchor:middle;dominant-baseline:middle;pointer-events:none;}
+  .lbl-small{fill:var(--muted);font-size:10px;text-anchor:middle;dominant-baseline:middle;pointer-events:none;}
+  .lbl-tag{fill:var(--accent);font-size:10px;font-weight:600;text-anchor:middle;dominant-baseline:middle;pointer-events:none;font-family:'SF Mono',Menlo,monospace;}
+  .wire{stroke:var(--accent);stroke-width:1.3;fill:none;opacity:.45;}
+  .packet{r:4;fill:var(--accent);}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="controls">
+    <span class="label">Subscribers</span>
+    <button class="n" data-n="1">1</button>
+    <button class="n active" data-n="3">3</button>
+    <button class="n" data-n="6">6</button>
+    <button class="n" data-n="12">12</button>
+    <button class="n" data-n="25">25</button>
+  </div>
+  <div id="stage">
+    <svg id="svg" viewBox="0 0 1000 540" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="counters">
+      <div class="b"><span class="k">Producer's publish calls per event</span><span class="v ok" id="pubs">1</span></div>
+      <div class="b"><span class="k">Subscribers receiving</span><span class="v" id="subs">3</span></div>
+      <div class="b"><span class="k">Producer changes when subscribers join</span><span class="v ok" id="chg">No</span></div>
+    </div>
+  </div>
+  <div id="footer">
+    <span><strong>Event-driven pub/sub:</strong> producer publishes once to a topic. The fabric carries to whoever subscribes. New consumers attach without telling the producer. Decoupled in <em>time</em>, <em>identity</em>, and <em>cardinality</em>.</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var svg=document.getElementById('svg');
+  var pubsEl=document.getElementById('pubs');
+  var subsEl=document.getElementById('subs');
+  var chgEl=document.getElementById('chg');
+  var n=3;
+
+  function ns(t){return document.createElementNS('http://www.w3.org/2000/svg',t);}
+  function clear(){while(svg.firstChild)svg.removeChild(svg.firstChild);}
+
+  var timers=[],loopTimer=null;
+  function clearTimers(){timers.forEach(clearTimeout);timers=[];Array.from(svg.querySelectorAll('.packet')).forEach(function(p){p.parentNode&&p.parentNode.removeChild(p);});}
+
+  function animPacket(pathEl,delay,duration){
+    var t=setTimeout(function(){
+      var len=pathEl.getTotalLength();
+      var dot=ns('circle');dot.setAttribute('r',4);dot.setAttribute('class','packet');svg.appendChild(dot);
+      var start=performance.now();
+      function frame(now){
+        var t=Math.min(1,(now-start)/duration);
+        var pt=pathEl.getPointAtLength(len*t);
+        dot.setAttribute('cx',pt.x);dot.setAttribute('cy',pt.y);
+        if(t<1)requestAnimationFrame(frame);
+        else dot.parentNode&&dot.parentNode.removeChild(dot);
+      }
+      requestAnimationFrame(frame);
+    },delay);
+    timers.push(t);
+  }
+
+  function consumerPositions(count){
+    var rightCenterX=830, top=90, bottom=440;
+    // Fit in two columns if >8
+    if(count<=8){
+      var pts=[];
+      if(count===1){pts.push({x:rightCenterX,y:(top+bottom)/2});}
+      else{
+        var step=(bottom-top)/(count-1);
+        for(var i=0;i<count;i++) pts.push({x:rightCenterX,y:top+i*step});
+      }
+      return pts;
+    } else {
+      var pts=[]; var perCol=Math.ceil(count/2);
+      var step=(bottom-top)/(perCol-1);
+      for(var i=0;i<count;i++){
+        var col=i<perCol?0:1;
+        var row=i<perCol?i:i-perCol;
+        var x=col===0?780:870;
+        var y=top+row*step;
+        pts.push({x:x,y:y});
+      }
+      return pts;
+    }
+  }
+
+  function render(){
+    clear();clearTimers();if(loopTimer){clearInterval(loopTimer);loopTimer=null;}
+
+    var producer={x:130, y:270};
+    var broker={x:480, y:270};
+
+    // Producer
+    var pc=ns('circle');pc.setAttribute('cx',producer.x);pc.setAttribute('cy',producer.y);pc.setAttribute('r',40);pc.setAttribute('class','node producer');svg.appendChild(pc);
+    var pt=ns('text');pt.setAttribute('x',producer.x);pt.setAttribute('y',producer.y-6);pt.setAttribute('class','lbl');pt.textContent='Producer';svg.appendChild(pt);
+    var pts=ns('text');pts.setAttribute('x',producer.x);pts.setAttribute('y',producer.y+10);pts.setAttribute('class','lbl-small');pts.textContent='one publish';svg.appendChild(pts);
+
+    // Broker
+    var bc=ns('circle');bc.setAttribute('cx',broker.x);bc.setAttribute('cy',broker.y);bc.setAttribute('r',50);bc.setAttribute('class','node broker');svg.appendChild(bc);
+    var bt=ns('text');bt.setAttribute('x',broker.x);bt.setAttribute('y',broker.y-8);bt.setAttribute('class','lbl');bt.textContent='Fabric';svg.appendChild(bt);
+    var bts=ns('text');bts.setAttribute('x',broker.x);bts.setAttribute('y',broker.y+10);bts.setAttribute('class','lbl-tag');bts.textContent='sensor/track/v1';svg.appendChild(bts);
+
+    // producer → broker wire
+    var pw=ns('path');pw.setAttribute('d','M '+(producer.x+40)+' '+producer.y+' L '+(broker.x-50)+' '+broker.y);pw.setAttribute('class','wire');svg.appendChild(pw);
+
+    // Consumers
+    var pts=consumerPositions(n);
+    var brokerPaths=[];
+    pts.forEach(function(p,i){
+      // line from broker edge to consumer
+      var d='M '+(broker.x+50)+' '+broker.y+' Q '+((broker.x+50+p.x)/2)+' '+broker.y+' '+(p.x-22)+' '+p.y;
+      var wp=ns('path');wp.setAttribute('d',d);wp.setAttribute('class','wire');svg.appendChild(wp);
+      brokerPaths.push(wp);
+      var rsz= n<=12 ? 22 : 14;
+      var cc=ns('circle');cc.setAttribute('cx',p.x);cc.setAttribute('cy',p.y);cc.setAttribute('r',rsz);cc.setAttribute('class','node consumer');svg.appendChild(cc);
+      if(n<=12){
+        var ct=ns('text');ct.setAttribute('x',p.x);ct.setAttribute('y',p.y);ct.setAttribute('class','lbl-small');ct.textContent='S'+(i+1);svg.appendChild(ct);
+      }
+    });
+
+    pubsEl.textContent=1;
+    subsEl.textContent=n;
+    chgEl.textContent='No';
+
+    function emit(){
+      animPacket(pw, 0, 800);
+      brokerPaths.forEach(function(p,i){
+        animPacket(p, 700 + (i*25), 1000);
+      });
+    }
+    emit();
+    loopTimer=setInterval(emit, 2400);
+  }
+
+  document.querySelectorAll('button.n').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('button.n').forEach(function(x){x.classList.remove('active');});
+      b.classList.add('active');
+      n=parseInt(b.dataset.n,10);
+      render();
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+# goat-loadgen — Zenoh fabric load generator for the load-testing apparatus
+# per docs/design/zenoh-loadtest.md (ADR 1012 load-testing discipline).
+#
+# Persistent-session mTLS publisher that pumps controlled-rate traffic into a
+# dedicated `loadtest/**` namespace on the REAL router, stamping {seq, t_ns}
+# in both the key and the payload so the rocksdb + MinIO probes can measure
+# completeness (distinct stored seq / published seq) and publish->storage lag
+# without ambiguity. Exposes Prometheus /metrics so the orchestrator can build
+# the throughput + put-latency timeline by scraping once per second.
+#
+# Own-workspace, matching the synth-vendor + audit-subscriber crate pattern in
+# this directory (build isolation, trial vs production trust-domain split).
+# Mirrors synth-vendor's session/mTLS plumbing and audit-subscriber's
+# axum+prometheus metrics surface — no new substrate.
+#
+# Pinned zenoh version per docs/design/zenoh-version-pinning.md.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-loadgen"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Zenoh fabric load generator for the goat load-testing apparatus. Per docs/design/zenoh-loadtest.md + ADR 1012."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+futures = "0.3"
+axum = { version = "0.7", default-features = false, features = ["http1", "tokio"] }
+prometheus = { version = "0.13", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

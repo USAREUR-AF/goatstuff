@@ -1,0 +1,73 @@
+# Synthetic vendor peer for the Zenoh trial fabric.
+#
+# Single small binary that runs as one of three personalities (tracks-demo /
+# power-demo / beacon-demo), driven by CLI flags. Each instance opens its
+# own Zenoh session (distinct ZID per process) and publishes synthetic JSON
+# under a per-vendor-prefix topic. The beacon-demo personality also
+# subscribes to `caracal/**` to exercise cross-vendor reads.
+#
+# Workspace: deliberately NOT a member of the panoscope or goat-relay
+# workspaces — own-workspace per the panoscope pattern. Build isolation +
+# trust-domain separation (trial vs production).
+#
+# Pinned zenoh version per docs/design/zenoh-version-pinning.md.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "synth-vendor"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Synthetic vendor peer for the nova Zenoh trial fabric demo. Block 82Q per docs/design/zenoh-trial-fabric-synth-vendors.md."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+# zenoh-ext — AdvancedPublisher (per-producer PublicationCache + sample-miss
+# sequencing + publisher-detection liveliness token). Client-side construct
+# routed by the STOCK router; same pin discipline
+# as zenoh per docs/design/zenoh-version-pinning.md.
+zenoh-ext = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# CBOR encoding for the yard-soil personality — exercises the inspector's
+# CBOR decoder path. Pure-Rust, no_std-compatible, audit-friendly footprint.
+ciborium = "0.2"
+# Protobuf encoding for the notional personalities (tracks_demo / power_demo /
+# beacon_demo). Generated from `proto-notional/*.proto` by build.rs;
+# wire-format aligned with the topic.format declarations the portal serves
+# and the .fds bodies panoscope's decoder fetches. See docs/design/zenoh-
+# trial-fabric-synth-vendors.md §"Wire format / RCA".
+prost = "0.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+rand = "0.8"
+
+[build-dependencies]
+prost-build = "0.13"
+# Bundles a static protoc binary so the build doesn't depend on protoc
+# being installed in the build environment (Chainguard rust image
+# doesn't have it; this is faster than apk add + multi-arch wrangling
+# in the Dockerfile, and keeps the build hermetic).
+protoc-bin-vendored = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

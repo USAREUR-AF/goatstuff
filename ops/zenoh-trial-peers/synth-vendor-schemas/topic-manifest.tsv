@@ -1,0 +1,10 @@
+# Live synth-vendor topic → .proto file → message name manifest.
+# Consumed by build-fds.sh + upload-all.sh. Tab-separated.
+# Columns: vendor	topic_key_pattern	proto_file	message_name	wire_format
+caracal	caracal/tracks-demo/entity/v1	proto/caracal_tracks_demo_entity_v1.proto	caracal.tracks_demo.v1.Entity	json
+caracal	caracal/power-demo/site-nova/v1	proto/caracal_power_demo_site_jb_v1.proto	caracal.power_demo.v1.PowerState	json
+community	community/beacon-demo/hello/v1	proto/community_beacon_demo_hello_v1.proto	community.beacon_demo.v1.Hello	json
+homemade-sensors	homemade-sensors/garage/temperature/v1	proto/homemade_sensors_garage_temperature_v1.proto	homemade_sensors.garage.v1.TemperatureReading	json
+homemade-sensors	homemade-sensors/garage/door-state/v1	proto/homemade_sensors_garage_door_state_v1.proto	homemade_sensors.garage.v1.DoorState	json
+homemade-sensors	homemade-sensors/yard/soil-moisture/v1	proto/homemade_sensors_yard_soil_moisture_v1.proto	homemade_sensors.yard.v1.SoilMoisture	cbor
+pangolin	pangolin/observer/heartbeat/v1	proto/pangolin_observer_heartbeat_v1.proto	pangolin.observer.v1.Heartbeat	json

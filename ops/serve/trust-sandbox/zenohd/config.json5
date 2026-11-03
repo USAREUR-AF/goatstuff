@@ -1,0 +1,124 @@
+// trust-sandbox zenohd — real mTLS transport + a real client-cert-gated ACL.
+//
+// This is gate ⑤ of the playground: "may you do THIS specific thing?" — the
+// per-write authorization decision, default-deny, keyed on the verified client
+// cert's Common Name. It mirrors the live fleet's goat-zenoh ACL
+// (ops/ansible/roles/goat-zenoh/templates/config.json5.j2) minus the
+// rocksdb storage tier — the sandbox is stateless (statelessness = trivial wipe).
+//
+// ISOLATION INVARIANT: there is intentionally NO `connect:` block. This router
+// peers with NOTHING. Adding one would stop it being a sandbox.
+//
+// Design: docs/design/trust-sandbox.md  ·  Decision: docs/adr/1049-zero-trust-identity-sandbox.md
+{
+  mode: "router",
+
+  // HLC timestamping asserted explicitly (matches the fleet; harmless here).
+  timestamping: { enabled: true, drop_future_timestamp: false },
+
+  listen: {
+    endpoints: ["tls/0.0.0.0:7447"],
+  },
+
+  scouting: { multicast: { enabled: false } },
+
+  transport: {
+    unicast: { max_links: 50 },
+    link: {
+      tls: {
+        // Server identity — the orchestrator's CA mints this at init-ca time.
+        listen_certificate: "/certs/zenohd-cert.pem",
+        listen_private_key: "/certs/zenohd-key.pem",
+
+        // Client trust anchor = sandbox CA root ⊕ SPIRE bundle (assembled by
+        // spire-bootstrap before zenohd starts). Every connecting peer must
+        // present a cert chaining to one of these two issuers — the two
+        // issuance paths the playground teaches (portal/CA mint vs SPIRE).
+        root_ca_certificate: "/certs/client-ca-bundle.pem",
+
+        // mTLS — a chain-verifiable client cert is REQUIRED, not optional.
+        enable_mtls: true,
+        // Clients dial the router by container name (`zenohd`), absent from the
+        // server cert SAN; chain-to-root validation still fully applies.
+        verify_name_on_connect: false,
+      },
+    },
+  },
+
+  // No external plugins — the sandbox needs none. access_control + the TLS
+  // transport are built-in (NOT plugins); there is no REST surface (the browser
+  // never talks to zenohd directly) and no storage backend (stateless by design).
+  plugins_loading: { enabled: false },
+
+  // Admin space read so the orchestrator's observer can introspect peers if
+  // needed; no write (the sandbox never live-edits the ACL — `down -v` + up).
+  adminspace: { enabled: true, permissions: { read: true, write: false } },
+
+  // ----------------------------------------------------------------
+  // access_control — default-deny floor + universal read for any peer carrying
+  // a bundle-rooted leaf + per-anchor write keyed on the cert CN. Reads wide
+  // open, writes anchor-scoped. (Built-in module in Zenoh 1.x, NOT a plugin.)
+  // ----------------------------------------------------------------
+  access_control: {
+    enabled: true,
+    default_permission: "deny",
+    rules: [
+      // Universal read — any peer that completed the mTLS handshake (so, by
+      // construction, bundle-rooted) may subscribe/query any topic. Mirrors the
+      // fleet's community-read posture. Includes the @adv space (verbatim chunks
+      // `**` never matches) for AdvancedPub/Sub parity.
+      {
+        id: "peer-r-all",
+        messages: ["declare_subscriber", "query", "declare_queryable", "reply", "declare_liveliness_subscriber", "liveliness_query"],
+        flows: ["egress", "ingress"],
+        permission: "allow",
+        key_exprs: ["**", "**/@adv/**"],
+      },
+      // Universal subscriber DELIVERY — egress-only put/delete so the router can
+      // deliver published samples to subscribers (delivery is a `put` from the
+      // router's perspective). Grants NO publish capability (publish is ingress).
+      {
+        id: "peer-deliver-all",
+        messages: ["put", "delete", "liveliness_token"],
+        flows: ["egress"],
+        permission: "allow",
+        key_exprs: ["**", "**/@adv/**"],
+      },
+
+      // Per-anchor INGRESS write grants — the ONLY thing that lets a peer
+      // PUBLISH, and only into its own anchor namespace. Each demo persona's
+      // leaf carries CN=<anchor>; an attacker presenting a leaf whose CN does
+      // not match a granted anchor (wrong-anchor / OBSERVER persona) is silently
+      // denied at ingress — the F-177 silent-denial the playground makes visible.
+      { id: "w-acme-sensors",  messages: ["put", "delete"], flows: ["ingress"], permission: "allow", key_exprs: ["acme-sensors/**"] },
+      { id: "w-sensor-gw",     messages: ["put", "delete"], flows: ["ingress"], permission: "allow", key_exprs: ["sensor-gw/**"] },
+      { id: "w-edge-processor", messages: ["put", "delete"], flows: ["ingress"], permission: "allow", key_exprs: ["edge-processor/**"] },
+    ],
+
+    // Subjects key off the verified leaf CN. (Zenoh 1.9 access_control matches
+    // cert_common_names / link_protocols / zids / interfaces / usernames — there
+    // is NO URI-SAN/SPIFFE matcher, a real fabric limitation, F-181. The CN is
+    // the load-bearing identity axis, exactly as on the live fleet.)
+    subjects: [
+      // Universal read — any peer that completed mTLS (the bundle-root gate
+      // ahead of this subject enforces "rooted in a trusted issuer").
+      { id: "any-tls-peer", link_protocols: ["tls"] },
+
+      // Demo personas, matched by leaf CN = anchor.
+      { id: "acme-sensors",   cert_common_names: ["acme-sensors"] },
+      { id: "sensor-gw",      cert_common_names: ["sensor-gw"] },
+      // SPIRE workload path. The CN the orchestrator's SVID-bridge leaf carries
+      // for the edge-processor workload (reconciled against a real SVID).
+      { id: "edge-processor", cert_common_names: ["edge-processor"] },
+    ],
+
+    policies: [
+      // Everyone bundle-rooted: read all + receive deliveries. No ingress write.
+      { rules: ["peer-r-all", "peer-deliver-all"], subjects: ["any-tls-peer"] },
+      // Each persona additionally publishes ONLY into its own anchor.
+      { rules: ["w-acme-sensors"],   subjects: ["acme-sensors"] },
+      { rules: ["w-sensor-gw"],      subjects: ["sensor-gw"] },
+      { rules: ["w-edge-processor"], subjects: ["edge-processor"] },
+    ],
+  },
+}

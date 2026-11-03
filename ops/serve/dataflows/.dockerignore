@@ -1,0 +1,7 @@
+extract.py
+Dockerfile
+docker-compose.yml
+.dockerignore
+__pycache__/
+*.pyc
+*.md

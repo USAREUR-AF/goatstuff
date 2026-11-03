@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "homemade-sensors/garage/temperature/v1",
+  "title": "homemade-sensors garage temperature",
+  "description": "Synthetic garage-thermometer sample for the nova Zenoh trial fabric. DHT22-shaped reading at ~30s cadence.",
+  "type": "object",
+  "required": ["sensor_id", "ts_ms", "temp_c", "humidity_pct"],
+  "properties": {
+    "sensor_id": {"type": "string"},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "temp_c": {"type": "number"},
+    "humidity_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    "battery_v": {"type": "number"}
+  }
+}

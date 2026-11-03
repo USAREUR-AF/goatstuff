@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pattern 3 — Request / Response APIs</title>
+<style>
+  :root{
+    --bg:#0a0e14;--surface:#111827;--border:#1e2533;
+    --text:#c8ccd4;--muted:#8b95a5;
+    --accent:#00e5ff;--ok:#4caf50;--warn:#fbbf24;--danger:#f87171;
+  }
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow:hidden;}
+  #wrap{width:1000px;height:640px;display:flex;flex-direction:column;}
+  #controls{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);background:rgba(17,24,39,.6);flex-wrap:wrap;}
+  .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+  button{background:transparent;color:var(--text);border:1px solid var(--border);padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;}
+  button.active{background:rgba(0,229,255,.12);border-color:var(--accent);color:var(--accent);}
+  button:hover{border-color:var(--accent);}
+  #stage{flex:1;position:relative;}
+  svg{width:100%;height:100%;display:block;}
+  #footer{padding:10px 18px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);background:rgba(17,24,39,.6);}
+  #footer strong{color:var(--text);}
+  .server-box{fill:rgba(251,191,36,.18);stroke:var(--warn);stroke-width:1.5;}
+  .client-box{fill:rgba(76,175,80,.18);stroke:var(--ok);stroke-width:1.4;}
+  .lbl{fill:var(--text);font-size:13px;font-weight:600;text-anchor:middle;dominant-baseline:middle;pointer-events:none;}
+  .lbl-small{fill:var(--muted);font-size:10px;text-anchor:middle;dominant-baseline:middle;pointer-events:none;}
+  .lbl-tag{fill:var(--accent);font-size:10px;font-weight:600;text-anchor:middle;dominant-baseline:middle;pointer-events:none;font-family:'SF Mono',Menlo,monospace;}
+  .wire-req{stroke:var(--accent);stroke-width:1.4;fill:none;opacity:.5;}
+  .wire-rep{stroke:var(--ok);stroke-width:1.4;fill:none;opacity:.45;stroke-dasharray:4 4;}
+  .packet-req{r:4;fill:var(--accent);}
+  .packet-rep{r:4;fill:var(--ok);}
+  .wait-mark{fill:var(--muted);font-size:10px;text-anchor:middle;dominant-baseline:middle;pointer-events:none;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="controls">
+    <span class="label">Scenario</span>
+    <button class="m active" data-m="get">GET — one client asks</button>
+    <button class="m" data-m="many">Many clients, one server</button>
+    <button class="m" data-m="poll">Polling — nothing changed</button>
+  </div>
+  <div id="stage">
+    <svg id="svg" viewBox="0 0 1000 540" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <div id="footer">
+    <span id="legend"><strong>GET /thing:</strong> client asks, waits, server replies. Synchronous round-trip. Sweet spot — stable contract, known counterparty, one authoritative source.</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var svg=document.getElementById('svg');
+  var legendEl=document.getElementById('legend');
+  var mode='get';
+
+  function ns(t){return document.createElementNS('http://www.w3.org/2000/svg',t);}
+  function clear(){while(svg.firstChild)svg.removeChild(svg.firstChild);}
+
+  var timers=[],loopTimer=null;
+  function clearTimers(){timers.forEach(clearTimeout);timers=[];Array.from(svg.querySelectorAll('.packet-req,.packet-rep')).forEach(function(p){p.parentNode&&p.parentNode.removeChild(p);});}
+
+  function animPacket(pathEl,delay,duration,cls){
+    var t=setTimeout(function(){
+      var len=pathEl.getTotalLength();
+      var dot=ns('circle');dot.setAttribute('r',4);dot.setAttribute('class',cls);svg.appendChild(dot);
+      var start=performance.now();
+      function frame(now){
+        var t=Math.min(1,(now-start)/duration);
+        var pt=pathEl.getPointAtLength(len*t);
+        dot.setAttribute('cx',pt.x);dot.setAttribute('cy',pt.y);
+        if(t<1)requestAnimationFrame(frame);
+        else dot.parentNode&&dot.parentNode.removeChild(dot);
+      }
+      requestAnimationFrame(frame);
+    },delay);
+    timers.push(t);
+  }
+
+  function rect(x,y,w,h,cls,rx){var r=ns('rect');r.setAttribute('x',x);r.setAttribute('y',y);r.setAttribute('width',w);r.setAttribute('height',h);r.setAttribute('class',cls);r.setAttribute('rx',rx||8);svg.appendChild(r);return r;}
+  function text(x,y,cls,str){var t=ns('text');t.setAttribute('x',x);t.setAttribute('y',y);t.setAttribute('class',cls);t.textContent=str;svg.appendChild(t);return t;}
+  function path(d,cls){var p=ns('path');p.setAttribute('d',d);p.setAttribute('class',cls);svg.appendChild(p);return p;}
+
+  function drawClient(x,y,name){
+    rect(x-55,y-22,110,44,'client-box',6);
+    text(x,y-3,'lbl',name);
+    text(x,y+11,'lbl-small','client');
+  }
+  function drawServer(x,y){
+    rect(x-80,y-32,160,64,'server-box',8);
+    text(x,y-5,'lbl','API server');
+    text(x,y+13,'lbl-small','authoritative source');
+  }
+
+  function bend(a,b,offsetY){
+    var mx=(a.x+b.x)/2;
+    return 'M '+a.x+' '+a.y+' Q '+mx+' '+(a.y+offsetY)+' '+b.x+' '+b.y;
+  }
+
+  function renderGet(){
+    var server={x:740,y:270};
+    var client={x:200,y:270};
+    drawServer(server.x,server.y);
+    drawClient(client.x,client.y,'C1');
+
+    // request arrow (above)
+    var reqStart={x:client.x+55,y:client.y-8};
+    var reqEnd={x:server.x-80,y:server.y-8};
+    var pReq=path(bend(reqStart,reqEnd,-40),'wire-req');
+    text((reqStart.x+reqEnd.x)/2,(reqStart.y+reqEnd.y)/2-50,'lbl-tag','→ GET /thing');
+
+    // reply arrow (below)
+    var repStart={x:server.x-80,y:server.y+8};
+    var repEnd={x:client.x+55,y:client.y+8};
+    var pRep=path(bend(repStart,repEnd,50),'wire-rep');
+    text((repStart.x+repEnd.x)/2,(repStart.y+repEnd.y)/2+50,'lbl-tag','← 200 OK { ... }');
+
+    // waiting label
+    text(client.x,client.y+44,'wait-mark','waiting…');
+
+    function cycle(){
+      animPacket(pReq,0,1100,'packet-req');
+      animPacket(pRep,1300,1100,'packet-rep');
+    }
+    cycle();
+    if(loopTimer){clearInterval(loopTimer);}
+    loopTimer=setInterval(cycle,3000);
+    legendEl.innerHTML='<strong>GET /thing:</strong> client asks, waits, server replies. Synchronous round-trip. Sweet spot — stable contract, known counterparty, one authoritative source.';
+  }
+
+  function renderMany(){
+    var server={x:740,y:270};
+    drawServer(server.x,server.y);
+    var clients=[
+      {x:180,y:90,label:'mobile app'},
+      {x:180,y:200,label:'web UI'},
+      {x:180,y:330,label:'cron job'},
+      {x:180,y:450,label:'partner integration'}
+    ];
+    var reqPaths=[],repPaths=[];
+    clients.forEach(function(c,i){
+      drawClient(c.x,c.y,'C'+(i+1));
+      // request
+      var rs={x:c.x+55,y:c.y};
+      var re={x:server.x-80,y:server.y-16+i*8};
+      var p1=path('M '+rs.x+' '+rs.y+' L '+re.x+' '+re.y,'wire-req');
+      reqPaths.push(p1);
+      // reply (slightly offset)
+      var p2=path('M '+re.x+' '+(re.y+4)+' L '+rs.x+' '+(rs.y+4)+'','wire-rep');
+      repPaths.push(p2);
+    });
+    text(server.x,server.y+50,'lbl-tag','one server, N callers');
+
+    function cycle(){
+      reqPaths.forEach(function(p,i){animPacket(p,i*150,900,'packet-req');});
+      setTimeout(function(){
+        repPaths.forEach(function(p,i){animPacket(p,i*150,900,'packet-rep');});
+      },1100);
+    }
+    cycle();
+    if(loopTimer){clearInterval(loopTimer);}
+    loopTimer=setInterval(cycle,2600);
+    legendEl.innerHTML='<strong>One server, many callers:</strong> each client independently asks. Server is the central point. Pattern works when the data is bounded and the contract is stable — fails when many consumers want push-fresh updates.';
+  }
+
+  function renderPoll(){
+    var server={x:740,y:270};
+    var client={x:200,y:270};
+    drawServer(server.x,server.y);
+    drawClient(client.x,client.y,'C1');
+
+    var reqStart={x:client.x+55,y:client.y-8};
+    var reqEnd={x:server.x-80,y:server.y-8};
+    var pReq=path(bend(reqStart,reqEnd,-40),'wire-req');
+    var repStart={x:server.x-80,y:server.y+8};
+    var repEnd={x:client.x+55,y:client.y+8};
+    var pRep=path(bend(repStart,repEnd,50),'wire-rep');
+
+    text((reqStart.x+reqEnd.x)/2,(reqStart.y+reqEnd.y)/2-50,'lbl-tag','→ GET /thing  (again)');
+    text((repStart.x+repEnd.x)/2,(repStart.y+repEnd.y)/2+50,'lbl-tag','← 200 OK  (unchanged)');
+    text(500,90,'lbl-small','client polls every few seconds — most requests learn nothing new');
+    text(500,470,'lbl-small','if the data changed mid-poll, the client sees it late or not at all');
+
+    function cycle(){
+      animPacket(pReq,0,800,'packet-req');
+      animPacket(pRep,1000,800,'packet-rep');
+    }
+    cycle();
+    if(loopTimer){clearInterval(loopTimer);}
+    loopTimer=setInterval(cycle,1800);
+    legendEl.innerHTML='<strong>The polling problem:</strong> when data is perishable or push-shaped, request/response burns bandwidth on "nothing changed" replies — and misses every event between polls.';
+  }
+
+  function render(){
+    clear();clearTimers();if(loopTimer){clearInterval(loopTimer);loopTimer=null;}
+    if(mode==='get')renderGet();
+    else if(mode==='many')renderMany();
+    else renderPoll();
+  }
+
+  document.querySelectorAll('button.m').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('button.m').forEach(function(x){x.classList.remove('active');});
+      b.classList.add('active');
+      mode=b.dataset.m;
+      render();
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

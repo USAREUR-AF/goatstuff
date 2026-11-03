@@ -1,0 +1,86 @@
+# trust-sandbox — HOSTED overlay (cloud VM, mesh-joined, Ory-gated).
+#
+# Runs the sandbox from PUBLISHED images (ghcr.io/usareur-af/trust-sandbox-*) plus a
+# front gate: oauth2-proxy (OIDC → the ZAGROS Ory/Hydra) + Caddy (TLS via Let's
+# Encrypt DNS-01 over the ZAGROS Cloudflare zone). The VM is a NetBird peer on the
+# ZAGROS mesh; the service is reachable ONLY at its mesh name behind the Ory gate.
+#
+# Used with the base compose:
+#   docker compose -f ../docker-compose.yml -f docker-compose.hosted.yml up -d
+# (the base provides zenohd/spire/coredns/target/hydra-teaching; this overlay
+#  swaps build→image for the three owned services and adds the gate.)
+#
+# The two instances run as two compose PROJECTS (-p trust-sandbox-a / -b) with
+# distinct TS_PUBLIC_HOST + ports — see deploy/README.md.
+#
+# Design: docs/design/trust-sandbox.md §Delivery
+services:
+  # owned services from ghcr (no build on the host)
+  certs-init:
+    image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-64e4387@sha256:c255c95efcc72da5841e8ffdffae3e4e7c816013c51ce3f5182016e84d03e1ef
+    build: !reset null
+  orchestrator:
+    image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-64e4387@sha256:c255c95efcc72da5841e8ffdffae3e4e7c816013c51ce3f5182016e84d03e1ef
+    build: !reset null
+  web:
+    image: ghcr.io/usareur-af/trust-sandbox-web:sha-64e4387@sha256:07f52571305fea33159962cdd3169796680ff2e39593e7485d964604739516a5
+    build: !reset null
+    ports: !reset []            # not host-published; the gate fronts it
+  spire-server:
+    image: ghcr.io/usareur-af/trust-sandbox-spire:sha-64e4387@sha256:b75001502b80b42f52e7ee21b0fcadbb4780f4d90c482cc79aa9e1ac61078aa8
+    build: !reset null
+  spire-agent:
+    image: ghcr.io/usareur-af/trust-sandbox-spire:sha-64e4387@sha256:b75001502b80b42f52e7ee21b0fcadbb4780f4d90c482cc79aa9e1ac61078aa8
+
+  # --- Ory front gate: oauth2-proxy → the ZAGROS Hydra (ADMINS group) -----------
+  gate:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      # OIDC issuer of the goatnet's Ory/Hydra (reached over the mesh from this VM).
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "${TS_ZAGROS_OIDC_ISSUER}"          # e.g. https://oauth2.<site>.<zone>/  (trailing slash must match the discovery doc)
+      OAUTH2_PROXY_CLIENT_ID: "${TS_GATE_CLIENT_ID}"                  # the Ory client created for this instance
+      OAUTH2_PROXY_CLIENT_SECRET: "${TS_GATE_CLIENT_SECRET}"
+      OAUTH2_PROXY_COOKIE_SECRET: "${TS_GATE_COOKIE_SECRET}"          # MUST decode to 16/24/32 bytes — e.g. `openssl rand -hex 16`
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      # Ory/Kratos tokens here carry no email claim — key the session on `sub`
+      # (the stable subject) instead, so callback session-creation succeeds.
+      OAUTH2_PROXY_OIDC_EMAIL_CLAIM: "sub"
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+      # Group gate is OPTIONAL + configurable. Empty (default) = any authenticated
+      # mesh identity may enter (right for a teaching sandbox); set e.g. "ADMINS"
+      # to restrict. Not admins-only by default.
+      OAUTH2_PROXY_ALLOWED_GROUPS: "${TS_GATE_ALLOWED_GROUPS:-}"
+      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: "groups"
+      OAUTH2_PROXY_SCOPE: "openid groups"
+      OAUTH2_PROXY_UPSTREAMS: "http://web:80"
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_REDIRECT_URL: "https://${TS_PUBLIC_HOST}/oauth2/callback"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+    networks: [trust-sandbox]
+
+  # --- TLS terminator: Caddy, LE DNS-01 over Cloudflare (ZAGROS zone) ----------
+  edge:
+    image: ghcr.io/usareur-af/caddy-cloudflare:sha-64e4387@sha256:8cf8dc9ddce3b67659d3cfe8f489050476c6b0e6f36d34fb92ca41904c9a435b   # stock caddy lacks the cloudflare DNS module
+    restart: unless-stopped
+    depends_on:
+      gate:
+        condition: service_started
+    ports:
+      - "443:443"
+      - "80:80"
+    environment:
+      TS_PUBLIC_HOST: "${TS_PUBLIC_HOST}"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN_ZAGROS}"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro   # path is relative to the project dir (the base compose's dir)
+      - caddy-data:/data
+    networks: [trust-sandbox]
+
+volumes:
+  caddy-data:

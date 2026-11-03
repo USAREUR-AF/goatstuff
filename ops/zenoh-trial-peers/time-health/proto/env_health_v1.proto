@@ -1,0 +1,405 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// EnvHealthV1 — the cross-domain environment-health envelope
+// (docs/design/environment-health-surface.md §3.2, ADR 1036). One honesty-graded
+// header (domain / scope / ts / overall_color / sample_count / window) + a
+// `oneof detail` carrying the domain-specific structure. Published on
+// ops/<domain>/health/<scope>.
+//
+// This file is the canonical schema; goat-time-health hand-writes prost-derive
+// structs matching it (no protoc / build.rs), the same convention as
+// fabric-health's proto/fabric_health_v1.proto. The `time` domain is
+// implemented now (goat-time-health rolls ops/time/attest/** → ops/time/health/<site>);
+// `fabric` folds in at the coordinated V2 bump (FabricHealthV1 → FabricDetailV1).
+
+syntax = "proto3";
+
+package goat.envhealth.v1;
+
+// Per-host clock health, rolled from the signed per-host attestation on
+// ops/time/attest/<host_id>. color is the 5-state honesty signal
+// (green|amber|red|idle|unmetered): healthy→green, warning→amber, degraded→red,
+// unknown/unattested→idle, and a STALE attestation (now > valid_until) reads
+// idle — never a false green.
+message HostClockHealthV1 {
+  string host_id              = 1;
+  string color                = 2;   // green|amber|red|idle|unmetered
+  string verdict              = 3;   // raw daemon verdict: healthy|warning|degraded|unknown
+  repeated string verdict_reasons = 4;
+  double rms_offset_ms        = 5;   // chrony RMS offset
+  int32  stratum              = 6;
+  bool   gnss_present         = 7;
+  double peer_median_offset_ms = 8;  // cross-site consensus (0 until §5 consensus ships)
+  bool   divergence_detected  = 9;
+  int64  attestation_age_ms   = 10;  // age of the verdict's last_updated (grounding/staleness)
+  bool   attested             = 11;  // false = unattested-publisher → idle, never green
+}
+
+message TimeDetailV1 { repeated HostClockHealthV1 hosts = 1; }
+
+// FabricDetailV1 = the existing fabric ClassHealthV1 rows; folds in at the V2
+// bump (tag 10 reserved). Not implemented here.
+message FabricDetailV1 { reserved 1; }
+
+// Per-link WireGuard mesh health, read from the vantage host's own
+// `netbird status --json` snapshot (passive — rides netbird's existing
+// measurement, injects nothing; ADR 1042). color is the 5-state honesty
+// signal: connected+direct→green (escalated by measured latency),
+// connected+relayed→amber (fallback path active, never green),
+// disconnected→idle (per-peer liveness is panoscope's job, not a mesh-link
+// failure), stale/missing snapshot→the whole reading goes unmetered.
+message MeshLinkHealthV1 {
+  string peer_fqdn        = 1;
+  string peer_ip          = 2;
+  string color            = 3;   // green|amber|red|idle
+  bool   connected        = 4;
+  bool   direct           = 5;   // P2P vs relayed
+  string conn_type        = 6;   // raw netbird connectionType ("P2P"|"Relayed"; "" disconnected)
+  double latency_ms       = 7;   // 0 = unmeasured (netbird reports 0 when it has no reading)
+  string relay_address    = 8;   // populated on relayed links
+  int64  handshake_age_ms = 9;   // age of lastWireguardHandshake; -1 unknown
+  uint64 transition_count = 10;  // direct<->relayed flips seen this meter run (flap signal)
+  string peer_class       = 11;  // declared expectation: always-up|attended|ephemeral|unclassified
+  int64  absent_ms        = 12;  // how long the peer has been absent; -1 while connected
+  string status           = 13;  // raw netbird status ("Connected"|"Disconnected"|"Idle"|"Connecting")
+  string ice_local        = 14;  // selected ICE pair, local leg ("host"|"srflx"|"relay"; "" = unreported)
+  string ice_remote       = 15;  // selected ICE pair, remote leg
+  bool   lan_declared     = 16;  // peer is declared to share the vantage's LAN (issue #240)
+}
+
+message MeshDetailV1 {
+  repeated MeshLinkHealthV1 links = 1;
+  string vantage_host    = 2;   // whose netbird vantage this is (hub vantage, ADR 1042 §v1 limit)
+  uint32 peers_total     = 3;   // enrolled peers visible from the vantage
+  uint32 peers_connected = 4;
+  // The `always-up` peers currently absent — the product of the liveness layer
+  // (peer-liveness-expectations.md). Empty beside overall_color="unmetered"
+  // means UNKNOWN, never "nothing is absent".
+  repeated string always_up_absent = 5;
+  // Peers stuck in the F-286 half-state (enrolled, powered, `Connecting`
+  // indefinitely). Separate from absent because the remedy differs: repair
+  // name resolution, do not restart.
+  repeated string connecting_stuck = 6;
+  uint32 always_up_total   = 7;
+  uint32 attended_total    = 8;
+  uint32 ephemeral_total   = 9;
+  uint32 unclassified_total = 10;  // no declaration exists; counted, never alerted on
+  uint32 lan_declared_total = 11;  // peers declared to share this vantage's LAN
+  // Declared LAN peers connected on a non-host/host ICE pair — LAN-neighbour
+  // traffic transiting the WAN/relay (issue #240). Positive evidence only:
+  // disconnected peers and ICE-less snapshots are never counted.
+  repeated string lan_hairpinning = 12;
+}
+
+// One liveliness presence token, as seen by the presence-health watcher.
+// alive flips false when the token drops (session close/crash/partition) —
+// the native quiet-vs-dead distinction passive traffic metering can't make.
+message PresencePeerV1 {
+  string token_key     = 1;  // full liveliness key: <write_root>/presence/<label>
+  string write_root    = 2;  // UUID slot anchor / vendor prefix / ops service path
+  string label         = 3;  // peer display label (alias layer resolves write_root separately)
+  bool   alive         = 4;
+  int64  since_unix_ms = 5;  // when the current alive/dropped state began
+  uint64 drop_count    = 6;  // token drops observed this meter run
+}
+
+message PresenceDetailV1 {
+  repeated PresencePeerV1 peers = 1;
+  uint32 alive_total    = 2;
+  uint32 dropped_recent = 3;  // peers whose token dropped within the last window
+}
+
+// -- net domain (node-net-health.md) -----------------------------------------
+// Per-node connection inventory: mesh peers (active/stale by handshake age),
+// fabric sessions, and the 4-bucket socket classification against the
+// node-class baseline registry (mesh|fabric|baseline|undeclared). Published
+// by goat-node-net-health on ops/net/health/<node>, hourly snapshot cadence.
+
+// One WireGuard mesh peer as seen from this node (mesh plane).
+message NodeMeshPeerV1 {
+  string peer_fqdn        = 1;
+  string peer_ip          = 2;
+  bool   active           = 3;  // connected AND handshake age <= 3x rekey window (360 s)
+  int64  handshake_age_ms = 4;  // -1 unknown
+  string conn_type        = 5;  // "P2P" | "Relayed" | "" disconnected
+  uint64 rx_bytes_delta   = 6;  // since previous snapshot (gap in snapshot_gap_secs)
+  uint64 tx_bytes_delta   = 7;
+  double latency_ms       = 8;  // 0 = not measured (rendered "not measured", never a proxy)
+}
+
+// One fabric session, where the node exposes them (router admin space);
+// absent on plain client nodes — the fabric bucket in conns still counts.
+message NodeFabricSessionV1 {
+  string zid     = 1;
+  string whatami = 2;           // router|peer|client
+  uint32 links   = 3;
+}
+
+// One classified socket (listening + established, TCP/UDP; loopback-only
+// excluded). bucket=undeclared rows are the risk list: process-attributed,
+// first/last-seen persisted across snapshots by the collector.
+message NodeConnV1 {
+  string bucket             = 1;  // mesh|fabric|baseline|undeclared
+  string proto              = 2;  // tcp|udp
+  string state              = 3;  // listen|estab|...
+  string local_addr         = 4;  // ip:port
+  string remote_addr        = 5;  // ip:port; "" for listeners
+  uint32 pid                = 6;
+  string comm               = 7;
+  string container          = 8;  // cgroup-resolved container name; "" = host process
+  string baseline_rule      = 9;  // matching registry rule name (bucket=baseline)
+  int64  first_seen_unix_ms = 10; // persisted (undeclared tracking)
+  int64  last_seen_unix_ms  = 11;
+}
+
+message NetDetailV1 {
+  repeated NodeMeshPeerV1      mesh_peers        = 1;
+  uint32                       mesh_active       = 2;
+  uint32                       mesh_stale        = 3;
+  repeated NodeFabricSessionV1 fabric_sessions   = 4;
+  repeated NodeConnV1          conns             = 5;  // full classified inventory
+  uint32                       undeclared_count  = 6;
+  string                       node_class        = 7;  // which egress contract applied
+  uint32                       snapshot_gap_secs = 8;  // real inter-snapshot delta divisor
+}
+
+// -- consistency domain (consistency-foundation.md §5, ADR 1110) --------------
+// The convergence record: what a node is running, and which generation of its
+// goatnet's IntentV1 it last converged against. Two topics, following the time
+// domain exactly — a raw per-node feed and a rolled per-site viewing envelope:
+//
+//   ops/consistency/report/<host_id>  <- ConsistencyReportV1 (self-published)
+//   ops/consistency/health/<site>     <- EnvHealthV1{domain:"consistency"}
+//
+// THE RECORD CARRIES FACTS, NEVER VERDICTS. No grade appears in
+// ConsistencyReportV1: a node knows what it is running and which generation it
+// converged against; it does NOT know whether that generation is current,
+// because that is a comparison against a tree it may not have. Grading happens
+// at the rollup and at every reader, at read time, and is stored nowhere.
+
+// One component's ledger tip, read from /var/lib/goat/<component>/
+// deploy-history.jsonl (ADR 1060). `ref` is what the node reports it is
+// running; the grading library dispatches an `unaccountable` verdict on
+// `artifact_type`, which is why that type travels here and in IntentV1.
+message ComponentStateV1 {
+  string component     = 1;
+  string artifact_type = 2;   // image|config|acl|data|cert|forward-only (ADR 1060)
+  string ref           = 3;   // deploy-history.jsonl tip
+  string prior_ref     = 4;
+  int64  ts_unix_ms    = 5;
+  bool   reversible    = 6;
+  // Reconciliation against the live container (§5.2's inherited ordering
+  // caveat: the ledger row is written at role ENTRY, so it records what the run
+  // INTENDED). "confirmed" = the tip matches what is running; "diverged" = it
+  // does not; "unreconciled" = the node could not look. Anything other than
+  // `confirmed` grades `unreadable` for that component rather than as a
+  // converged fact — an unreconciled optimistic row is exactly the false green
+  // this surface exists to prevent.
+  string reconciled    = 7;   // confirmed|diverged|unreconciled
+  string live_ref      = 8;   // what the container actually runs; "" when unlooked
+}
+
+// One watched config render (CF-4, built): the file's hash at
+// collection time against the hash the last converge recorded after rendering
+// it (/var/lib/goat/<component>/render-manifest.json, written AFTER the
+// deploying role's templates land — position, not reconciliation, makes it a
+// post-render fact). FACTS, never a verdict: the reader compares the pair
+// (`account_for_render` in the shared grading library) and a mismatch grades
+// `unaccountable` — the hand-edit shape config-class drift used to hide in.
+// Which paths a component watches is DECLARED in fleet-pins.yaml
+// (`render_watch:`) and carried in IntentV1.
+message RenderStateV1 {
+  string component          = 1;  // the ledger key — /var/lib/goat/<component>/
+  string path               = 2;  // resolved on-host path
+  string sha256             = 3;  // the file NOW; "" when unhashable (see note)
+  string recorded_sha256    = 4;  // what the last converge rendered; "" when it could not hash
+  int64  recorded_at_unix_ms = 5; // manifest mtime — when the baseline last changed
+  string note               = 6;  // "missing" | "unreadable" | a converge-time reason; "" when clean
+}
+
+// The per-node record. Self-published; the node is the only author.
+message ConsistencyReportV1 {
+  string host_id                     = 1;
+  string goatnet                     = 2;
+  string member_group                = 3;   // which IntentV1 column this node is
+  // The intent this node last converged against, from the applied-intent stamp
+  // at /var/lib/goat/intent/applied.json (written by the rollback-ledger shared
+  // role). All five fields are empty/zero on a node that has never been
+  // deployed by a stamping checkout — which reads `indeterminate`, never
+  // `unaccountable`: no stamp is nothing to read, not an unexplained ref.
+  string intent_content_hash         = 4;
+  uint64 intent_serial               = 5;
+  int64  intent_generated_at_unix_ms = 6;
+  string intent_commit               = 7;   // the deploying checkout's HEAD — provenance (§3.3)
+  int64  applied_at_unix_ms          = 8;
+  bool   intent_verified             = 9;   // signature checked at apply time (CF-5); false => unreadable, never match
+  repeated ComponentStateV1 components = 10; // ledger tips
+  repeated RenderStateV1    renders    = 11; // config render hashes (CF-4) — empty on a node whose roles record no manifest (default-off)
+  // Grounding for the record itself: when the node collected these facts, and
+  // whether the collection was complete. A partial collection is stated, never
+  // silently shortened.
+  int64  collected_at_unix_ms        = 12;
+  string collector_note              = 13;  // "" when the collection was complete
+}
+
+// One graded row of a node's projection. The remediation pointer is DATA
+// (§6.3), emitted by the grading library from ops/consistency/grammar.yaml — a
+// renderer prints it VERBATIM and never composes, paraphrases, shortens,
+// parameterizes or executes it (§6.4).
+message ConsistencyRowV1 {
+  string subject             = 1;  // generation|component|render
+  string name                = 2;
+  string artifact_type       = 3;
+  string grade               = 4;  // match|declared|SKEW|unaccountable|unreadable|indeterminate
+  string color               = 5;  // the grammar's 5-state colour for that grade
+  string why                 = 6;  // one generated sentence naming what differs
+  string observed            = 7;  // what the node reports
+  string expected            = 8;  // what the generation says; "" when the reader cannot say
+  string remediation_kind    = 9;  // "" when the grade needs no pointer (match/declared)
+  string remediation         = 10;
+  bool   remediation_refuses = 11; // a refusal is a RENDERED FACT, not a command that fails when pasted
+  // ADR 1125. Whether a comparison was POSSIBLE, orthogonal to `grade`:
+  // observed|no-instrument|silent|unreported-scope. Additive field, so an
+  // older reader ignores it and a row with an empty value reads as the
+  // pre-1124 shape rather than as an invented state.
+  string coverage            = 12;
+}
+
+// One node's graded projection, computed at the rollup at read time.
+message NodeConsistencyV1 {
+  string host_id             = 1;
+  string member_group        = 2;
+  string color               = 3;  // worst grounded across this node's rows
+  string grade               = 4;
+  uint64 intent_serial       = 5;  // the generation the node HOLDS
+  string intent_content_hash = 6;
+  uint32 behind_by           = 7;  // generations behind the current one; 0 = current or not placeable
+  int64  intent_age_seconds  = 8;  // age of the generation the node holds; -1 unstatable
+  int64  report_age_ms       = 9;  // how old this node's record was when rolled
+  bool   intent_verified     = 10;
+  repeated ConsistencyRowV1 rows = 11;
+  // Counts with denominators (ADR 1109 P15): governed vs observed components,
+  // declared vs recorded renders. 12/13 shipped with CF-3's meter and are
+  // synced INTO this schema by CF-4 — they were present in the wire structs
+  // (goat-consistency-health/src/wire.rs) but missing here, which is exactly
+  // the sketch-vs-schema drift §5.1's arm-number correction warned about.
+  uint32 components_governed = 12;
+  uint32 components_observed = 13;
+  uint32 renders_declared    = 14;  // watched paths this member's intent declares (CF-4)
+  uint32 renders_observed    = 15;  // render records the node actually reported (CF-4)
+  // ADR 1125: rows that are coverage gaps rather than comparisons. Carried
+  // SEPARATELY and deliberately NOT folded into `grade` above — a gap in what
+  // can be seen must be visible without being louder than the thing it is a
+  // gap in.
+  uint32 coverage_gaps       = 16;
+}
+
+// The rolled arm. Field 1 is the node list per §5.1; the scope fields carry the
+// grounding ADR 1109 P15 requires of every fleet reading — n, denominator and
+// vantage — so no reader can render "consistent" over a set nobody reported in.
+message ConsistencyDetailV1 {
+  repeated NodeConsistencyV1 nodes = 1;
+  string goatnet                   = 2;
+  uint64 current_serial            = 3;  // the generation this rollup graded against
+  string current_content_hash      = 4;
+  uint32 nodes_expected            = 5;  // IntentV1 member columns — the DENOMINATOR
+  uint32 nodes_reporting           = 6;
+  // The intra-goatnet skew band: the spread ACROSS this goatnet's own nodes,
+  // which is the question a per-node grade cannot answer. Zero-wide means every
+  // reporting node holds the same generation, whether or not it is the current
+  // one — "they agree" and "they are right" are different findings.
+  uint32 skew_band_generations     = 7;  // newest-held minus oldest-held, in generations
+  int64  skew_band_seconds         = 8;  // the same spread in generation age
+  // False when the rollup could not read or could not verify its goatnet's
+  // intent.json. The rollup then REFUSES to grade (P14 fail-closed) and every
+  // node reads `unreadable`/idle rather than green.
+  bool   intent_readable           = 9;
+  // ADR 1125 `coverage: unreported-scope` — governed members NO NODE CLAIMED,
+  // by name. `nodes_reporting` of `nodes_expected` already carried the
+  // arithmetic; a count says how many are missing and never WHICH, and every
+  // failure in the F-324 class was a specific host nobody looked at.
+  repeated string unreported_members = 11;
+  string intent_note               = 10; // why intent was unreadable; "" when it was
+}
+
+// -- peering domain (docs/operations/peering-denial-observability.md, S4 G-6) -
+// What a sovereign peering edge REFUSED, and — equally — whether it was asked
+// anything at all. F-177 records that a denial is silent at both ends: the
+// partner's `put` is fire-and-forget so it sees no error, and at info level the
+// router prints nothing. Raising ONLY the ACL interceptor to trace
+// (goat_zenoh_edge_acl_trace) makes zenoh print one line per ACL decision; this
+// domain turns those lines into an observation with a count behind it.
+//
+// TWO ABSENCES THAT MUST NOT RENDER THE SAME. "the partner is being refused"
+// and "the partner never attempted anything" both produce zero delivered data.
+// They are distinguished here by the ALLOW side of the same log: decisions
+// observed with zero denials is green, decisions observed with denials and no
+// allows is red, and NO decisions at all is `idle` — nothing was asked. When
+// the trace switch is off, or the snapshot is stale, the reading is
+// `unmetered`: we cannot see, which is never green.
+
+// One (subject, key expression, action, direction, verdict) row seen in the
+// window. Counts are the evidence: `window_count` is what this window saw,
+// `total_count` is monotonic across windows (the counter an operator can watch
+// rise), and `cached_count` vs `evaluated_count` records WHICH zenoh code path
+// printed the line — the post-cache path ("Using cached result: ...") is the
+// one that proves a REPEATED denial is still being observed.
+message PeeringDenialV1 {
+  string zid                = 1;  // the partner session's ZenohId (transport zid)
+  string subject            = 2;  // the ACL subject as zenoh renders it; "" on cached-path lines
+  string cert_common_name   = 3;  // CN lifted out of the subject when present
+  string key_expr           = 4;  // the key the partner actually used — the diagnosis
+  string action             = 5;  // Put|Delete|Query|Reply|Declare Subscriber|...
+  string direction          = 6;  // ingress (partner -> us) | egress (us -> partner)
+  string verdict            = 7;  // deny (allow rows are counted, not listed)
+  uint64 window_count       = 8;
+  uint64 cached_count       = 9;
+  uint64 evaluated_count    = 10;
+  uint64 total_count        = 11; // monotonic since the collector's state file began
+  int64  first_seen_unix_ms = 12;
+  int64  last_seen_unix_ms  = 13;
+}
+
+message PeeringDetailV1 {
+  repeated PeeringDenialV1 denials = 1;
+  string edge              = 2;   // the edge container/stack observed
+  string partner_id        = 3;   // the peering this edge serves; "" when undeclared
+  // False = the ACL interceptor is not at trace on this edge, so NOTHING can be
+  // seen. The reading is `unmetered` and the note says so, because an empty
+  // denial list under a disabled observer means nothing at all.
+  bool   observer_enabled  = 4;
+  string observer_note     = 5;
+  uint64 allow_window      = 6;   // allow decisions in this window — the "was it asked" signal
+  uint64 deny_window       = 7;
+  uint64 allow_total       = 8;
+  uint64 deny_total        = 9;
+  // ACL lines the parser did not recognise. Non-zero means the log shape moved
+  // under us: the reading may be incomplete, so it never grades green.
+  uint64 unparsed_acl_lines = 10;
+  // Did a denial RECUR while being observed? Measured, not assumed — true when
+  // any row's window_count > 1. This is the F-177 question answered by the
+  // deployment itself rather than by a claim in a document.
+  bool   repeats_observed  = 11;
+  // Denial lines printed by zenoh's post-cache path. > 0 is positive evidence
+  // that the ACL decision cache does NOT suppress the observation.
+  uint64 cached_denial_lines = 12;
+  uint32 snapshot_age_secs = 13;
+}
+
+message EnvHealthV1 {
+  string domain        = 1;   // "time" | "fabric" | "mesh" | "presence" | "net" | "consistency" | "peering" | future "gnss"/"power"/"thermal"
+  string scope         = 2;   // site tag (or host id for per-host domains)
+  int64  ts_unix_ms    = 3;
+  string overall_color = 4;   // 5-state honesty; worst grounded, never a false green
+  uint64 sample_count  = 5;   // overall grounding n (hosts/links behind this reading)
+  uint32 window_secs   = 6;
+  oneof detail {
+    FabricDetailV1      fabric      = 10;
+    TimeDetailV1        time        = 11;
+    MeshDetailV1        mesh        = 12;
+    PresenceDetailV1    presence    = 13;
+    NetDetailV1         net         = 14;
+    ConsistencyDetailV1 consistency = 15;
+    PeeringDetailV1     peering     = 16;
+  }
+}

@@ -1,0 +1,43 @@
+// caracal/tracks-demo/entity/v1 — entity track from a vehicle / dismount /
+// surface contact. Synthetic mover near arbitrary coordinates, three kinds.
+//
+// Producer: ops/zenoh-trial-peers/synth-vendor — Personality::TracksDemo
+// Wire format on the fabric: JSON (matches field order + types here).
+// This schema doubles as both data-dictionary documentation (rendered
+// by the portal /schema.html viewer) and as a future protobuf wire
+// alternative the producer can opt into without renaming the topic.
+
+syntax = "proto3";
+
+package caracal.tracks_demo.v1;
+
+message Entity {
+  // Stable identifier per producing peer; derived from peer_id via
+  // a small CRC so the same peer always emits the same entity_id.
+  string entity_id = 1;
+
+  // Producer-local wall-clock at sample time, milliseconds since the
+  // Unix epoch. Authoritative time discipline lives in the fabric's
+  // NTP layer; this is the operationally-useful field.
+  uint64 ts_ms = 2;
+
+  // WGS-84 latitude in decimal degrees.
+  double lat = 3;
+
+  // WGS-84 longitude in decimal degrees.
+  double lon = 4;
+
+  // Altitude above mean sea level, meters.
+  double alt_m = 5;
+
+  // Ground speed, meters per second.
+  double speed_mps = 6;
+
+  // Compass heading, degrees from true north, [0, 360).
+  double heading_deg = 7;
+
+  // What this entity is — small open enum, free-text string in v1 so
+  // the JSON producer doesn't need to know about a Kind enum at the
+  // wire layer. Recognized values: "air", "ground", "surface".
+  string kind = 8;
+}

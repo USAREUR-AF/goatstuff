@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pangolin/observer/heartbeat/v1",
+  "title": "pangolin observer heartbeat",
+  "description": "Pangolin is a synthetic subscriber-only vendor: subscribes to `**` to observe everything that crosses the router, and emits this low-rate heartbeat so it remains visible as a peer node in panoscope (pure subscribers otherwise have no outgoing edges to render).",
+  "type": "object",
+  "required": ["observer_id", "ts_ms", "distinct_topics_30s"],
+  "properties": {
+    "observer_id": {"type": "string"},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "uptime_s": {"type": "integer", "minimum": 0},
+    "distinct_topics_30s": {"type": "integer", "minimum": 0},
+    "sample_topics": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Up to 8 distinct topics observed in the last 30s. Sample-not-summary; the full count is in distinct_topics_30s."
+    }
+  }
+}

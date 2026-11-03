@@ -1,0 +1,30 @@
+// zenoh-sandbox router config — local dev variant.
+// Mirrors the Ansible-rendered production config (ops/ansible/roles/zenoh-sandbox/templates/config.json5.j2)
+// with fixed ports for local use. search_dirs includes "/" for the built-in
+// rest plugin shipped in the eclipse/zenoh image.
+//
+// ISOLATION INVARIANT: there is intentionally NO `connect:` block.
+// This router peers with NOTHING. Adding one would stop it being a sandbox.
+//
+// Design: docs/design/zenoh-sandbox.md
+{
+  mode: "router",
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"]
+  },
+  scouting: {
+    multicast: { enabled: false }
+  },
+  plugins_loading: {
+    enabled: true,
+    search_dirs: ["/", "/opt/zenoh-sandbox/plugins"]
+  },
+  plugins: {
+    rest: {
+      http_port: "0.0.0.0:8000"
+    },
+    remote_api: {
+      websocket_port: "0.0.0.0:10000"
+    }
+  }
+}

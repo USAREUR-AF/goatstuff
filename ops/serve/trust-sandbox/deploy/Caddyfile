@@ -1,0 +1,19 @@
+# TLS terminator for a hosted trust-sandbox instance. Mesh-internal hostname,
+# Let's Encrypt via Cloudflare DNS-01 (the ZAGROS zone token). Forwards to the
+# Ory gate (oauth2-proxy), which forwards to the web container only after a
+# successful ZAGROS Ory login with the ADMINS group.
+#
+# NOTE: requires a Caddy image built with the caddy-dns/cloudflare module
+# (the stock caddy image lacks it) — e.g. build with xcaddy, or use a prebuilt
+# caddy-cloudflare image. See deploy/README.md.
+{
+	email person-9@example.org
+}
+
+{$TS_PUBLIC_HOST} {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+	encode gzip
+	reverse_proxy gate:4180
+}

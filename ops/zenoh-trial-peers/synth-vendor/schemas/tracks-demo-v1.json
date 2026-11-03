@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "goat/tracks-demo/entity/v1",
+  "title": "tracks-demo entity track",
+  "description": "Synthetic entity track for nova Zenoh trial fabric demo. Approximates a CoT/Lattice-shaped position report.",
+  "type": "object",
+  "required": ["entity_id", "ts_ms", "lat", "lon", "alt_m", "speed_mps", "heading_deg"],
+  "properties": {
+    "entity_id": {"type": "string", "pattern": "^demo-[0-9a-f]{8}$"},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "lat": {"type": "number", "minimum": -90, "maximum": 90},
+    "lon": {"type": "number", "minimum": -180, "maximum": 180},
+    "alt_m": {"type": "number"},
+    "speed_mps": {"type": "number", "minimum": 0},
+    "heading_deg": {"type": "number", "minimum": 0, "maximum": 360},
+    "kind": {"type": "string", "enum": ["air", "ground", "surface"]}
+  }
+}

@@ -1,0 +1,54 @@
+# goat-fabric-crawler — the SINGLE lazy crawler of the cardinality strategy
+# (docs/design/zenoh-cardinality-budget-and-lazy-crawler.md §4, layer 4).
+#
+# One crawler replaces the N tools that each walk the key tree; everyone reads
+# its published rollup (ops/fabric/cardinality/<site>) instead of the router.
+# Lazy on cardinality explosions: per-owner enumeration stops at the sprawl
+# threshold and emits a summary, never an unbounded walk. Sequential, single-
+# flight, self-costed — the crawler must never become the wedge it measures
+#.
+#
+# protobuf via prost-derive on hand-written structs (no protoc/build.rs); the
+# canonical schema is proto/fabric_cardinality_v1.proto. zenoh pinned =1.9.0
+# (docs/design/zenoh-version-pinning.md).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-fabric-crawler"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Single lazy crawler — bounded per-owner cardinality census + rollup publisher (cardinality-budget strategy layer 4)."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+# rocksdb-direct census source: secondary read-only opens of
+# the router's live per-owner stores — zero router involvement. Reader-only;
+# must stay format-compatible with zenoh-backend-rocksdb =1.9.0 (revalidate at
+# any zenoh version bump — zenoh-version-pinning.md).
+rocksdb = "0.24"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+# http(s) budget-source fetch (the portal /api/budget-projection resolver;
+# ADR 1075 fold-in). Sync on purpose — one bounded local GET per 60 s cycle,
+# same posture as the std::fs read it generalizes.
+ureq = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

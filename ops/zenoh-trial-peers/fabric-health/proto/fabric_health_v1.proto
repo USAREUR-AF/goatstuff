@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Canonical schema for the fabric-health surface (ADR 1034,
+// docs/design/fabric-health-surface.md). Published by goat-fabric-health:
+//   ops/fabric/health/<site>     -> FabricHealthV1
+//   ops/fabric/footprint/<peer>  -> ProducerFootprintV1
+//
+// This .proto is the human-facing / schema-viewer source of truth. The
+// goat-fabric-health Rust service encodes equivalent prost-derive structs
+// (src/main.rs); keep the two in lock-step (same field tags). The portal
+// topic.format is `protobuf:FabricHealthV1` / `protobuf:ProducerFootprintV1`.
+
+syntax = "proto3";
+
+package goat.fabric.health.v1;
+
+// One traffic class's load vs its configured capacity target.
+//
+// Honesty (ADR 1034): a reading is only as trustworthy as its grounding.
+// `sample_count` is the number of observed samples behind this window — a
+// reading with n=0 is UNCONFIRMED, not healthy. `color` is therefore a
+// 5-state honesty signal, never a false-green:
+//   green     — MEASURED healthy under real load (grounded: n above the floor,
+//               target set, load < 70% of target)
+//   amber     — measured, load 70-90% of target
+//   red       — measured, load > 90% of target
+//   idle      — ~no traffic this window (n below the floor): health UNCONFIRMED,
+//               not "healthy". This is the trigger for a future idle-probe.
+//   unmetered — load observed but no capacity target set: we cannot assess
+//               pressure, so we do not claim green.
+// For idle/unmetered, headroom_pct is -1 (sentinel = "unknown"; render as "—").
+message ClassHealthV1 {
+  string class = 1;              // "C0".."C3" (control / mission / situational / bulk)
+  double sample_rate = 2;        // msgs/s over the rolling window
+  double byte_rate = 3;          // bytes/s over the rolling window
+  double target_sample_rate = 4; // operator-configured capacity target (msgs/s)
+  double target_byte_rate = 5;   // operator-configured capacity target (bytes/s)
+  double headroom_pct = 6;       // 0..1 when grounded; -1 = unknown (idle/unmetered)
+  string color = 7;              // green | amber | red | idle | unmetered
+  uint64 sample_count = 8;       // grounding: samples behind this window (n)
+}
+
+// Fabric weather for one site. Published to ops/fabric/health/<site>.
+message FabricHealthV1 {
+  string site = 1;
+  int64  ts_unix_ms = 2;
+  repeated ClassHealthV1 classes = 3;
+  string overall_color = 4;      // worst class color
+  uint32 active_producers = 5;
+  uint32 window_secs = 6;
+}
+
+// One producer's share of one class.
+message ClassShareV1 {
+  string class = 1;
+  double sample_rate = 2;
+  double byte_rate = 3;
+}
+
+// One producer's own footprint. Published to ops/fabric/footprint/<peer>.
+message ProducerFootprintV1 {
+  string peer = 1;
+  int64  ts_unix_ms = 2;
+  double sample_rate = 3;
+  double byte_rate = 4;
+  repeated ClassShareV1 shares = 5;
+  uint32 rank = 6;               // 1 = largest by byte-rate
+  bool   near_limit = 7;         // advisory until caps exist (ADR 1033 Reserve pillar)
+}

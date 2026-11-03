@@ -1,0 +1,13 @@
+# trust-sandbox CoreDNS — serves the tiny mesh-style zone `trust.local`, the
+# local analog of the mesh-internal service-discovery tier
+# (docs/design/dns-service-discovery.md). The orchestrator rewrites the zone
+# file in place on burn-&-respawn; `reload 2s` picks the change up live, so the
+# stable name re-points to the fresh endpoint while the name stays constant.
+#
+# This layer carries NO trust by design — resolving a name yields an address and
+# nothing else. Every gate still has to pass on the way in.
+trust.local:53 {
+    file /etc/coredns/db.trust.local
+    reload 2s
+    errors
+}

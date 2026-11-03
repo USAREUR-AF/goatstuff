@@ -1,0 +1,245 @@
+# trust-sandbox — a live, local zero-trust identity playground.
+#
+#   docker compose -f ops/serve/trust-sandbox/docker-compose.yml up --build
+#   open http://localhost:8100
+#
+# A disposable, FULLY LOCAL stack that lets a visitor feel how the identity
+# layers of goat net compose into zero trust: NetBird (represented), x509 leaf
+# certs (real), SPIRE/SPIFFE (real), Ory/Hydra OIDC (real JWT + groups claim),
+# Zenoh ACLs (real per-write decision) — plus private mesh DNS (CoreDNS) as the
+# addressing layer that, by design, carries no trust at all.
+#
+# Design: docs/design/trust-sandbox.md  ·  Decision: docs/adr/1049-zero-trust-identity-sandbox.md
+#
+# ISOLATION INVARIANT (load-bearing, mirrors the Zenoh sandbox): its own bridge
+# network, NO `connect:` anywhere (zenohd federates with nothing), only the web
+# port is host-published. `docker compose down -v` is a full wipe — this holds
+# nothing real, ever.
+name: trust-sandbox
+
+x-restart: &restart
+  restart: unless-stopped
+
+networks:
+  trust-sandbox:
+    # Project-scoped (NOT a fixed `name:`) so multiple instances on one host get
+    # SEPARATE networks — otherwise service aliases (hydra/zenohd/web) collide
+    # across instances and cross-wire their flows. The shared edge bridges them.
+    driver: bridge
+
+volumes:
+  # Throwaway CA + zenohd server cert + observer leaf + the client trust bundle.
+  # The orchestrator owns the CA key and mints persona leaves. Wiped by down -v.
+  certs:
+  # SPIRE shared state: server datastore, the agent join token, the Workload API
+  # socket the orchestrator reads. Wiped by down -v (recreate = fresh identities).
+  spire-shared:
+
+services:
+  # --- one-shot: mint the throwaway CA + zenohd server cert + observer leaf ----
+  # Runs the orchestrator binary in `init-ca` mode so ALL CA crypto uses one Rust
+  # toolchain (rcgen). Writes ca-root.pem / ca-key.pem / zenohd-cert.pem /
+  # zenohd-key.pem / observer-cert.pem / observer-key.pem to the certs volume.
+  # The SPIRE-augmented client trust bundle is assembled by spire-server's
+  # entrypoint before zenohd starts.
+  certs-init:
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
+    image: trust-sandbox-orchestrator:dev
+    command: ["init-ca", "--out", "/certs"]
+    volumes:
+      - certs:/certs
+    networks: [trust-sandbox]
+
+  # --- SPIRE server: issues short-TTL X509-SVIDs (the workload identity path) --
+  # Custom image = alpine + the static spire-server/-agent binaries (the official
+  # images are distroless, no shell). The entrypoint runs the server, then mints
+  # the agent join token + registers the orchestrator workload with `-dns
+  # edge-processor` (which sets the SVID CN that zenohd's ACL matches), and
+  # assembles the zenohd client trust bundle = sandbox-CA-root ⊕ SPIRE-bundle.
+  # ca_ttl is long + the SVID TTL short, so the bundle is stable for the session
+  # and only the leaf SVID rotates (the teaching surface; sidesteps F-202).
+  spire-server:
+    build:
+      context: .
+      dockerfile: spire/Dockerfile
+    image: trust-sandbox-spire:dev
+    <<: *restart
+    command: ["/bin/sh", "/opt/scripts/server-entry.sh"]
+    depends_on:
+      certs-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./spire/server.conf:/run/spire/config/server.conf:ro
+      - ./spire/server-entry.sh:/opt/scripts/server-entry.sh:ro
+      - spire-shared:/run/spire/shared
+      - certs:/certs
+    networks: [trust-sandbox]
+    healthcheck:
+      # Healthy only once the trust bundle has been assembled (bootstrap-done),
+      # so dependents (zenohd) start with the SPIRE CA already in their trust.
+      test: ["CMD-SHELL", "test -f /run/spire/shared/bootstrap-done && spire-server healthcheck"]
+      interval: 4s
+      timeout: 5s
+      retries: 25
+      start_period: 4s
+
+  # --- SPIRE agent: attests + exposes the Workload API socket to the orchestrator
+  spire-agent:
+    image: trust-sandbox-spire:dev
+    <<: *restart
+    command: ["/bin/sh", "/opt/scripts/agent-entry.sh"]
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    volumes:
+      - ./spire/agent.conf:/run/spire/config/agent.conf:ro
+      - ./spire/agent-entry.sh:/opt/scripts/agent-entry.sh:ro
+      - spire-shared:/run/spire/shared
+    networks: [trust-sandbox]
+
+  # --- zenohd: real mTLS + a real client-cert-gated ACL (the per-write decision)
+  # Stock fleet-pinned image (passes check-zenoh-pinning.sh, no allowlist) + a
+  # mounted config. access_control is built-in (NOT a plugin) and TLS transport
+  # is built-in, so no custom image is needed; no storage backend (statelessness
+  # = trivial wipe). The browser never talks to zenohd directly — the live fabric
+  # viz is fed by the orchestrator's real mTLS observer session over /ws.
+  zenohd:
+    image: eclipse/zenoh:1.9.0@sha256:157965d71e0bfd0a044d76a985ff0e5c306ad3968929168fb9678cd2a7fec23f
+    <<: *restart
+    command: ["--config", "/etc/zenoh/config.json5"]
+    depends_on:
+      certs-init:
+        condition: service_completed_successfully
+      spire-server:
+        condition: service_healthy
+    volumes:
+      - certs:/certs:ro
+      - ./zenohd/config.json5:/etc/zenoh/config.json5:ro
+    networks: [trust-sandbox]
+
+  # --- Ory Hydra: OAuth2/OIDC provider — issues the JWT the orchestrator gates --
+  # on. Real authorization-code flow; the orchestrator is the login/consent app
+  # (demo-persona picker). Memory DSN = maximally disposable.
+  hydra:
+    image: oryd/hydra:v2.2.0
+    <<: *restart
+    command: ["serve", "all", "--dev", "-c", "/etc/config/hydra/hydra.yml"]
+    environment:
+      DSN: "memory"
+      # Origin-parameterized browser-facing URLs (override hydra.yml's localhost
+      # defaults) so the teaching login works behind a hosted origin too.
+      URLS_SELF_ISSUER: "${TS_PUBLIC_ORIGIN:-http://localhost:8100}/hydra"
+      URLS_LOGIN: "${TS_PUBLIC_ORIGIN:-http://localhost:8100}/login.html"
+      URLS_CONSENT: "${TS_PUBLIC_ORIGIN:-http://localhost:8100}/consent.html"
+    volumes:
+      - ./ory/hydra.yml:/etc/config/hydra/hydra.yml:ro
+    networks: [trust-sandbox]
+
+  # --- one-shot: register the SPA's OAuth2 client with Hydra --------------------
+  # Direct admin-API POST (honors a provided client_id, unlike `hydra create
+  # client` which auto-generates the id) so the SPA's fixed `trust-sandbox-spa`
+  # exists. Public client (token_endpoint_auth_method: none) → PKCE-gated.
+  # 409 (already exists, on recreate) is treated as success.
+  hydra-init:
+    image: curlimages/curl:8.11.1
+    command:
+      - "sh"
+      - "-c"
+      - |
+        set -e
+        echo "waiting for hydra admin…"
+        until curl -sf http://hydra:4445/health/ready >/dev/null 2>&1; do sleep 1; done
+        code=$$(curl -s -o /dev/stderr -w '%{http_code}' -X POST http://hydra:4445/admin/clients \
+          -H 'content-type: application/json' \
+          -d '{"client_id":"trust-sandbox-spa","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"scope":"openid offline groups","token_endpoint_auth_method":"none","redirect_uris":["http://localhost:8100/callback.html","${TS_PUBLIC_ORIGIN:-http://localhost:8100}/callback.html"],"skip_consent":false}')
+        echo "hydra create client → HTTP $$code"
+        case "$$code" in 200|201|409) echo "client ready"; exit 0 ;; *) echo "failed"; exit 1 ;; esac
+    depends_on:
+      hydra:
+        condition: service_started
+    networks: [trust-sandbox]
+    restart: on-failure:5
+
+  # --- CoreDNS: the addressing layer that carries NO trust (burn & respawn) -----
+  coredns:
+    image: coredns/coredns:1.11.3
+    <<: *restart
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./coredns/Corefile:/etc/coredns/Corefile:ro
+      - ./coredns/db.trust.local:/etc/coredns/db.trust.local
+    networks: [trust-sandbox]
+
+  # --- target: the disposable backing service for burn & respawn ----------------
+  # A tiny static endpoint the mesh name resolves to, so resolution reaches a real
+  # reachable address. The burn-&-respawn TRUST decision (fresh/bad cert → zenohd
+  # ACL allow/deny) is driven by the orchestrator; this proves the name resolves.
+  target:
+    image: nginx:1.27-alpine
+    <<: *restart
+    volumes:
+      - ./coredns/target-index.html:/usr/share/nginx/html/index.html:ro
+    networks: [trust-sandbox]
+
+  # --- orchestrator: the privileged broker (does what a browser can't) ----------
+  # Runs as root so the SPIRE unix workload-attestor (unix:uid:0) selects it
+  # across the shared Workload API socket. Connects to zenoh/spire/hydra lazily
+  # with retries — it answers /api/* and /ws immediately and reports each layer's
+  # availability honestly.
+  orchestrator:
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
+    image: trust-sandbox-orchestrator:dev
+    <<: *restart
+    command: ["serve"]
+    # Share the SPIRE agent's PID namespace so the agent's `unix` workload
+    # attestor can introspect the orchestrator's process via /proc (otherwise:
+    # "could not resolve caller information" — the cross-PID-namespace limitation).
+    # The fleet co-locates agent + workload; this is the compose analog.
+    pid: "service:spire-agent"
+    depends_on:
+      zenohd:
+        condition: service_started
+      spire-agent:
+        condition: service_started
+      coredns:
+        condition: service_started
+    environment:
+      TS_BIND: "0.0.0.0:8080"
+      TS_ZENOH_ENDPOINT: "tls/zenohd:7447"
+      TS_CERTS_DIR: "/certs"
+      TS_SPIRE_SOCKET: "unix:///run/spire/shared/agent.sock"
+      # browser-facing teaching-Hydra issuer + redirect — origin-parameterized so
+      # the playground works behind a hosted origin too (default = local dev).
+      TS_HYDRA_PUBLIC: "${TS_PUBLIC_ORIGIN:-http://localhost:8100}/hydra"
+      TS_HYDRA_PUBLIC_INTERNAL: "http://hydra:4444"   # orchestrator→hydra
+      TS_HYDRA_ADMIN: "http://hydra:4445"
+      TS_OIDC_CLIENT_ID: "trust-sandbox-spa"
+      TS_OIDC_REDIRECT: "${TS_PUBLIC_ORIGIN:-http://localhost:8100}/callback.html"
+      TS_COREDNS: "coredns:53"
+      TS_ZONE_FILE: "/etc/coredns/db.trust.local"
+      TS_TARGET_NAME: "sensor-gw.trust.local"
+      TS_TARGET_HOST: "target"
+      RUST_LOG: "info,trust_sandbox_orchestrator=debug"
+    volumes:
+      - certs:/certs
+      - spire-shared:/run/spire/shared:ro
+      - ./coredns/db.trust.local:/etc/coredns/db.trust.local   # rw: burn-&-respawn rewrites the zone in place
+    networks: [trust-sandbox]
+
+  # --- web: nginx serving the Vue3 SPA; proxies /api + /ws + /hydra -------------
+  web:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    image: trust-sandbox-web:dev
+    <<: *restart
+    depends_on:
+      orchestrator:
+        condition: service_started
+    ports:
+      - "8100:80"
+    networks: [trust-sandbox]

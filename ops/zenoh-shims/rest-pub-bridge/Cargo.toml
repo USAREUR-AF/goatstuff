@@ -1,0 +1,55 @@
+# rest-pub-bridge — REST-PUT → native-mTLS-Zenoh publish sidecar.
+#
+# Drop-in replacement for the Zenoh router's REST plugin PUT surface, for
+# publishers that cannot link a native Zenoh client (notably Go services —
+# there is no maintained Go binding for Zenoh 1.x). The bridge holds a
+# per-vendor X.509 leaf and opens a native mTLS session, so each publish
+# carries a transport-level identity the router's access_control can scope
+# on. See docs/design/zenoh-rest-pub-bridge.md + ADR 1023.
+#
+# Workspace: deliberately NOT a member of any repo-root workspace — own
+# workspace per the synth-vendor / feeds-shim pattern (build isolation +
+# trust-domain separation).
+#
+# Pinned zenoh version per docs/design/zenoh-version-pinning.md.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# CI-speed: thin LTO + parallel codegen (was fat + cu=1). These are IO-bound
+# services where whole-program LTO buys negligible runtime but ~halves the
+# image-build compile. Data-plane goat-relay keeps fat LTO (repo-root profile).
+# Revert to `lto = true` / `codegen-units = 1` if a service shows a measured
+# hot-path regression.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "rest-pub-bridge"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "REST-PUT to native-mTLS-Zenoh publish bridge for non-Rust publishers. See docs/design/zenoh-rest-pub-bridge.md."
+repository = "https://github.com/usareur-af/goatcore"
+
+[[bin]]
+name = "rest-pub-bridge"
+path = "src/main.rs"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+# axum 0.7 to match the repo standard (ops/panoscope/Cargo.toml).
+axum = "0.7"
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

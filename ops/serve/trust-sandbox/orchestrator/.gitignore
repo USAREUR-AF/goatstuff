@@ -1,0 +1,2 @@
+/target
+# Cargo.lock IS committed (reproducible image builds; the Dockerfile uses --locked).

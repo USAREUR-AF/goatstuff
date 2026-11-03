@@ -1,0 +1,73 @@
+$schema: https://legacy.example/schema/data-dictionary-v1
+$id: attest/schema/feeds/v1
+description: |
+  Per-feed catalog advertisement published by feeds-shim to
+  `attest/queryable/feeds/<site>/<feed-id>` for every video feed the
+  site's MediaMTX is currently aware of. See `docs/design/video-fabric.md`
+  for the architectural shape and `ops/zenoh-shims/feeds-shim/README.md`
+  for the publisher.
+type: object
+required: [name, site, ready, tracks, schema_version]
+properties:
+  name:
+    type: string
+    description: |
+      Feed identifier within the site (= MediaMTX path name). Stable
+      across the lifetime of the source registration.
+    entity_ref: feed
+  site:
+    type: string
+    description: |
+      Site code (e.g. `vega`, `nethost`, `integdev`). Same value as the
+      second segment of the publishing key expression.
+    entity_ref: site
+  ready:
+    type: boolean
+    description: |
+      Whether MediaMTX currently has an active publisher session for
+      this feed (i.e., bytes are flowing in). False means the path
+      is configured but no publisher is connected right now.
+  tracks:
+    type: array
+    description: |
+      Codec tracks present on the feed (typically one video + one audio,
+      occasionally just video).
+    items:
+      type: object
+      required: [codec]
+      properties:
+        codec:
+          type: string
+          description: |
+            Codec name as reported by MediaMTX (e.g. `H264`, `H265`,
+            `MPEG-4 Audio`, `Opus`).
+        codec_props:
+          type: object
+          description: |
+            Codec-specific metadata. For H264/H265: `width`, `height`,
+            `profile`, `level`. For audio: `sampleRate`, `channelCount`.
+            Shape varies by codec; opaque to the consumer.
+  inbound_bytes:
+    type: integer
+    minimum: 0
+    description: |
+      Cumulative bytes received from the publisher since the path
+      became active. Useful for liveness inference (delta growth).
+  outbound_bytes:
+    type: integer
+    minimum: 0
+    description: |
+      Cumulative bytes served to readers (HLS, WebRTC, RTSP-pull).
+      Reset on publisher reconnect.
+  source_type:
+    type: string
+    description: |
+      MediaMTX source-type label (e.g. `rtspSession`, `srtPublisher`).
+      Indicates how the upstream is delivering the bytes — useful for
+      Spike-C-style discover-at-integration provenance.
+  schema_version:
+    type: integer
+    const: 1
+    description: |
+      Major version of this advertisement schema. v1 is locked when
+      this schema is published to `attest/schema/feeds/v1`.

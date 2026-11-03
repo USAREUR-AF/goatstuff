@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signing in — trust sandbox</title>
+<style>
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:#0b0f14; color:#e7eef6;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .card { width:min(440px,92vw); background:linear-gradient(180deg,#11171f,#0e141b); border:1px solid #1e2935;
+    border-radius:12px; padding:24px; text-align:center; }
+  .err { color:#ff6b8b; font-size:12.5px; margin-top:12px; word-break:break-word; }
+  .spin { color:#9bb0c2; font-size:13px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="spin" id="msg">Exchanging the code for your token…</div>
+    <div class="err" id="err"></div>
+  </div>
+<script type="module">
+  const params = new URLSearchParams(location.search)
+  const code = params.get('code')
+  const state = params.get('state')
+  const err = document.getElementById('err')
+  ;(async () => {
+    try {
+      if (params.get('error')) { err.textContent = params.get('error_description') || params.get('error'); return }
+      const savedState = sessionStorage.getItem('ts_oauth_state')
+      const verifier = sessionStorage.getItem('ts_pkce_verifier')
+      if (!code || !state || state !== savedState || !verifier) { err.textContent = 'Invalid OAuth state.'; return }
+      const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: location.origin + '/callback.html',
+        client_id: 'trust-sandbox-spa',
+        code_verifier: verifier,
+      })
+      const r = await fetch('/hydra/oauth2/token', { method:'POST',
+        headers:{'content-type':'application/x-www-form-urlencoded'}, body })
+      const j = await r.json()
+      if (!j.id_token) { err.textContent = 'No id_token: ' + JSON.stringify(j); return }
+      sessionStorage.setItem('ts_id_token', j.id_token)
+      sessionStorage.removeItem('ts_pkce_verifier')
+      sessionStorage.removeItem('ts_oauth_state')
+      location.href = '/'
+    } catch (e) { err.textContent = String(e) }
+  })()
+</script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+{
+  "endpoint": "tcp/panoscope-dev-zenoh:7447",
+  "peers": [
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/tarsier/alpha-fob/contacts/v1",
+      "rate_hz": 1,
+      "peer_id": "tarsier-alpha",
+      "display_name": "tarsier-alpha",
+      "role_class": "sensor",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/tarsier/bravo-fob/contacts/v1",
+      "rate_hz": 1,
+      "peer_id": "tarsier-bravo",
+      "display_name": "tarsier-bravo",
+      "role_class": "sensor",
+      "site": "bravo-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/mantis/alpha-fob/imagery/v1",
+      "rate_hz": 1,
+      "peer_id": "mantis-alpha",
+      "display_name": "mantis-alpha",
+      "role_class": "sensor",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/echidna/alpha-fob/detections/v1",
+      "rate_hz": 1,
+      "peer_id": "echidna-alpha",
+      "display_name": "echidna-alpha",
+      "role_class": "sensor",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/narwhal/alpha-fob/events/v1",
+      "rate_hz": 0.1,
+      "peer_id": "narwhal-alpha",
+      "display_name": "narwhal-alpha",
+      "role_class": "sensor",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/kingfisher/bravo-fob/emissions/v1",
+      "rate_hz": 1,
+      "peer_id": "kingfisher-bravo",
+      "display_name": "kingfisher-bravo",
+      "role_class": "sensor",
+      "site": "bravo-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/axolotl/charlie-fob/composite/v1",
+      "rate_hz": 1,
+      "peer_id": "axolotl-charlie",
+      "display_name": "axolotl-charlie",
+      "role_class": "sensor",
+      "site": "charlie-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/mongoose/alpha-fob/status/v1",
+      "rate_hz": 0.1,
+      "peer_id": "mongoose-alpha",
+      "display_name": "mongoose-alpha",
+      "role_class": "effector",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/wolverine/alpha-fob/engagements/v1",
+      "rate_hz": 0.1,
+      "peer_id": "wolverine-alpha",
+      "display_name": "wolverine-alpha",
+      "role_class": "effector",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/ibex/alpha-fob/launched/v1",
+      "rate_hz": 0.1,
+      "peer_id": "ibex-alpha",
+      "display_name": "ibex-alpha",
+      "role_class": "effector",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/aurochs/charlie-fob/launched/v1",
+      "rate_hz": 0.1,
+      "peer_id": "aurochs-charlie",
+      "display_name": "aurochs-charlie",
+      "role_class": "effector",
+      "site": "charlie-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/basilisk/alpha-fob/deployed/v1",
+      "rate_hz": 0.1,
+      "peer_id": "basilisk-alpha",
+      "display_name": "basilisk-alpha",
+      "role_class": "effector",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/octopus/alpha-fob/tracks/v1",
+      "rate_hz": 1,
+      "peer_id": "octopus-alpha",
+      "display_name": "octopus-alpha",
+      "role_class": "data-service",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/cuttlefish/theater/confirmed/v1",
+      "rate_hz": 1,
+      "peer_id": "cuttlefish-theater",
+      "display_name": "cuttlefish-theater",
+      "role_class": "data-service",
+      "site": "theater",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/chameleon/theater/normalized/v1",
+      "rate_hz": 1,
+      "peer_id": "chameleon-translator",
+      "display_name": "chameleon-translator",
+      "role_class": "data-service",
+      "site": "theater",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/condor/theater/orders/v1",
+      "rate_hz": 0.1,
+      "peer_id": "condor-theater",
+      "display_name": "condor-theater",
+      "role_class": "c2",
+      "site": "theater",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/peregrine/alpha-fob/orders/v1",
+      "rate_hz": 0.1,
+      "peer_id": "peregrine-alpha",
+      "display_name": "peregrine-alpha",
+      "role_class": "c2",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "power-demo",
+      "topic": "notional/falcon/bravo-fob/orders/v1",
+      "rate_hz": 0.1,
+      "peer_id": "falcon-bravo",
+      "display_name": "falcon-bravo",
+      "role_class": "c2",
+      "site": "bravo-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "beacon-demo",
+      "topic": "notional/omniwatch/theater/heartbeat/v1",
+      "rate_hz": 0.5,
+      "peer_id": "omniwatch",
+      "display_name": "omniwatch",
+      "role_class": "observer",
+      "site": "theater",
+      "logical_vendor": "notional",
+      "subscribe_key": "notional/**"
+    },
+    {
+      "personality": "beacon-demo",
+      "topic": "notional/glass-display/theater/unused/v1",
+      "rate_hz": 0.5,
+      "peer_id": "glass-display",
+      "display_name": "glass-display",
+      "role_class": "sink",
+      "site": "theater",
+      "logical_vendor": "notional",
+      "subscribe_key": "notional/**",
+      "no_publish": true
+    },
+    {
+      "personality": "beacon-demo",
+      "topic": "notional/archive-vault/theater/unused/v1",
+      "rate_hz": 0.5,
+      "peer_id": "archive-vault",
+      "display_name": "archive-vault",
+      "role_class": "sink",
+      "site": "theater",
+      "logical_vendor": "notional",
+      "subscribe_key": "notional/**",
+      "no_publish": true
+    },
+    {
+      "personality": "beacon-demo",
+      "topic": "notional/audit-log/theater/unused/v1",
+      "rate_hz": 0.5,
+      "peer_id": "audit-log",
+      "display_name": "audit-log",
+      "role_class": "sink",
+      "site": "theater",
+      "logical_vendor": "notional",
+      "subscribe_key": "notional/**",
+      "no_publish": true
+    }
+  ]
+}

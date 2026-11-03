@@ -1,0 +1,31 @@
+// caracal/power-demo/site-nova/v1 — site-level power state for the
+// trial fabric, intended as a worked example of "low-rate
+// scalar telemetry from a site-aggregator agent."
+//
+// Producer: ops/zenoh-trial-peers/synth-vendor — Personality::PowerDemo
+// Wire format on the fabric: JSON.
+
+syntax = "proto3";
+
+package caracal.power_demo.v1;
+
+message PowerState {
+  // Producer-supplied site identifier, free-text (e.g. "site-nova").
+  string site_id = 1;
+
+  // Producer-local wall-clock, milliseconds since Unix epoch.
+  uint64 ts_ms = 2;
+
+  // Instantaneous load drawn at the site, kilowatts.
+  double load_kw = 3;
+
+  // Battery state-of-charge, percent [0, 100].
+  double soc_pct = 4;
+
+  // Grid posture as observed by the site aggregator. Recognized
+  // values: "online", "islanded", "degraded". Free-text in v1.
+  string grid_state = 5;
+
+  // Inverter / enclosure ambient temperature, degrees Celsius.
+  double temp_c = 6;
+}

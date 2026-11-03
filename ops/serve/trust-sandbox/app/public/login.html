@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign in — trust sandbox</title>
+<style>
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:#0b0f14; color:#e7eef6;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .card { width:min(440px,92vw); background:linear-gradient(180deg,#11171f,#0e141b); border:1px solid #1e2935;
+    border-radius:12px; padding:24px; box-shadow:0 18px 50px -28px #000; }
+  h1 { font-size:17px; margin:0 0 4px; }
+  p { color:#9bb0c2; font-size:13px; margin:0 0 18px; }
+  .tag { font-family: ui-monospace, monospace; font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#5f7384; }
+  button { display:flex; width:100%; align-items:center; gap:12px; text-align:left; cursor:pointer; margin-top:10px;
+    background:#161e28; color:#e7eef6; border:1px solid #1e2935; border-radius:10px; padding:12px 14px; font-size:14px; }
+  button:hover { border-color:#38e1c4; }
+  .role { margin-left:auto; font-family: ui-monospace, monospace; font-size:11px; color:#38e1c4; border:1px solid #38e1c4;
+    border-radius:999px; padding:2px 9px; }
+  .role.obs { color:#8ea6ff; border-color:#8ea6ff; }
+  .err { color:#ff6b8b; font-size:12.5px; margin-top:12px; min-height:1em; }
+  .sub { color:#9bb0c2; font-size:12px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="tag">Ory · Gate ④ — who is the actor?</div>
+    <h1>Choose who you are</h1>
+    <p>A real OIDC sign-in (Hydra issues a signed token carrying your role). These are
+       demo identities — in production this is a password/MFA login.</p>
+    <div id="picker"></div>
+    <div class="err" id="err"></div>
+  </div>
+<script type="module">
+  const params = new URLSearchParams(location.search)
+  const challenge = params.get('login_challenge')
+  const personas = [
+    { sub:'alice-admin',   name:'Alice — administrator', role:'ADMIN',   cls:'' },
+    { sub:'omar-operator', name:'Omar — operator',       role:'OPERATOR', cls:'' },
+    { sub:'bea-observer',  name:'Bea — observer',         role:'OBSERVER', cls:'obs' },
+  ]
+  const picker = document.getElementById('picker')
+  const err = document.getElementById('err')
+  if (!challenge) { err.textContent = 'Missing login challenge — start the sign-in from the playground.' }
+  for (const p of personas) {
+    const b = document.createElement('button')
+    b.innerHTML = `<span><div>${p.name}</div><div class="sub">${p.sub}</div></span><span class="role ${p.cls}">${p.role}</span>`
+    b.onclick = async () => {
+      err.textContent = ''
+      try {
+        const r = await fetch('/api/oidc/login', { method:'POST', headers:{'content-type':'application/json'},
+          body: JSON.stringify({ challenge, persona: p.sub }) })
+        const j = await r.json()
+        if (j.redirect_to) location.href = j.redirect_to
+        else err.textContent = j.error || 'login failed'
+      } catch (e) { err.textContent = String(e) }
+    }
+    picker.appendChild(b)
+  }
+</script>
+</body>
+</html>

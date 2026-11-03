@@ -1,0 +1,70 @@
+$schema: https://legacy.example/schema/data-dictionary-v1
+$id: attest/schema/feeds-ptz/v1
+description: |
+  PTZ (pan / tilt / zoom / preset) command shape for video feeds that
+  support directional control. Sent to `cmd/feeds/<feed-id>/ptz` by an
+  authenticated operator. The feeds-shim translates supported commands
+  to MediaMTX or upstream-vendor API calls; sources that don't advertise
+  `ptz_capable` reject the command at the schema-enforcer interceptor.
+
+  Forward-looking — feeds-shim v0.1 () does not yet implement
+  the subscriber. Schema is published here so the contract is locked
+  before any peer starts emitting commands.
+type: object
+required: [feed_id, action, schema_version]
+properties:
+  feed_id:
+    type: string
+    description: |
+      Target feed identifier (matches the `name` field of the feed's
+      advertisement at `attest/queryable/feeds/<site>/<feed-id>`).
+    entity_ref: feed
+  action:
+    type: string
+    enum: [pan, tilt, zoom, preset_recall, preset_save, stop]
+    description: |
+      PTZ action to take. `stop` halts any in-progress motion;
+      `preset_recall` jumps to a saved position; `preset_save` records
+      the current position under a numbered preset.
+  pan_velocity:
+    type: number
+    minimum: -1.0
+    maximum: 1.0
+    description: |
+      Normalized pan rate. -1.0 = full left, 0 = stopped, +1.0 = full
+      right. Required when `action` = `pan`.
+  tilt_velocity:
+    type: number
+    minimum: -1.0
+    maximum: 1.0
+    description: |
+      Normalized tilt rate. -1.0 = full down, 0 = stopped, +1.0 = full
+      up. Required when `action` = `tilt`.
+  zoom_velocity:
+    type: number
+    minimum: -1.0
+    maximum: 1.0
+    description: |
+      Normalized zoom rate. -1.0 = full wide, 0 = stopped, +1.0 = full
+      tele. Required when `action` = `zoom`.
+  preset_id:
+    type: integer
+    minimum: 1
+    maximum: 256
+    description: |
+      Preset slot. Required when `action` = `preset_recall` or
+      `preset_save`.
+  duration_ms:
+    type: integer
+    minimum: 0
+    maximum: 60000
+    description: |
+      Optional motion duration in ms. If omitted, motion continues
+      until a `stop` command is sent or a per-source default timeout
+      fires.
+  schema_version:
+    type: integer
+    const: 1
+    description: |
+      Major version of this command schema. v1 is locked when this
+      schema is published to `attest/schema/feeds-ptz/v1`.

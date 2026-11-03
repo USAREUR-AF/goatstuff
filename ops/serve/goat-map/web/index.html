@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>goat-map — live sensor picture</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="map"></div>
+    <div id="lasso-hint" class="provenance lasso" hidden></div>
+    <div class="lasso-controls">
+      <button id="lasso-btn" type="button" title="Click points to enclose an area; Backspace undoes a point">Draw area</button>
+      <button id="lasso-view" type="button" title="Search everything currently on screen">Search visible area</button>
+      <button id="lasso-clear" type="button" title="Remove the drawn area and its results">Clear</button>
+    </div>
+
+<header class="bar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <span class="name">goat-map</span>
+    <span class="sep">/</span>
+    <span id="source-label" class="muted">…</span>
+  </div>
+  <div class="bar-stats">
+    <div class="stat"><span id="stat-tracks" class="num">0</span><span class="lbl">tracks</span></div>
+    <div class="stat"><span id="stat-rate" class="num">0</span><span class="lbl">msg/s</span></div>
+    <div class="stat"><span id="stat-msgs" class="num">0</span><span class="lbl">received</span></div>
+    <div id="link" class="link link-down"><span class="dot"></span><span id="link-text">connecting</span></div>
+  </div>
+</header>
+
+    <div id="scope-banner" class="provenance scope" hidden></div>
+    <div id="sensor-status" class="readout sensor" hidden></div>
+    <div id="provenance" class="provenance" hidden></div>
+
+<div class="mode-tabs" role="tablist" aria-label="View">
+  <button id="tab-tracks" role="tab" aria-selected="true">Tracks</button>
+  <button id="tab-readiness" role="tab" aria-selected="false">Readiness</button>
+</div>
+
+<aside class="panel" id="rd-panel" hidden>
+  <div class="panel-head">
+    <h2>Readiness</h2>
+  </div>
+  <p id="rd-scope" class="rd-scope" hidden></p>
+  <ul id="rd-list" class="rd-list"></ul>
+  <p id="rd-empty" class="empty" hidden></p>
+</aside>
+
+<aside class="panel" id="panel">
+  <div class="panel-head">
+    <h2>Tracks</h2>
+    <button id="follow" class="ghost" title="Keep all tracks in view">fit</button>
+  </div>
+  <ul id="track-list" class="track-list"></ul>
+  <p id="empty" class="empty">Waiting for the first detection…</p>
+</aside>
+
+<section class="detail" id="detail" hidden>
+  <button class="close" id="detail-close" aria-label="Close">×</button>
+  <h3 id="d-title">—</h3>
+  <dl id="d-body"></dl>
+</section>
+
+<footer class="legend">
+  <div class="keys" id="legend-keys"></div>
+  <p class="note" id="clock-note"></p>
+</footer>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/pmtiles.js"></script>
+<script src="app.js"></script>
+<script src="lasso.js"></script>
+<script src="readiness.js"></script>
+</body>
+</html>

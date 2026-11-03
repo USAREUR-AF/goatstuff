@@ -1,0 +1,51 @@
+# goat-surface-visit — per-visit attribution for fenced web surfaces.
+#
+# Tails an oauth2-proxy door's request log, keeps the authenticated requests,
+# and publishes each as an age-encrypted SurfaceVisitV1 onto
+# ops/audit/surface/<surface>/<actor>, where the audit-subscriber persists it to
+# the MinIO governance tier and microscope reads it back.
+#
+# Standalone workspace, same convention as the other trial peers in this tree
+# (node-net-health, fabric-health): the crate is built by its own Dockerfile and
+# is deliberately not a member of the crates/ workspace, so a fabric peer cannot
+# break the operator CLI build.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-surface-visit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Per-visit attribution for oauth2-proxy-fenced surfaces — SurfaceVisitV1 onto the goat audit stream."
+repository = "https://github.com/usareur-af/goatcore"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+# PINNED DELIBERATELY — F-462. zenoh is pinned but its TLS stack is not, so a
+# crate resolved fresh picks a newer rustls that cannot complete this fleet's
+# handshake (the router negotiates a post-quantum hybrid group). The failure is
+# `zenoh::open failed: Unable to connect`, which reads as a dead router or a bad
+# cert; openssl s_client with the SAME credentials connects fine. These two
+# versions are what every working peer runs. Do not float them.
+rustls = "=0.23.40"
+rustls-webpki = "=0.103.13"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync", "fs", "io-util"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# age encryption to the operator roster — the same envelope OperatorActionV1
+# uses. Recipients are X25519 public keys, so this binary holds no private key
+# and cannot read back what it writes.
+age = { version = "0.11", default-features = false }
+chrono = "0.4"

@@ -1,0 +1,30 @@
+// community/beacon-demo/hello/v1 — heartbeat with a small "I have
+// observed the following sibling topics" summary. Cross-vendor
+// subscribe demonstrator: this producer also subscribes to
+// `caracal/**` and summarizes what it has seen in the last 30 s.
+//
+// Producer: ops/zenoh-trial-peers/synth-vendor — Personality::BeaconDemo
+// Wire format on the fabric: JSON.
+
+syntax = "proto3";
+
+package community.beacon_demo.v1;
+
+message Hello {
+  // Producer-supplied beacon identifier, free-text.
+  string beacon_id = 1;
+
+  // Producer-local wall-clock, milliseconds since Unix epoch.
+  uint64 ts_ms = 2;
+
+  // Producer uptime, seconds since this peer started its publisher loop.
+  uint64 uptime_s = 3;
+
+  // Free-text message, typically a short status string.
+  string message = 4;
+
+  // Key-expressions under `caracal/**` this peer received samples
+  // for in the last ~30s, in arrival order, deduped. Demonstrates the
+  // cross-vendor read posture on the trial fabric.
+  repeated string observed_caracal_topics = 5;
+}
