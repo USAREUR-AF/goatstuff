@@ -1,0 +1,44 @@
+name: goat-trashgoat-image
+# Builds ops/goat-trashgoat/Dockerfile and publishes to
+# ghcr.io/usareur-af/goat-trashgoat. Multi-arch (amd64 + arm64) per the
+# audit-subscriber + stethoscope shape — the image runs on nova-a (Tegra
+# arm64) and any future amd64 host.
+#
+# Per docs/design/trashgoat.md (Block 92, PR #3).
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/goat-trashgoat/**'
+      - '.github/workflows/goat-trashgoat-image.yml'
+    tags: ['goat-trashgoat/v*']
+  pull_request:
+    paths:
+      - 'ops/goat-trashgoat/**'
+      - '.github/workflows/goat-trashgoat-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-trashgoat
+      tag_prefix: goat-trashgoat
+      context: ops/goat-trashgoat
+      file: ops/goat-trashgoat/Dockerfile

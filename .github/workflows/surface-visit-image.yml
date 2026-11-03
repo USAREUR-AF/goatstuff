@@ -1,0 +1,92 @@
+name: surface-visit-image
+# Builds ops/zenoh-trial-peers/surface-visit-audit/Dockerfile — goat-surface-visit
+# (Rust + tokio + eclipse-zenoh + prost) — and publishes to
+# ghcr.io/<owner>/goat-surface-visit.
+#
+# Per docs/design/surface-visit-attribution.md + ADR 1163: the per-visit half of
+# surface attribution. A Hydra consent grant is a STANDING record with a moving
+# handled_at, so repeat visits collapse into one row and it can never answer
+# "how many times". This tails an oauth2-proxy door's request log, keeps the
+# authenticated requests, and publishes each as an age-encrypted SurfaceVisitV1
+# onto ops/audit/surface/<surface>/<actor>.
+#
+# Per-arch native build + manifest combine, mirroring time-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# Tag scheme:
+#   - On main push:                   :latest + :sha-<short>
+#   - On surface-visit/v* tag:       :<tag-name>
+#   - On any build:                   :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/surface-visit-audit/**'
+      - '.github/workflows/surface-visit-image.yml'
+    tags: ['surface-visit/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/surface-visit-audit/**'
+      - '.github/workflows/surface-visit-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # The crawler's unit tests ran NOWHERE previously : this workflow built
+  # and pushed an image without ever invoking `cargo test`, and no other
+  # The tests here are the privacy boundary, not a smoke check, which is why
+  # they must run somewhere other than a developer's laptop. They pin that an
+  # unauthenticated request is never recorded as a visit (oauth2-proxy renders
+  # those "-", and that covers every prober, every scrape and every api-route
+  # 401), that query strings are dropped before a record is built, that an
+  # unparseable timestamp yields no record rather than one stamped with read
+  # time, and that an EMPTY age roster is a hard refusal — because the failure
+  # that check prevents is publishing a browsing trail in the clear.
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ops/zenoh-trial-peers/surface-visit-audit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ops/zenoh-trial-peers/surface-visit-audit/target
+          key: ${{ runner.os }}-cargo-surface-visit-${{ hashFiles('ops/zenoh-trial-peers/surface-visit-audit/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-surface-visit-
+            ${{ runner.os }}-cargo-
+
+      - name: cargo test
+        run: cargo test --all-features
+
+  image:
+    needs: test
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-surface-visit
+      tag_prefix: surface-visit
+      context: ops/zenoh-trial-peers/surface-visit-audit
+      description: "Single lazy crawler \u2014 bounded cardinality census + rollup (cardinality-budget layer 4)"

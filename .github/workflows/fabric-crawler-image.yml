@@ -1,0 +1,92 @@
+name: fabric-crawler-image
+# Builds ops/zenoh-trial-peers/fabric-crawler/Dockerfile — goat-fabric-crawler
+# (Rust + tokio + eclipse-zenoh + prost) — and publishes to
+# ghcr.io/<owner>/goat-fabric-crawler.
+#
+# Per docs/design/zenoh-cardinality-budget-and-lazy-crawler.md §4: the SINGLE
+# lazy crawler. One sequential, bounded, self-costed crawl replaces the N tools
+# that each walk the key tree; everyone reads its published rollup
+# (ops/fabric/cardinality/<site> + ops/fabric/census/<site>) instead of the
+# router. Lazy >threshold per-owner cutoff = the cardinality-budget sensor.
+#
+# Per-arch native build + manifest combine, mirroring time-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# Tag scheme:
+#   - On main push:                   :latest + :sha-<short>
+#   - On fabric-crawler/v* tag:       :<tag-name>
+#   - On any build:                   :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/fabric-crawler/**'
+      - '.github/workflows/fabric-crawler-image.yml'
+    tags: ['fabric-crawler/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/fabric-crawler/**'
+      - '.github/workflows/fabric-crawler-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # The crawler's unit tests ran NOWHERE previously : this workflow built
+  # and pushed an image without ever invoking `cargo test`, and no other
+  # workflow covers ops/zenoh-trial-peers/fabric-crawler. A test that runs only
+  # on a developer's laptop is not a guard.
+  #
+  # That mattered immediately. The LOG.old fix here (F-340, 188.9 GiB of
+  # RocksDB rotation debris) is protected by
+  # `repeated_secondary_opens_do_not_accumulate_log_files`, which caught a first
+  # attempt — `set_keep_log_file_num(2)` — that looked exactly like a fix and
+  # did nothing, because RocksDB skips its info-LOG purge for secondary
+  # instances. Unrun, that test protects nothing.
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ops/zenoh-trial-peers/fabric-crawler
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ops/zenoh-trial-peers/fabric-crawler/target
+          key: ${{ runner.os }}-cargo-fabric-crawler-${{ hashFiles('ops/zenoh-trial-peers/fabric-crawler/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-fabric-crawler-
+            ${{ runner.os }}-cargo-
+
+      - name: cargo test
+        run: cargo test --all-features
+
+  image:
+    needs: test
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-fabric-crawler
+      tag_prefix: fabric-crawler
+      context: ops/zenoh-trial-peers/fabric-crawler
+      description: "Single lazy crawler \u2014 bounded cardinality census + rollup (cardinality-budget layer 4)"

@@ -1,0 +1,182 @@
+name: trust-sandbox-image
+
+# Builds the four trust-sandbox images the hosted instance runs — the Rust/axum
+# orchestrator, the Vue3 web SPA, the SPIRE server/agent image, and the Caddy TLS
+# edge (caddy + the cloudflare-DNS module) — and publishes to
+# ghcr.io/usareur-af/{trust-sandbox-orchestrator,trust-sandbox-web,trust-sandbox-spire,caddy-cloudflare}.
+# Same per-arch native build + manifest combine as the sibling image workflows;
+# matrixed over the images. Building all four (not just orchestrator+web) so the
+# hosted overlay can pin every image to an immutable :sha-<short>@sha256 digest
+# like the rest of the fleet, instead of a hand-built floating :dev tag.
+#
+# Design: docs/design/trust-sandbox.md
+#
+# Tag scheme: `:latest` + `:sha-<short>` on main; `:sha-<short>` always;
+# `:<tag>` on `trust-sandbox/v*` tags.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/serve/trust-sandbox/**'
+      - '.github/workflows/trust-sandbox-image.yml'
+    tags: ['trust-sandbox/v*']
+  pull_request:
+    paths:
+      - 'ops/serve/trust-sandbox/**'
+      - '.github/workflows/trust-sandbox-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: orchestrator OIDC verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ops/serve/trust-sandbox/orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ops/serve/trust-sandbox/orchestrator -> target
+      - name: Locked production JWT/JWKS tests
+        env:
+          CARGO_BUILD_JOBS: '2'
+          CARGO_PROFILE_TEST_DEBUG: '0'
+        run: cargo test --locked
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [orchestrator, web, spire, caddy]
+        arch: [amd64, arm64]
+        include:
+          # image → ghcr package name + Dockerfile (relative to the shared context)
+          - { image: orchestrator, pkg: trust-sandbox-orchestrator, dockerfile: orchestrator/Dockerfile }
+          - { image: web,          pkg: trust-sandbox-web,          dockerfile: app/Dockerfile }
+          - { image: spire,        pkg: trust-sandbox-spire,        dockerfile: spire/Dockerfile }
+          - { image: caddy,        pkg: caddy-cloudflare,           dockerfile: deploy/Dockerfile.caddy }
+          - arch: amd64
+            runs-on: ubuntu-24.04
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # Self-referential namespace (docs/design/usareur-af-repo-migration.md, Phase 2):
+      # resolve REGISTRY_IMAGE from the repo owner, lowercased (ghcr rejects uppercase,
+      # the reason #154 hardcoded usareur-af). Matrix-parametrized by matrix.pkg.
+      - name: Resolve self-referential registry namespace (lowercased)
+        run: echo "REGISTRY_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.pkg }}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest (${{ matrix.image }}/${{ matrix.arch }})
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ops/serve/trust-sandbox
+          file: ops/serve/trust-sandbox/${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.title=${{ matrix.pkg }}
+          cache-from: type=gha,scope=trust-sandbox-${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=trust-sandbox-${{ matrix.image }}-${{ matrix.arch }}
+          outputs: |
+            type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [orchestrator, web, spire, caddy]
+        include:
+          - { image: orchestrator, pkg: trust-sandbox-orchestrator }
+          - { image: web,          pkg: trust-sandbox-web }
+          - { image: spire,        pkg: trust-sandbox-spire }
+          - { image: caddy,        pkg: caddy-cloudflare }
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Resolve self-referential registry namespace (lowercased)
+        run: echo "REGISTRY_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.pkg }}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+      - name: Download digests
+        uses: actions/download-artifact@v4.3.0
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=short,prefix=sha-
+            type=match,pattern=trust-sandbox/v(.*),group=1,prefix=v
+      - name: Create multi-arch manifest
+        working-directory: /tmp/digests
+        env:
+          META_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$META_JSON") \
+            $(printf "${{ env.REGISTRY_IMAGE }}@sha256:%s " *)
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:sha-$(git rev-parse --short HEAD)

@@ -1,0 +1,60 @@
+name: mesh-health-image
+# Builds ops/zenoh-trial-peers/mesh-health/Dockerfile — the goat-mesh-health
+# meter (Rust + tokio + eclipse-zenoh + prost) — and publishes to
+# ghcr.io/usareur-af/goat-mesh-health.
+#
+# Per docs/design/environment-health-surface.md + ADR 1042: the mesh domain of
+# the environment-health surface. A normal mTLS Zenoh client peer that grades
+# the vantage host's `netbird status --json` snapshot (host-side timer,
+# read-only bind mount) and publishes ops/mesh/health/<site> as
+# EnvHealthV1{domain:"mesh"}; passive, persists nothing. Builds independently
+# of the zenoh router + audit-subscriber images.
+#
+# Per-arch native build + manifest combine, mirroring time-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# The image runs on the ZAGROS + nova-a Thors (Tegra arm64) and on any x86
+# mgmt-host.
+#
+# Tag scheme:
+#   - On main push:                   :latest + :sha-<short>
+#   - On mesh-health/v* tag:          :<tag-name>
+#   - On any build:                   :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/mesh-health/**'
+      - '.github/workflows/mesh-health-image.yml'
+    tags: ['mesh-health/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/mesh-health/**'
+      - '.github/workflows/mesh-health-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-mesh-health
+      tag_prefix: mesh-health
+      context: ops/zenoh-trial-peers/mesh-health
+      description: "Mesh domain of the environment-health surface (ADR 1042/1036)"

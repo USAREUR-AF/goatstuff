@@ -1,0 +1,98 @@
+# The public build: everything here runs on a fresh clone with GITHUB_TOKEN alone.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # A pinned toolchain: rustfmt's output is toolchain-dependent, so a floating
+      # `stable` can turn the format check red on an unchanged tree.
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+      - name: inspection surfaces (panoscope-core from goatcore by tag)
+        working-directory: crates
+        run: |
+          cargo build --workspace
+          cargo test --workspace
+
+  go:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: build, vet and test every module
+        run: |
+          rc=0
+          for gm in $(git ls-files '*go.mod' | sed 's|/go.mod||'); do
+            echo "== $gm"
+            ( cd "$gm" && go build ./... && go vet ./... && go test ./... ) || rc=1
+          done
+          exit $rc
+
+  python-and-ansible:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: deps
+        timeout-minutes: 5
+        run: |
+          python3 -m pip install -q pyyaml jsonschema pytest ansible-core yamllint
+          python3 -m pip install -q -r ops/serve/goat-map/requirements.txt
+          sudo apt-get update -q && sudo apt-get install -y -q shellcheck ripgrep
+      - name: every Python file compiles
+        run: python3 -m compileall -q .
+      - name: Python tests
+        run: |
+          set -o pipefail
+          python3 -m pytest -q ops 2>&1 | tail -20
+      - name: Ansible roles and templates resolve
+        run: bash ops/ci/check-role-template-refs-resolve.sh
+      - name: playbooks parse
+        run: |
+          cd ops/ansible
+          rc=0
+          for p in *.yml; do
+            case "$p" in netbird_acl_matrix.yml|netbird_acl_taxonomy.yml|requirements.yml) continue;; esac
+            ansible-playbook --syntax-check -i localhost, -e target=all -e herd_connector_target_hosts=all "$p" >/dev/null 2>&1 || { echo "syntax: $p"; rc=1; }
+          done
+          exit $rc
+      - name: shell and YAML lint
+        run: |
+          bash ops/ci/check-bash-portability.sh
+          yamllint -d relaxed .github/workflows
+
+  no-identifiers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: no keys, equipment addresses or live values in the tree
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q ripgrep
+          bash ops/ci/check-no-identity-spillage.sh

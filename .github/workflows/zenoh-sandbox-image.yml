@@ -1,0 +1,112 @@
+name: zenoh-sandbox-image
+# Builds ops/serve/zenoh-sandbox/Dockerfile — the upstream zenoh-ts browser
+# demo (examples/browser/nuxt) statically generated + served by nginx — and
+# publishes to ghcr.io/usareur-af/zenoh-sandbox.
+#
+# Sibling-of-dataflows: same per-arch native build + manifest combine. The
+# image runs on nova-a (Tegra arm64) and any future amd64 host.
+#
+# Design: docs/design/zenoh-sandbox.md
+#
+# Tag scheme:
+#   - On main push:                 `:latest` + `:sha-<short>`
+#   - On `zenoh-sandbox/v*` tag:     `:<tag-name>` (e.g. `:v0.1.0`)
+#   - On any build:                  `:sha-<short>` (always)
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/serve/zenoh-sandbox/**'
+      - '.github/workflows/zenoh-sandbox-image.yml'
+    tags: ['zenoh-sandbox/v*']
+  pull_request:
+    paths:
+      - 'ops/serve/zenoh-sandbox/**'
+      - '.github/workflows/zenoh-sandbox-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  detect-relevant-changes:
+    # Guard against redundant re-fires on PR syncs — same shape as
+    # dataflows-image.yml. See docs/design/ci-redundant-rebuild-guard.md.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: filter
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && format('{0}^', github.event.pull_request.head.sha) || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # Push events (branch main + release tags) are already gated by this
+          # workflow's native on.push.paths filter — the run only STARTS when a
+          # relevant path changed, so on push we ALWAYS build. The manual
+          # parent..HEAD delta below silently false-skipped a real main-push
+          # image build (panoscope #1807) despite its changed-file list clearly
+          # containing relevant paths; on push that is pure downside (a lost
+          # deployable image), since native on.push.paths already did the
+          # filtering. The delta dedup is only useful — and only harmless, since
+          # PR builds never publish images — on pull_request syncs. See
+          # docs/design/ci-redundant-rebuild-guard.md.
+          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            echo "push event — native on.push.paths already gated this run to a relevant-path change; building"
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base ref (new branch / initial push) — failing open"
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
+            git fetch --depth=1 origin "$BASE_SHA" 2>/dev/null || {
+              echo "Could not fetch base $BASE_SHA — failing open"
+              echo "relevant=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            }
+          fi
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Files changed in latest push ($BASE_SHA..$HEAD_SHA):"
+          echo "$CHANGED" | sed 's/^/  /'
+          if echo "$CHANGED" | grep -qE '^ops/serve/zenoh-sandbox/|^\.github/workflows/zenoh-sandbox-image\.yml$'; then
+            echo "→ relevant changes present; running downstream jobs"
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "→ no relevant changes; skipping downstream jobs"
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  image:
+    needs: detect-relevant-changes
+    if: needs.detect-relevant-changes.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: zenoh-sandbox
+      tag_prefix: zenoh-sandbox
+      context: ops/serve/zenoh-sandbox
+      file: ops/serve/zenoh-sandbox/Dockerfile
+      description: "Browser-based Zenoh sandbox (zenoh-ts demo) served at sandbox.nova.netbird.nova.example"

@@ -1,0 +1,58 @@
+name: ntp-health-image
+# Builds ops/zenoh-trial-peers/ntp-health-pub/Dockerfile — the goat-ntp-health-pub
+# per-host attestation republisher (Rust + tokio + eclipse-zenoh + reqwest) — and
+# publishes to ghcr.io/usareur-af/goat-ntp-health-pub.
+#
+# Per docs/design/universal-ntp-hygiene.md §9 + ADR 1036/1037 + F-184: a normal
+# mTLS Zenoh client peer that reads the local ntp-health-agent's signed verdict
+# (:9753/health) and republishes it verbatim on ops/time/attest/<host_id> at a
+# 30s heartbeat. Persists nothing. Builds independently of the zenoh router +
+# audit-subscriber + fabric-health images.
+#
+# Per-arch native build + manifest combine, mirroring fabric-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# Runs on nova-a / ZAGROS (Tegra arm64) and any x86 mgmt-host (production).
+#
+# Tag scheme:
+#   - On main push:                   :latest + :sha-<short>
+#   - On ntp-health-pub/v* tag:        :<tag-name>
+#   - On any build:                   :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/ntp-health-pub/**'
+      - '.github/workflows/ntp-health-image.yml'
+    tags: ['ntp-health-pub/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/ntp-health-pub/**'
+      - '.github/workflows/ntp-health-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-ntp-health-pub
+      tag_prefix: ntp-health-pub
+      context: ops/zenoh-trial-peers/ntp-health-pub
+      description: "Per-host NTP-health attestation republisher (ADR 1036/1037, F-184)"

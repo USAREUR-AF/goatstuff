@@ -1,0 +1,60 @@
+name: presence-health-image
+# Builds ops/zenoh-trial-peers/presence-health/Dockerfile — the
+# goat-presence-health meter (Rust + tokio + eclipse-zenoh + prost) — and
+# publishes to ghcr.io/usareur-af/goat-presence-health.
+#
+# Per docs/design/environment-health-surface.md + ADR 1040 gap 3: the presence
+# domain of the environment-health surface. A normal mTLS Zenoh client peer
+# that watches the fabric's liveliness presence tokens (`**/presence/**`,
+# history-replayed on connect) and publishes ops/presence/health/<site> as
+# EnvHealthV1{domain:"presence"}; native push-based presence, persists nothing.
+# Builds independently of the zenoh router + audit-subscriber images.
+#
+# Per-arch native build + manifest combine, mirroring mesh-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# The image runs on the ZAGROS + nova-a Thors (Tegra arm64) and on any x86
+# mgmt-host.
+#
+# Tag scheme:
+#   - On main push:                       :latest + :sha-<short>
+#   - On presence-health/v* tag:          :<tag-name>
+#   - On any build:                       :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/presence-health/**'
+      - '.github/workflows/presence-health-image.yml'
+    tags: ['presence-health/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/presence-health/**'
+      - '.github/workflows/presence-health-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-presence-health
+      tag_prefix: presence-health
+      context: ops/zenoh-trial-peers/presence-health
+      description: "Presence domain of the environment-health surface (ADR 1040 gap 3 / ADR 1036)"

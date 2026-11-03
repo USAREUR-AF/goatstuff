@@ -1,0 +1,53 @@
+name: stethoscope-image
+# Builds crates/stethoscope/Dockerfile and publishes to
+# ghcr.io/usareur-af/stethoscope. Multi-arch (amd64 + arm64) per the
+# panoscope-image workflow shape — the image runs on nova-a (Tegra
+# arm64) and any future amd64 host.
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/panoscope-core/**'
+      - 'crates/stethoscope-checks/**'
+      - 'crates/stethoscope/**'
+      - 'crates/Cargo.toml'
+      - 'crates/Cargo.lock'
+      - 'docs/design-system/colors_and_type.css'
+      - 'docs/design-system/components.css'
+      - '.github/workflows/stethoscope-image.yml'
+    tags: ['stethoscope/v*']
+  pull_request:
+    paths:
+      - 'crates/panoscope-core/**'
+      - 'crates/stethoscope-checks/**'
+      - 'crates/stethoscope/**'
+      - 'crates/Cargo.toml'
+      - 'crates/Cargo.lock'
+      - 'docs/design-system/colors_and_type.css'
+      - 'docs/design-system/components.css'
+      - '.github/workflows/stethoscope-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: stethoscope
+      tag_prefix: stethoscope
+      file: crates/stethoscope/Dockerfile

@@ -1,0 +1,82 @@
+name: node-net-health-image
+# Builds ops/zenoh-trial-peers/node-net-health/Dockerfile — the goat-node-net-health
+# meter (Rust + tokio + eclipse-zenoh + prost) — and publishes to
+# ghcr.io/usareur-af/goat-node-net-health.
+#
+# Per docs/design/node-net-health.md + ADR 1036: the net domain of the
+# environment-health surface. A normal mTLS Zenoh client peer that grades the
+# classified per-node connection snapshot (host-side node-net-health-snapshot
+# timer, read-only bind mount) and publishes ops/net/health/<node> as
+# EnvHealthV1{domain:"net"}; observation not enforcement, persists nothing.
+# Builds independently of the zenoh router + audit-subscriber images.
+#
+# Per-arch native build + manifest combine, mirroring time-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# The image runs on the ZAGROS + nova-a Thors (Tegra arm64) and on any x86
+# mgmt-host.
+#
+# Tag scheme:
+#   - On main push:                   :latest + :sha-<short>
+#   - On node-net-health/v* tag:          :<tag-name>
+#   - On any build:                   :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/node-net-health/**'
+      - '.github/workflows/node-net-health-image.yml'
+    tags: ['node-net-health/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/node-net-health/**'
+      - '.github/workflows/node-net-health-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-node-net-health
+      tag_prefix: node-net-health
+      context: ops/zenoh-trial-peers/node-net-health
+      description: "Net domain of the environment-health surface (node-net-health.md/ADR 1036)"
+
+  inventory-tests:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    name: publisher regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ops/zenoh-trial-peers/node-net-health/target
+          key: node-net-health-tests-${{ runner.os }}-${{ hashFiles('ops/zenoh-trial-peers/node-net-health/Cargo.lock') }}
+      - name: install Rust stable
+        run: rustup toolchain install stable --profile minimal
+      - name: publisher regressions
+        run: |
+          cargo +stable test --locked --manifest-path ops/zenoh-trial-peers/node-net-health/Cargo.toml

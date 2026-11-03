@@ -1,0 +1,59 @@
+name: audit-subscriber-image
+# Builds ops/zenoh-trial-peers/audit-subscriber/Dockerfile — Rust + tokio +
+# eclipse-zenoh + aws-sdk-s3 standalone audit subscriber — and publishes
+# to ghcr.io/usareur-af/goat-audit-subscriber.
+#
+# Per docs/design/zenoh-audit-external-subscriber.md + ADR 0858: this
+# pipeline is the structural-win replacement for the in-process audit-logger
+# plugin. It runs independently of the zenoh router image build (which is
+# being pivoted to upstream off-the-shelf in the same ADR), so an audit-
+# subscriber bug never blocks a zenoh upgrade and vice versa.
+#
+# Per-arch native build + manifest combine, mirroring panoscope-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# The image runs on nova-a (Tegra arm64) for the trial fabric and on any
+# x86 mgmt-host for production.
+#
+# Tag scheme:
+#   - On main push:                       :latest + :sha-<short>
+#   - On audit-subscriber/v* tag:         :<tag-name>
+#   - On any build:                       :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/audit-subscriber/**'
+      - '.github/workflows/audit-subscriber-image.yml'
+    tags: ['audit-subscriber/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/audit-subscriber/**'
+      - '.github/workflows/audit-subscriber-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-audit-subscriber
+      tag_prefix: audit-subscriber
+      context: ops/zenoh-trial-peers/audit-subscriber
+      description: "External Zenoh audit subscriber (Block 82S; ADR 0858 enabler)"

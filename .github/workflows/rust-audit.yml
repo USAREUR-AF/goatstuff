@@ -1,0 +1,128 @@
+name: rust-audit
+
+# Workspace-wide cargo-audit matrix — Rust analog of ci.yml's go-vuln
+# matrix. Runs cargo-audit (RustSec advisory database scan) against every
+# Cargo.lock in the repo so vulnerable upstream Rust crates surface as
+# CI failures the same way Go stdlib + module CVEs do.
+#
+# Block 13B supply-chain hardening — this workflow gates per-PR /
+# per-push cargo-audit across every Rust workspace in the repo. The
+# scan used to live inside zenoh-image.yml as part of the now-retired
+# image build (ADR 0858 step 5); lifting it here means the gate
+# applies whether or not there's an image build.
+#
+# Scope: every Cargo.lock the repo carries:
+#   - crates/Cargo.lock                  (the inspection surfaces)
+#   - ops/zenoh-shims/feeds-shim/Cargo.lock
+#   - ops/flashlight/Cargo.lock
+#
+# Each path is a parallel matrix entry (mirroring the go-vuln pattern).
+# A new Cargo.lock landing in the repo adds a row here.
+#
+# A lockfile gets a row once it passes `cargo audit`, or once each of its
+# advisories carries a documented --ignore, the way the rows below do.
+#
+# Documented `--ignore` advisories carry F-NNN traceability:
+#
+#   F-082 (Rust supply-chain debt — zenoh 1.0.4 transitive cluster):
+#     The zenoh = 1.0.4 pin (matching the deployed zenohd fleet) carries
+#     a chain of transitive vulns in protobuf < 3.7.2, rustls-webpki
+#     < 0.103.13, and rsa (no fix available — Marvin attack).
+#     Resolution path: coordinated zenoh upgrade across deployed routers
+#     + plugins + shims. Tracked as queued track 'rust-supply-chain-debt-
+#     cleanup' in active-work.yaml. Until the upgrade lands, each
+#     advisory is `--ignore`d with the F-082 reference; the workflow
+#     stays green for new advisories that aren't in the ignore set.
+
+on:
+  # push: on main REMOVED — this workflow is a guard, not a publisher. It
+  # already gates the pull request, and a squash merge puts the reviewed diff
+  # on main unchanged, so re-running it there re-verifies a commit whose answer
+  # is known. This guard does not run on a direct push to main.
+  # Publishers keep push: on purpose — the merge commit is the artifact.
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/Cargo.lock'
+      - '**/Cargo.toml'
+      - '.github/workflows/rust-audit.yml'
+  schedule:
+    # Sundays 03:00 UTC — catch new RustSec advisories landing against
+    # already-pinned dependencies, similar to the go-vuln weekly cadence
+    # that's implicit in setup-go's stable channel.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  audit:
+    name: cargo-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # `path` = working directory containing the Cargo.lock to scan.
+        # Add new rows here when a new Rust workspace lands.
+        # `ignores` = space-separated RustSec IDs to suppress, each
+        # cross-referenced to an F-NNN finding documenting the gap.
+        include:
+          - path: ops/zenoh-shims/feeds-shim
+            # Block 20D feeds-shim pinned to zenoh = 1.0.4. Same F-082
+            # advisory cluster minus protobuf (not a transitive dep here).
+            #   RUSTSEC-2026-0382 — rustls-webpki 0.102.8, reached only through
+            #     zenoh-link-commons 1.0.4; the 0.102 line has no patched release
+            #     (the fix is 0.103.16, which the 0.103 copy in this lockfile is
+            #     on). Same F-082 cluster; clears with the zenoh upgrade.
+            ignores: '--ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0049 --ignore RUSTSEC-2026-0382'
+          - path: crates
+            # The inspection-surface workspace. Only the F-082 Zenoh exceptions
+            # remain: pinned
+            # lz4_flex (compression disabled) and rsa (no upstream fix).
+            ignores: '--ignore RUSTSEC-2026-0041 --ignore RUSTSEC-2023-0071'
+          - path: ops/flashlight
+            # flashlight is a zenoh mTLS client. Its lock holds the rustls 0.23.40 /
+            # rustls-webpki 0.103.13 pair, the last one known to complete a handshake
+            # with a PQC router; a freshly floated pair does not. The TLS
+            # stack therefore moves only after a live handshake test, and its
+            # advisories are ignored here until then:
+            #   F-082: RUSTSEC-2026-0041 (lz4_flex, zenoh-transport pin) and
+            #     RUSTSEC-2023-0071 (rsa, no upstream fix), as in the rows above.
+            #   F-462: RUSTSEC-2026-0285, -0346, -0348, -0349 (rustls) and
+            #     RUSTSEC-2026-0382 (rustls-webpki).
+            #   F-462: RUSTSEC-2026-0338 to -0342 (quinn-proto). The patched
+            #     0.11.18 also moves rustls-platform-verifier 0.6 -> 0.7, the
+            #     same TLS stack. flashlight dials tls/, not quic/.
+            #   RUSTSEC-2026-0381, -0383 (webpki-roots, webpki-root-certs
+            #     bundled roots): bumped by #1919; drop these when it lands.
+            ignores: '--ignore RUSTSEC-2026-0041 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0285 --ignore RUSTSEC-2026-0346 --ignore RUSTSEC-2026-0348 --ignore RUSTSEC-2026-0349 --ignore RUSTSEC-2026-0382 --ignore RUSTSEC-2026-0338 --ignore RUSTSEC-2026-0339 --ignore RUSTSEC-2026-0340 --ignore RUSTSEC-2026-0341 --ignore RUSTSEC-2026-0342 --ignore RUSTSEC-2026-0381 --ignore RUSTSEC-2026-0383'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: ''
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo-audit
+        working-directory: ${{ matrix.path }}
+        # `cargo audit` (without --deny warnings) hard-fails on
+        # vulnerabilities only; non-vulnerability warnings (unmaintained
+        # crates) are reported but don't fail. Ignored RustSec IDs per
+        # F-082 are passed via --ignore. Adding a new --ignore must be
+        # accompanied by F-NNN crossref above and a queued cleanup track.
+        run: cargo audit ${{ matrix.ignores }}

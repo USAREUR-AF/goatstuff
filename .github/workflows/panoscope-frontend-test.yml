@@ -1,0 +1,65 @@
+name: panoscope-frontend-test
+
+# Typecheck + playwright e2e for the panoscope SPA. Path-filtered so
+# only frontend-touching PRs pay the runtime. The e2e spec mocks the
+# Rust backend end-to-end (WebSocket via addInitScript, REST via
+# page.route) so this job does not depend on a built panoscope binary
+# or a live Zenoh fabric; it's a pure frontend gate against the click-
+# rhythm regression class (search-overlay desync + multi-selection
+# collapse trap). See ops/panoscope/frontend/tests/.
+
+on:
+  # A guard, not a publisher: it runs on the pull request, and a squash merge puts
+  # the reviewed diff on main unchanged.
+  pull_request:
+    paths:
+      - 'ops/panoscope/frontend/**'
+      - '.github/workflows/panoscope-frontend-test.yml'
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  typecheck-and-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ops/panoscope/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ops/panoscope/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build production bundle (smoke)
+        run: npm run build
+
+      - name: Run e2e spec
+        run: npx playwright test --reporter=list
+
+      - name: Upload playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: ops/panoscope/frontend/playwright-report/
+          retention-days: 7

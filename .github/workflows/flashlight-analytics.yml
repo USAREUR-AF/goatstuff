@@ -1,0 +1,137 @@
+name: flashlight-analytics
+
+# Block 89 Phase D per docs/design/flashlight.md.
+#
+# Two-job gate for the dual-target `crates/flashlight-analytics/` crate:
+#
+#   * `native-test`  — runs `cargo test -p flashlight-analytics` on the
+#     native target. Exercises the fixture-driven equivalence-test
+#     substrate in `tests/equivalence.rs`: each fixture under
+#     `tests/fixtures/<name>.json` drives a fresh `Engine` and asserts
+#     byte-equal serialized output against the fixture's
+#     `expected_snapshot_json` field. Capability commits add new
+#     fixtures + expected outputs.
+#
+#   * `wasm-build`   — runs `cargo check --target wasm32-unknown-unknown
+#     -p flashlight-analytics --lib`. Asserts the crate continues to
+#     compile cleanly for the browser Tier 2 target.
+#
+#   * `wasm-test`    — runs the same fixture-driven equivalence tests
+#     on the wasm32 target via `wasm-bindgen-test-runner` (installed
+#     by `cargo install wasm-bindgen-cli` at the wasm-bindgen version
+#     the crate depends on). Drives the WASM build through Node so
+#     the same fixture asserts byte-equal output on both native and
+#     wasm32 — the Phase D gate to Phase E.
+#
+# Gate to Phase E (per the design doc): equivalence tests pass on CI for
+# all four v1 capabilities + binary-identical output asserted between
+# the native + WASM compile targets.
+
+on:
+  # A guard, not a publisher: it runs on the pull request, and a squash merge puts
+  # the reviewed diff on main unchanged.
+  pull_request:
+    paths:
+      - 'crates/flashlight-analytics/**'
+      - 'crates/Cargo.toml'
+      - 'crates/Cargo.lock'
+      - '.github/workflows/flashlight-analytics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  native-test:
+    name: native test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: ''
+
+      - name: cargo test
+        run: cargo test -p flashlight-analytics --all-features
+
+  wasm-build:
+    name: wasm32 build gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: ''
+          target: wasm32-unknown-unknown
+
+      - name: cargo check (wasm32)
+        run: cargo check --target wasm32-unknown-unknown -p flashlight-analytics --lib
+
+  wasm-test:
+    name: wasm32 runtime equivalence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: crates
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: ''
+          target: wasm32-unknown-unknown
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wasm-bindgen-test-runner
+        # Version must match the `wasm-bindgen` crate version in
+        # crates/Cargo.lock EXACTLY. The comment that used to sit here
+        # said 0.2.x was backwards-compatible within the minor; it is
+        # not — the bindgen schema changes across patch releases and the
+        # CLI refuses a mismatch (0.2.128 vs a 0.2.122 lock took every
+        # flashlight image build red). Same rule as
+        # ops/flashlight/Dockerfile: read the lock, install "=<that>".
+        # (This job's working-directory is crates/, so the lock is ./Cargo.lock.)
+        run: |
+          V="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3; exit }' Cargo.lock)"
+          test -n "$V"
+          echo "wasm-bindgen-cli =$V (from crates/Cargo.lock)"
+          cargo install --locked wasm-bindgen-cli --version "=$V"
+
+      - name: cargo test (wasm32, equivalence)
+        # `wasm-bindgen-test-runner` is invoked via the
+        # CARGO_TARGET_..._RUNNER env var. `--test equivalence`
+        # restricts to the dual-target file; the lib's `#[test]`
+        # bodies aren't WASM-compatible (e.g. they touch
+        # prost-reflect's DescriptorPool via Vec/HashMap, which is
+        # fine, but they're conventional `#[test]`-only and don't
+        # run on the wasm32 target).
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+          WASM_BINDGEN_TEST_TIMEOUT: '60'
+        run: cargo test --target wasm32-unknown-unknown -p flashlight-analytics --test equivalence
