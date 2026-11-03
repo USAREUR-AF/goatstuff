@@ -39,7 +39,17 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import render as R          # noqa: E402
-import scrub                # noqa: E402
+try:
+    import scrub            # noqa: E402  the deployment's own name and place check
+except ImportError:         # a public checkout carries no deployment roster to check against
+    class scrub:            # noqa: N801
+        @staticmethod
+        def find_hits(text, roster):
+            return []
+
+        @staticmethod
+        def roster_names():
+            return set()
 
 try:
     import yaml

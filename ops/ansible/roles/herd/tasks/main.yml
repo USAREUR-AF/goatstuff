@@ -114,6 +114,8 @@
 # a self-signed cert. That shape cost a full deploy cycle to spot, so name the
 # two references and check them BEFORE writing the file rather than after.
 - name: herd | read the middlewares Traefik actually has defined
+  args:
+    executable: /bin/bash
   ansible.builtin.shell:
     cmd: >-
       set -o pipefail;
@@ -164,6 +166,8 @@
 # converged host prints. Compare the RUNNING copy against the host copy and
 # recreate on mismatch, rather than trusting the convergence verdict.
 - name: herd | detect a stale bind-mounted key inside the container
+  args:
+    executable: /bin/bash
   ansible.builtin.shell:
     cmd: |
       set -o pipefail
@@ -221,6 +225,8 @@
 # deploy would have reported a healthy herd while herd was broken. A false PASS
 # is the worse failure, so the probe now names the container it means.
 - name: herd | smoke the health endpoint (host -> container IP)
+  args:
+    executable: /bin/bash
   ansible.builtin.shell:
     cmd: >-
       set -o pipefail;
