@@ -1,0 +1,28 @@
+# Cargo workspace for the inspection surfaces:
+#   - stethoscope-checks/  Check trait + registry + the checks
+#   - stethoscope/         binary — axum + SSE + server-rendered diagnosis page
+#   - flashlight-analytics/ audit-tail analytics
+#   - microscope/          one peer in detail
+#   - netvis/              the mesh ACL as a picture
+#
+# Every surface composes `panoscope-core` from the goatcore repository, pinned
+# by tag below. Bump the tag deliberately; `cargo update -p panoscope-core`
+# after changing it.
+
+[workspace]
+resolver = "2"
+members = [
+    "stethoscope-checks",
+    "stethoscope",
+    "flashlight-analytics",
+    "microscope",
+    "netvis",
+]
+
+[workspace.dependencies]
+panoscope-core = { git = "https://github.com/usareur-af/goatcore", tag = "goatcore/v0.1.0" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+strip = true

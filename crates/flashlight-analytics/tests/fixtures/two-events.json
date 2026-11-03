@@ -1,0 +1,54 @@
+{
+  "events": [
+    {
+      "key": "vendor-a/observations/v1/alpha",
+      "ts_ms": 1716750000000,
+      "payload": [104, 101, 108, 108, 111],
+      "format": "protobuf:Observation"
+    },
+    {
+      "key": "vendor-a/observations/v1/alpha",
+      "ts_ms": 1716750001000,
+      "payload": [119, 111, 114, 108, 100]
+    }
+  ],
+  "expected_snapshot_json": {
+    "event_count": 2,
+    "stats": {
+      "window_ms": 300000,
+      "sample_count": 2,
+      "rate_hz": 0.006666666666666667,
+      "inter_arrival_p50_ms": 1000.0,
+      "inter_arrival_p95_ms": 1000.0,
+      "inter_arrival_p99_ms": 1000.0,
+      "byte_p50": 5,
+      "byte_p95": 5,
+      "byte_p99": 5
+    },
+    "schema_diff": {
+      "seen_formats": {
+        "vendor-a/observations/v1/alpha": null
+      },
+      "drift_events": [
+        {
+          "ts_ms": 1716750001000,
+          "key": "vendor-a/observations/v1/alpha",
+          "previous_format": "protobuf:Observation",
+          "current_format": null
+        }
+      ]
+    },
+    "anomaly": {
+      "sample_count": 1,
+      "mean": 1000.0,
+      "stddev": 0.0,
+      "latest_sample": 1000.0,
+      "latest_z_score": null
+    },
+    "sparkline": {
+      "window_ms": 300000,
+      "bin_count": 60,
+      "points": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0]
+    }
+  }
+}

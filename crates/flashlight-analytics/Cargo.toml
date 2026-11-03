@@ -1,0 +1,33 @@
+[package]
+name = "flashlight-analytics"
+version = "0.0.1-alpha"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "flashlight Tier 2 analytics — protobuf decode + rolling stats + schema diff + z-score anomaly. Compiles to wasm32-unknown-unknown (browser) AND native (server /api/compute). Block 89 Phase D per docs/design/flashlight.md."
+repository = "https://github.com/usareur-af/goatcore"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Protobuf decode capability — same crate panoscope's decoder.rs uses
+# (DescriptorPool::decode + DynamicMessage::decode + serde feature for
+# JSON serialization). Pure-Rust, builds for both native + wasm32.
+prost-reflect = { version = "0.14", features = ["serde"] }
+# prost + prost-types let us hand-build FileDescriptorSet values in
+# tests without needing protoc as a build dependency. Promoted from
+# transitive to explicit so the decode-test fixture can construct
+# minimal FDS bytes programmatically.
+prost = "0.13"
+prost-types = "0.13"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"

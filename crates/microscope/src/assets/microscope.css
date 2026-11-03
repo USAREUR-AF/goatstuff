@@ -1,0 +1,275 @@
+/* microscope layout on top of the design-system components.
+ *
+ * This sheet is concatenated LAST (render.rs), so anything it declares wins.
+ * It is therefore deliberately small: layout and the two microscope-specific
+ * affordances, never a second copy of the component vocabulary.
+ *
+ * Three token bugs fixed, all of which silently degraded to
+ * hardcoded off-palette fallbacks or dropped declarations entirely:
+ *
+ *   --warn           never defined anywhere -> fell back to #d9a13b. The real
+ *                    token is --c-amber.
+ *   --border-subtle  never defined anywhere -> fell back to #333. Real: --c-line.
+ *   --border         IS defined, but as a SHORTHAND: `1px solid var(--c-line)`.
+ *                    Writing `1px solid var(--border, #444)` expanded to
+ *                    `1px solid 1px solid ...`, which is invalid, so the whole
+ *                    declaration was DROPPED — the topbar rule and the .attr
+ *                    chip outline simply were not rendering. Use --c-line for
+ *                    a color, or `border: var(--border)` for the shorthand.
+ *
+ * .card, table and dl styling now come from components.css (.card, .table,
+ * .kv) rather than being re-implemented here at equal specificity with
+ * off-scale radius and padding.
+ */
+
+main { max-width: 72rem; margin: 0 auto; padding: var(--s-4, 1rem); }
+
+.topbar {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid var(--c-line);
+}
+.topbar .brand { font-weight: 700; }
+.topbar .doctrine { margin-left: auto; opacity: .7; font-size: .85em; }
+
+.hero .sel { opacity: .7; }
+
+.picker { display: flex; gap: .5rem; margin-top: 1rem; }
+.picker input { flex: 1; padding: .5rem; }
+
+/* Spine + Capability sit side by side on a wide screen and stack on a narrow
+ * one. Without the query both cards crushed to half width on a phone, which
+ * is where an operator reads this during an incident. */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+@media (max-width: 46rem) {
+  .cards { grid-template-columns: 1fr; }
+}
+
+.join-miss { opacity: .75; font-size: .9em; }
+
+.sources tr.skipped td { opacity: .55; }
+.sources tr.error td { color: var(--danger); }
+
+/* Hand-rolled at one point as a copy of .banner--warn; kept local only for
+ * the tighter type scale this one line needs. */
+.silent {
+  font-size: .9em;
+  opacity: .85;
+  border-left: 3px solid var(--c-amber);
+  padding-left: .6rem;
+}
+
+.timeline td.ts { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.attr {
+  font-size: .8em;
+  opacity: .7;
+  border: 1px solid var(--c-line);
+  border-radius: 4px;
+  padding: 0 .3rem;
+}
+
+.empty { opacity: .7; }
+
+/* "We did not read this" — visually distinct from a value AND from "(none)",
+ * which is a claim about the entity. Italic + muted so it never reads as
+ * data, on a surface where a false negative about a person is the failure
+ * mode that matters most. */
+.unknown { font-style: italic; opacity: .7; }
+
+/* Panel kind — the operator's "can't tell which panels are logs and which
+ * are status" complaint, answered at the panel level. Two treatments, not
+ * decoration:
+ *   stream  = .card--live (design-system, green top rule) + this subtitle
+ *   state   = plain .card + a subtitle saying AS OF WHEN
+ * The subtitle carries the meaning; the rule is the glance-level cue. */
+h2 .panel-kind, h3 .panel-kind {
+  display: block;
+  font-size: .7rem;
+  font-weight: 400;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  opacity: .6;
+  margin-top: .25rem;
+}
+
+/* Deployment diagnostics: real information, subordinate placement. These
+ * were body text in the Spine card, where "portal orgs unavailable" read
+ * with the same weight as the subject's email address. */
+.diagnostics { margin-top: .9rem; padding-top: .6rem; border-top: 1px solid var(--c-line); }
+.diagnostics h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; opacity: .7; margin: 0 0 .35rem; }
+.diagnostics ul { margin: 0; padding-left: 1.1rem; }
+.diagnostics li { font-size: .9em; opacity: .75; margin-bottom: .15rem; }
+
+/* Event kind — "is this entity DOING something, or just reaching something?"
+ *. Admin is the loud one on purpose: an
+ * administrative mutation is what an investigator scans for.
+ *
+ * `unclassified` is styled to be NOTICED, not to blend in. An action string
+ * this build does not recognise must never read as harmless — mistaking a
+ * mutation for browsing hides exactly the row someone is looking for, while
+ * the reverse costs a second glance. New source verbs appear across NetBird
+ * and Ory versions, so unrecognised is a normal state, not an error. */
+.kind {
+  display: inline-block; font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: .68rem; letter-spacing: .06em; text-transform: uppercase;
+  padding: .05rem .35rem; border-radius: 2px; border: 1px solid var(--c-line);
+}
+.kind-admin        { color: var(--c-amber); border-color: var(--c-amber); font-weight: 600; }
+.kind-data         { color: var(--c-green-mid, var(--settled, #2f7d6e)); border-color: currentColor; }
+.kind-access       { opacity: .8; }
+.kind-passive      { opacity: .55; }
+.kind-unclassified { color: var(--danger); border-style: dashed; border-color: var(--danger); }
+
+/* Outcome — only rendered when the SOURCE recorded one. Absence is never
+ * drawn as success: most sources log what happened, not what was refused,
+ * and two layers refuse with no record at all. */
+.oc { font-family: var(--font-mono, ui-monospace, monospace); font-size: .66rem;
+      text-transform: uppercase; letter-spacing: .06em; padding: .05rem .3rem;
+      border-radius: 2px; margin-left: .25rem; }
+.oc-refused { color: var(--c-amber); border: 1px solid var(--c-amber); }
+.oc-failed  { color: var(--danger); border: 1px solid var(--danger); font-weight: 600; }
+
+/* The source's own error text — the usability signal: a real message a real
+ * person hit, shown verbatim rather than summarised away. */
+.err { font-family: var(--font-mono, ui-monospace, monospace); font-size: .85em;
+       opacity: .8; color: var(--danger); }
+
+/* Direction badge — the polarity axis, deliberately quieter than `kind` and
+   `outcome`. It qualifies the act rather than classifying it, so it must not
+   compete with the badge a reader scans for first. `self` is tinted because
+   self-service is the case people look for specifically; `at` (done TO the
+   entity) carries the most weight of the three, since a row where the entity
+   is the object is the one most easily misread as something they did. */
+.dir {
+  display: inline-block;
+  margin-left: .35em;
+  padding: 0 .4em;
+  border-radius: 3px;
+  font-size: .82em;
+  font-weight: 500;
+  letter-spacing: .01em;
+  border: 1px solid currentColor;
+  opacity: .85;
+}
+.dir-by   { color: var(--fg-muted, #6b7280); }
+.dir-at   { color: var(--accent-warn, #b45309); opacity: 1; }
+.dir-self { color: var(--accent, #2563eb); }
+
+/* Reachability graph. Deliberately flat and static: no transitions on the
+   nodes, because a graph that moves on its own reads as activity when nothing
+   has happened — the same confusion the timeline avoids by refusing to emit
+   connected peers as events. */
+.graph-scroll { overflow-x: auto; }
+.graph svg { display: block; min-width: 900px; }
+.edge { fill: none; stroke-width: 1.6; }
+.edge-membership { stroke: var(--fg-muted, #9ca3af); stroke-dasharray: 3 3; opacity: .7; }
+.edge-permitted  { stroke: var(--fg-muted, #6b7280); opacity: .85; }
+.edge-reachable  { stroke: var(--accent-ok, #059669); stroke-width: 2.4; }
+.node rect { fill: var(--bg-raised, #fff); stroke: var(--border, #d1d5db); }
+.node-peer rect     { stroke: var(--accent, #2563eb); }
+.node-dstgroup rect { stroke-dasharray: 4 3; }
+.node text { text-anchor: middle; }
+.nlabel { font-size: 12px; font-weight: 600; fill: var(--fg, #111827); }
+.nsub   { font-size: 10px; fill: var(--fg-muted, #6b7280); }
+.legend { list-style: none; padding: 0; display: grid; gap: .35rem; }
+.legend .ek { display: inline-block; width: 22px; height: 0; border-top-width: 3px; border-top-style: solid; margin-right: .5em; vertical-align: middle; }
+.ek-reachable  { border-color: var(--accent-ok, #059669); }
+.ek-permitted  { border-color: var(--fg-muted, #6b7280); }
+.ek-membership { border-color: var(--fg-muted, #9ca3af); border-top-style: dashed; }
+.notes { font-size: .88em; color: var(--fg-muted, #6b7280); }
+.viewlink { margin: .6rem 0 0; font-size: .92em; }
+
+/* Path selection. The edge is the interactive element — it is the thing that
+   answers a question, so it gets the affordance, not the nodes. */
+path.edge { cursor: pointer; }
+path.edge:hover, path.edge:focus { stroke-width: 3.4; outline: none; }
+path.edge.sel { stroke-width: 3.8; }
+.pathdetail { margin: .5rem 0 0; font-size: .9em; color: var(--fg-muted, #6b7280); }
+.pathdetail.on { color: var(--fg, #111827); font-weight: 500; }
+
+/* Persistent navigation. The top bar sticks because it is the only route to
+   another entity, and a page that can be thousands of pixels tall must not
+   hide its own navigation at one end. */
+.topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.topbar .brand { text-decoration: none; }
+.navsearch { display: flex; gap: .4rem; margin-left: auto; margin-right: 1rem; }
+.navsearch input {
+  min-width: 20rem; padding: .3rem .55rem; border-radius: 4px;
+  border: 1px solid var(--border, #d1d5db);
+  background: var(--bg, #fff); color: var(--fg, #111827); font-size: .9rem;
+}
+.navsearch button {
+  padding: .3rem .7rem; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--border, #d1d5db);
+  background: var(--bg-raised, #f9fafb); color: var(--fg, #111827); font-size: .9rem;
+}
+/* Typeahead. The list hangs off the input's own wrapper so it lands under the
+   box on both search forms without either one knowing about it. */
+.sugwrap { position: relative; display: flex; }
+.navsearch .sugwrap { flex: 1 1 auto; }
+.suggest {
+  position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 40;
+  margin: 0; padding: .2rem 0; list-style: none; max-height: 22rem; overflow-y: auto;
+  border: 1px solid var(--border, #d1d5db); border-radius: 5px;
+  background: var(--bg, #fff); box-shadow: 0 6px 18px rgba(0,0,0,.14);
+}
+.suggest .sug-item {
+  display: flex; align-items: baseline; gap: .5rem; cursor: pointer;
+  padding: .3rem .6rem; font-size: .9rem;
+}
+.suggest .sug-item.on { background: var(--bg-raised, #f3f4f6); }
+.sug-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sug-label mark { background: var(--accent-soft, #fde68a); color: inherit; padding: 0 .05em; }
+.sug-kind {
+  flex: 0 0 auto; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--fg-muted, #6b7280); border: 1px solid var(--border, #d1d5db);
+  border-radius: 3px; padding: 0 .3em;
+}
+.sug-detail {
+  flex: 0 1 auto; font-size: .8rem; color: var(--fg-muted, #6b7280);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The unknown/none distinction the whole surface turns on, in list form: this
+   row says why there is nothing to pick, and never pretends the roster was
+   read when it was not. */
+.suggest .sug-note { padding: .35rem .6rem; font-size: .85rem; color: var(--fg-muted, #6b7280); }
+.pickerhint { margin: .5rem 0 0; font-size: .88em; color: var(--fg-muted, #6b7280); max-width: 46rem; }
+
+.crumb { margin: .25rem 0 .5rem; font-size: .9em; }
+.pick { list-style: none; padding: 0; display: grid; gap: .3rem; }
+.pick a { display: inline-block; padding: .15rem 0; }
+@media (max-width: 800px) { .navsearch { margin-left: 0; width: 100%; } .navsearch input { min-width: 0; flex: 1; } }
+
+/* The "why" table. Same visual weight as the graph itself — the mechanism is
+   half the answer, not an appendix to it. */
+.subjgroups { margin: .6rem 0 .2rem; font-size: .92em; }
+.whyhead { margin: 1rem 0 .4rem; font-size: 1rem; }
+
+/* Direction. One-way is the common case and gets the quiet treatment; a
+   two-way grant is wider than it looks from an arrow, so it is marked. */
+.dirc { font-size: .82em; padding: 0 .35em; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
+.dir-oneway { color: var(--fg-muted, #6b7280); }
+.dir-both   { color: var(--accent-warn, #b45309); }
+
+/* ---- netvis -------------------------------------------------------------
+   The ACL at goatnet altitude. Reuses .table/.note/.unknown; only the graph
+   primitives and the two emphasis marks are new. */
+.note-warn { border-left: 3px solid var(--color-warning, #b8860b); padding-left: .75rem; }
+.badge-warn {
+  font-size: .72em; text-transform: uppercase; letter-spacing: .04em;
+  padding: .1em .45em; border-radius: 3px;
+  background: var(--color-warning, #b8860b); color: var(--color-bg, #fff);
+}
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.steps { margin: .5rem 0 .75rem 1.1rem; }
+.steps li { margin-bottom: .45rem; }
+/* Wide content scrolls in its own box so the page body never scrolls sideways. */
+.svgwrap { overflow-x: auto; margin-top: .5rem; }
+.gedge { stroke: var(--color-accent, #6a8caf); stroke-width: 1.1; opacity: .5; }
+.gedge:hover { opacity: 1; stroke-width: 2; }
+.gnode { fill: var(--color-text, #222); }
+.glabel { font-size: 11px; font-family: var(--font-mono, monospace); fill: var(--color-text, #222); }

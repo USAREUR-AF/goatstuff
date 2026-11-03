@@ -1,0 +1,589 @@
+{
+  "_note": "Fixture for ops/ci/check-netvis-client.js — a COMPLETE /api/reach Doc, small enough to reason about by hand and shaped to carry every case the client has silently got wrong. Synthetic: no real machine or person appears here. Three scope families so a cross-site drill has a direction; SITE-A -> SITE-B is permitted by a rule, SITE-A <-> SITE-C by NOTHING except a machine that holds groups in both. One edge at each rung of the realization ladder. `All` is the group in no scope family, present because a real goatnet always has one and because it must NOT be counted as a bridge.",
+  "schema": 1,
+  "site": "fixture",
+  "alt": "fabric",
+  "generated_at": "2026-08-12T00:00:00Z",
+  "policies_read": true,
+  "groups_read": true,
+  "peers_read": true,
+  "notes": [],
+  "read": {
+    "total": 5,
+    "enabled": 5,
+    "disabled": 0,
+    "rendered": 5,
+    "not_group_addressable": 0,
+    "denied": 0,
+    "unread": 0
+  },
+  "counts": {
+    "groups": 7,
+    "peers": 5,
+    "peers_connected": 4,
+    "pairs": 5,
+    "self_pairs": 0,
+    "unrestricted": 4,
+    "scoped": 1,
+    "one_way": 5,
+    "reciprocal": 0,
+    "bidirectional_flag": 0,
+    "realization_unknown": 0,
+    "latent": 1,
+    "dormant": 2,
+    "realized": 2,
+    "realized_unrestricted": 2,
+    "groups_empty": 1,
+    "groups_in_no_rule": 1,
+    "groups_reserved": 0,
+    "cross_family_edges": 1
+  },
+  "band_matrix": {},
+  "canvas": {
+    "w": 1100,
+    "h": 600
+  },
+  "geom": {
+    "lplate": 132,
+    "pad": 24,
+    "rgut": 24,
+    "core_h": 56,
+    "pitch": 100
+  },
+  "core_ruler_h": 124,
+  "feed_ruler_h": 40,
+  "panel_h": 302,
+  "panel_gap": 16,
+  "bands": [],
+  "axes": {
+    "core": [],
+    "feed": [],
+    "rail": [],
+    "hub": null,
+    "dorm": []
+  },
+  "panels": [
+    {
+      "i": 0,
+      "family": "SITE-A",
+      "y": 0,
+      "h": 302,
+      "groups": 3,
+      "populated": 2,
+      "pairs": 3,
+      "unrestricted": 2,
+      "reserved": []
+    },
+    {
+      "i": 1,
+      "family": "SITE-B",
+      "y": 318,
+      "h": 302,
+      "groups": 2,
+      "populated": 2,
+      "pairs": 1,
+      "unrestricted": 1,
+      "reserved": []
+    },
+    {
+      "i": 2,
+      "family": "SITE-C",
+      "y": 636,
+      "h": 302,
+      "groups": 1,
+      "populated": 1,
+      "pairs": 0,
+      "unrestricted": 0,
+      "reserved": []
+    },
+    {
+      "i": 3,
+      "family": "<unscoped>",
+      "y": 954,
+      "h": 302,
+      "groups": 1,
+      "populated": 1,
+      "pairs": 0,
+      "unrestricted": 0,
+      "reserved": []
+    }
+  ],
+  "nodes": [
+    {
+      "i": 0,
+      "id": "g0",
+      "name": "SITE-A-INFRA",
+      "panel": 0,
+      "family": "SITE-A",
+      "suffix": "INFRA",
+      "band": "core",
+      "slot": 0,
+      "x": 0,
+      "y": 0,
+      "w": 60,
+      "h": 40,
+      "members": 2,
+      "members_connected": 2,
+      "deg_neighbours": 3,
+      "deg_template": 3,
+      "deg_instances": 3,
+      "in": 1,
+      "out": 3,
+      "declared": true,
+      "live": true,
+      "reserved": false,
+      "purpose": "the substrate",
+      "latent_paths": 0,
+      "findings": []
+    },
+    {
+      "i": 1,
+      "id": "g1",
+      "name": "SITE-A-KID",
+      "panel": 0,
+      "family": "SITE-A",
+      "suffix": "KID",
+      "band": "core",
+      "slot": 1,
+      "x": 0,
+      "y": 0,
+      "w": 60,
+      "h": 40,
+      "members": 1,
+      "members_connected": 1,
+      "deg_neighbours": 1,
+      "deg_template": 1,
+      "deg_instances": 2,
+      "in": 1,
+      "out": 1,
+      "declared": true,
+      "live": true,
+      "reserved": false,
+      "purpose": "gear",
+      "latent_paths": 0,
+      "findings": []
+    },
+    {
+      "i": 2,
+      "id": "g2",
+      "name": "SITE-A-QUARANTINED",
+      "panel": 0,
+      "family": "SITE-A",
+      "suffix": "QUARANTINED",
+      "band": "dorm",
+      "slot": 2,
+      "x": 0,
+      "y": 0,
+      "w": 60,
+      "h": 40,
+      "members": 0,
+      "members_connected": 0,
+      "deg_neighbours": 1,
+      "deg_template": 1,
+      "deg_instances": 1,
+      "in": 1,
+      "out": 0,
+      "declared": true,
+      "live": false,
+      "reserved": false,
+      "purpose": "containment",
+      "latent_paths": 1,
+      "findings": []
+    },
+    {
+      "i": 3,
+      "id": "g3",
+      "name": "SITE-B-INFRA",
+      "panel": 1,
+      "family": "SITE-B",
+      "suffix": "INFRA",
+      "band": "core",
+      "slot": 0,
+      "x": 0,
+      "y": 0,
+      "w": 60,
+      "h": 40,
+      "members": 1,
+      "members_connected": 0,
+      "deg_neighbours": 2,
+      "deg_template": 2,
+      "deg_instances": 2,
+      "in": 1,
+      "out": 1,
+      "declared": true,
+      "live": true,
+      "reserved": false,
+      "purpose": "the substrate",
+      "latent_paths": 0,
+      "findings": []
+    },
+    {
+      "i": 4,
+      "id": "g4",
+      "name": "SITE-B-KID",
+      "panel": 1,
+      "family": "SITE-B",
+      "suffix": "KID",
+      "band": "core",
+      "slot": 1,
+      "x": 0,
+      "y": 0,
+      "w": 60,
+      "h": 40,
+      "members": 1,
+      "members_connected": 1,
+      "deg_neighbours": 1,
+      "deg_template": 1,
+      "deg_instances": 1,
+      "in": 1,
+      "out": 0,
+      "declared": true,
+      "live": true,
+      "reserved": false,
+      "purpose": "gear",
+      "latent_paths": 0,
+      "findings": []
+    },
+    {
+      "i": 5,
+      "id": "g5",
+      "name": "SITE-C-KID",
+      "panel": 2,
+      "family": "SITE-C",
+      "suffix": "KID",
+      "band": "core",
+      "slot": 0,
+      "x": 0,
+      "y": 0,
+      "w": 60,
+      "h": 40,
+      "members": 1,
+      "members_connected": 1,
+      "deg_neighbours": 0,
+      "deg_template": 0,
+      "deg_instances": 0,
+      "in": 0,
+      "out": 0,
+      "declared": true,
+      "live": true,
+      "reserved": false,
+      "purpose": "gear",
+      "latent_paths": 0,
+      "findings": []
+    },
+    {
+      "i": 6,
+      "id": "g6",
+      "name": "All",
+      "panel": -1,
+      "family": "<unscoped>",
+      "suffix": "<self>",
+      "band": "unscoped",
+      "slot": 0,
+      "x": 0,
+      "y": 0,
+      "w": 60,
+      "h": 40,
+      "members": 5,
+      "members_connected": 4,
+      "deg_neighbours": 0,
+      "deg_template": 0,
+      "deg_instances": 0,
+      "in": 0,
+      "out": 0,
+      "declared": false,
+      "live": true,
+      "reserved": false,
+      "latent_paths": 0,
+      "findings": []
+    }
+  ],
+  "edges": [
+    {
+      "i": 0,
+      "s": 0,
+      "d": 1,
+      "route": "core",
+      "path": "",
+      "dir": "one_way",
+      "unrestricted": true,
+      "shadowed": false,
+      "realization": "realized",
+      "constraints": [
+        "all protocols · all ports"
+      ],
+      "rules": [
+        0
+      ],
+      "rules_reverse": [
+        false
+      ],
+      "findings": []
+    },
+    {
+      "i": 1,
+      "s": 1,
+      "d": 0,
+      "route": "core",
+      "path": "",
+      "dir": "reciprocal",
+      "unrestricted": false,
+      "shadowed": false,
+      "realization": "realized",
+      "constraints": [
+        "tcp · 443"
+      ],
+      "rules": [
+        1
+      ],
+      "rules_reverse": [
+        false
+      ],
+      "findings": []
+    },
+    {
+      "i": 2,
+      "s": 0,
+      "d": 2,
+      "route": "dorm",
+      "path": "",
+      "dir": "one_way",
+      "unrestricted": true,
+      "shadowed": false,
+      "realization": "latent",
+      "constraints": [
+        "all protocols · all ports"
+      ],
+      "rules": [
+        2
+      ],
+      "rules_reverse": [
+        false
+      ],
+      "findings": []
+    },
+    {
+      "i": 3,
+      "s": 3,
+      "d": 4,
+      "route": "core",
+      "path": "",
+      "dir": "one_way",
+      "unrestricted": true,
+      "shadowed": false,
+      "realization": "dormant",
+      "constraints": [
+        "all protocols · all ports"
+      ],
+      "rules": [
+        3
+      ],
+      "rules_reverse": [
+        false
+      ],
+      "findings": []
+    },
+    {
+      "i": 4,
+      "s": 0,
+      "d": 3,
+      "route": "core",
+      "path": "",
+      "dir": "one_way",
+      "unrestricted": true,
+      "shadowed": false,
+      "realization": "dormant",
+      "constraints": [
+        "all protocols · all ports"
+      ],
+      "rules": [
+        4
+      ],
+      "rules_reverse": [
+        false
+      ],
+      "findings": []
+    }
+  ],
+  "rules": [
+    {
+      "i": 0,
+      "policy": "a-infra-to-kid",
+      "policy_id": "p0",
+      "rule_name": "site-a infra → kid",
+      "constraint": "tcp · 443, 53, 5353, 7447",
+      "protocol": "tcp",
+      "ports": [
+        "443",
+        "53",
+        "5353",
+        "7447"
+      ],
+      "bidirectional": false,
+      "enabled": true,
+      "unrestricted": false,
+      "port_set": "substrate",
+      "port_set_purpose": "Reach the goatnet's own services — mesh web, DNS, the fabric.",
+      "port_set_owner": "platform-admin",
+      "expires": "2027-01-31",
+      "grant_owner": "platform-admin"
+    },
+    {
+      "i": 1,
+      "policy": "a-kid-to-infra",
+      "policy_id": "p1",
+      "rule_name": "site-a kid → infra (https)",
+      "constraint": "tcp · 443",
+      "protocol": "tcp",
+      "ports": [
+        "443"
+      ],
+      "bidirectional": false,
+      "enabled": true,
+      "unrestricted": false
+    },
+    {
+      "i": 2,
+      "policy": "a-infra-to-quarantined",
+      "policy_id": "p2",
+      "rule_name": "site-a infra → quarantined",
+      "constraint": "all protocols · all ports",
+      "protocol": "all",
+      "ports": [],
+      "bidirectional": false,
+      "enabled": true,
+      "unrestricted": true
+    },
+    {
+      "i": 3,
+      "policy": "b-infra-to-kid",
+      "policy_id": "p3",
+      "rule_name": "site-b infra → kid",
+      "constraint": "all protocols · all ports",
+      "protocol": "all",
+      "ports": [],
+      "bidirectional": false,
+      "enabled": true,
+      "unrestricted": true
+    },
+    {
+      "i": 4,
+      "policy": "a-infra-to-b-infra",
+      "policy_id": "p4",
+      "rule_name": "site-a infra → site-b infra",
+      "constraint": "all protocols · all ports",
+      "protocol": "all",
+      "ports": [],
+      "bidirectional": false,
+      "enabled": true,
+      "unrestricted": true
+    }
+  ],
+  "unrepresentable": [],
+  "disabled": [],
+  "unscoped": [],
+  "undeclared_refs": [],
+  "findings": [],
+  "signatures": [],
+  "peers": [
+    {
+      "i": 0,
+      "id": "pr0",
+      "name": "site-a-infra-01",
+      "hostname": "site-a-infra-01",
+      "ip": "100.127.0.1",
+      "connected": true,
+      "os": "Linux 6.8",
+      "os_family": "linux",
+      "last_seen": null,
+      "created_at": null,
+      "groups": [
+        0,
+        6
+      ],
+      "signature": 0,
+      "reach_any": 3,
+      "findings": []
+    },
+    {
+      "i": 1,
+      "id": "pr1",
+      "name": "site-a-infra-02",
+      "hostname": "site-a-infra-02",
+      "ip": "100.127.0.2",
+      "connected": true,
+      "os": "Linux 6.8",
+      "os_family": "linux",
+      "last_seen": null,
+      "created_at": null,
+      "groups": [
+        0,
+        6
+      ],
+      "signature": 0,
+      "reach_any": 3,
+      "findings": []
+    },
+    {
+      "i": 2,
+      "id": "pr2",
+      "name": "bridge-gear-01",
+      "hostname": "bridge-gear-01",
+      "ip": "100.127.0.3",
+      "connected": true,
+      "os": "Linux 6.8",
+      "os_family": "linux",
+      "last_seen": null,
+      "created_at": null,
+      "groups": [
+        1,
+        5,
+        6
+      ],
+      "signature": 1,
+      "reach_any": 1,
+      "findings": []
+    },
+    {
+      "i": 3,
+      "id": "pr3",
+      "name": "site-b-infra-01",
+      "hostname": "site-b-infra-01",
+      "ip": "100.127.0.4",
+      "connected": false,
+      "os": "Linux 6.8",
+      "os_family": "linux",
+      "last_seen": null,
+      "created_at": null,
+      "groups": [
+        3,
+        6
+      ],
+      "signature": 2,
+      "reach_any": 1,
+      "findings": []
+    },
+    {
+      "i": 4,
+      "id": "pr4",
+      "name": "site-b-gear-01",
+      "hostname": "site-b-gear-01",
+      "ip": "100.127.0.5",
+      "connected": true,
+      "os": "Linux 6.8",
+      "os_family": "linux",
+      "last_seen": null,
+      "created_at": null,
+      "groups": [
+        4,
+        6
+      ],
+      "signature": 3,
+      "reach_any": 0,
+      "findings": []
+    }
+  ],
+  "reach_bins": [],
+  "reach_max": 3,
+  "reach_median": 1
+}

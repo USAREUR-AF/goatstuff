@@ -1,0 +1,489 @@
+/* reach — peer-to-peer reachability matrix.
+ *
+ * Deliberately small. The previous stylesheet was 743 lines for a picture that
+ * could not be read; this one styles a grid, two label runs and one summary
+ * line, because that is all the drawing contains.
+ */
+
+.netvis {
+  margin: 0;
+  padding: 20px 24px 40px;
+  background: var(--bg-page);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+}
+
+.netvis .sum {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.netvis .warn {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--fg-danger, #a33);
+  color: var(--fg-primary);
+  font-size: 13px;
+  max-width: 70ch;
+}
+
+/* Labels. Machine names are the only text on the canvas. */
+.netvis text.rl {
+  font-size: 11px;
+  fill: var(--fg-primary);
+  font-family: var(--font-mono);
+}
+/* A machine that is enrolled but not connected right now is still a real
+   machine with real permissions — dimmed, never hidden. Absence would read as
+   "this peer cannot reach anything", which is a different and false claim. */
+.netvis text.rl.off { fill: var(--fg-faint); }
+
+/* Cells.
+   Four states, and the distinction that matters is PERMITTED vs PERMITTED-AND-
+   UNRESTRICTED vs PERMITTED-AND-LIVE. Colour is not the only channel: the
+   unrestricted cell is also the only one that is fully saturated, and the live
+   one carries a border. */
+.netvis rect.c { fill: transparent; stroke: var(--border-color); stroke-width: .5; }
+.netvis rect.c.self { fill: var(--bg-well); stroke: none; }
+.netvis rect.c:hover { stroke: var(--fg-accent); stroke-width: 1.5; }
+
+/* ---- three-level chrome: one bar, one search box, one detail block -------
+   TWO ROWS. The views and the filter are fixed-width furniture; the
+   breadcrumb is the only element that grows with the drill, and at the peer
+   level it carries two full group names. On one line it wrapped every crumb
+   into its own stacked block, pushed the filter off the right edge and gave
+   the page a horizontal scrollbar. */
+.barwrap { margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+.bar {
+  display: flex; align-items: center; gap: 16px;
+}
+.crumb {
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+  margin-top: 8px; flex-wrap: wrap;
+}
+.crumb .lk { white-space: nowrap; }
+
+/* ------------------------------------------------ progressive disclosure
+   Lead with the number that moves; the reasoning is one click away.
+
+   These pages had grown to three paragraphs of rationale ABOVE the picture —
+   all of it true, none of it the answer, and together taller than the matrix
+   they explained. Nothing was deleted: every explanation here exists because
+   somebody once got it wrong. They are simply no longer standing in front of
+   the thing they explain. */
+.netvis details.why {
+  margin: 0 0 14px;
+  max-width: 78ch;
+  border-left: 2px solid var(--border-color);
+  padding-left: .85rem;
+}
+.netvis details.why > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: 12px;
+  list-style: none;
+  padding: 2px 0;
+}
+.netvis details.why > summary::-webkit-details-marker { display: none; }
+/* The affordance has to be visible before the disclosure is opened, or it is
+   an invitation nobody sees. */
+.netvis details.why > summary::before { content: "▸ "; color: var(--fg-faint); }
+.netvis details.why[open] > summary::before { content: "▾ "; }
+.netvis details.why > summary:hover { color: var(--fg-primary); }
+.netvis details.why > p {
+  margin: .5rem 0 0; font-size: 12.5px; color: var(--fg-muted); line-height: 1.5;
+}
+.netvis details.why[open] { margin-bottom: 18px; }
+/* The one line that IS the answer. */
+.netvis p.sum.key { color: var(--fg-primary); max-width: 90ch; }
+.netvis .lead { margin-bottom: 4px; }
+.netvis .legend-box { margin-top: 20px; }
+.netvis .legend-box .legend { margin-top: 10px; }
+.crumb .sep { color: var(--fg-faint); }
+.lk { color: var(--fg-accent); text-decoration: none; cursor: pointer; }
+.lk.cur { color: var(--fg-primary); cursor: default; }
+.lk:hover { text-decoration: underline; }
+input.q {
+  margin-left: auto; min-width: 260px;
+  padding: 5px 9px; font-family: var(--font-mono); font-size: 12px;
+  color: var(--fg-primary); background: var(--bg-surface);
+  border: 1px solid var(--border-color); border-radius: 2px;
+}
+input.q:focus { outline: none; border-color: var(--fg-accent); }
+
+.detail { display: flex; gap: 24px; flex-wrap: wrap; margin: 0 0 20px; }
+.idbox {
+  flex: 1 1 320px; padding: 12px 14px;
+  background: var(--bg-surface); border: 1px solid var(--border-color);
+}
+.idbox h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--fg-muted); font-weight: 500; }
+.idbox .nb { font-size: 12px; color: var(--fg-primary); word-break: break-all; margin-bottom: 8px; }
+.idbox dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-size: 12px; }
+.idbox dt { color: var(--fg-muted); }
+.idbox dd { margin: 0; color: var(--fg-primary); word-break: break-word; }
+.idbox dd.unk { color: var(--fg-faint); font-style: italic; }
+
+.rules h3 { font-size: 12px; margin: 0 0 8px; color: var(--fg-muted); font-weight: 500; }
+.rule { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
+        padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 12px; }
+.rule .gp { color: var(--fg-primary); min-width: 320px; }
+.rule .cn { color: var(--fg-muted); }
+.rule .cn.unr { color: var(--fg-accent); }
+.rule .pol { color: var(--fg-faint); }
+
+/* A permission that exists only through some OTHER group membership than the
+   pair you drilled through. Same weight — it is equally real — but hatched, so
+   "this machine can also reach that one, and not because of the relationship
+   you were looking at" is visible rather than inferred. */
+
+/* ==========================================================================
+   CELL STATE MODEL — channel strength matched to how much each fact VARIES.
+
+   Measured on zagros-prod, 182 peer pairs:
+     any-port    145 (79%)  <- near-constant
+     both live    61 (33%)
+     mediation   varies per drill (one showed 4 via the pair, 42 via others)
+
+   Two earlier versions put CONSTRAINT on hue and the grid came out
+   monochromatic — green the first time, amber the second. Swapping the hue
+   changed nothing, because the fault was giving the strongest channel to the
+   flattest variable. And colouring the COMMON state is self-defeating: when
+   79% of cells are any-port, painting them all in an alarm colour makes the
+   alarm mean nothing.
+
+   So:
+     mediation  (varies most)   -> FILL vs OUTLINE   the strongest channel
+     liveness   (varies)        -> FULL vs DIMMED
+     constraint (near-constant) -> colour the RARE state only
+
+   Port-scoped is the exception worth seeing — it is where constraint actually
+   exists. The 79% any-port figure is a sentence, not a colour, and the summary
+   line says it. Neutral ink carries the bulk; boldness is spent once.
+   ========================================================================== */
+:root { --nv-scoped: #1F6F7A; }                      /* the RARE state */
+@media (prefers-color-scheme: dark) { :root { --nv-scoped: #5FBBC8; } }
+:root[data-theme="dark"]  { --nv-scoped: #5FBBC8; }
+:root[data-theme="light"] { --nv-scoped: #1F6F7A; }
+
+/* POINTER TARGET, and it is not cosmetic.
+
+   `fill: none` in SVG does not mean "transparent fill" — it means the interior
+   is NOT PAINTED, and an unpainted interior is not a hit target. Every cell
+   below that is drawn as an outline (m-other: permitted via another
+   membership) was therefore clickable and hoverable ONLY on its 1.5px stroke:
+   a ~1.5px frame around a 12px cell, which is close to unhittable and reads as
+   "this cell does nothing". 138 of 660 pairs on the ZAGROS peer level are
+   m-other, so this was most of a screen of cells that looked interactive,
+   carried a pointer cursor and a tooltip, and almost never opened.
+
+   It regressed silently: the first cell block up the file sets
+   `fill: transparent`, which IS a paint and IS hittable. This block overrode it
+   with `fill: none` at equal specificity, so the later rule won and took the
+   hit area with it — a change to how a cell LOOKS that quietly changed what it
+   DOES.
+
+   `pointer-events: all` decouples the two for good: the whole rect geometry
+   receives events regardless of how (or whether) it is painted, so the outline
+   states, the fill-opacity rungs and any future hollow state are all hittable
+   by construction rather than by remembering. */
+.netvis rect.c        { fill: none; stroke: var(--border-color); stroke-width: .5;
+                        pointer-events: all; }
+.netvis rect.c.self   { fill: var(--bg-well); stroke: none; }
+.netvis rect.c.on     { stroke-width: 1.5; }
+
+/* mediation — via the pair you selected = SOLID; via another membership =
+   OUTLINE. Categorically different, not two shades of one thing. */
+.netvis rect.c.on.m-pair  { fill: var(--fg-primary); stroke: var(--fg-primary); }
+.netvis rect.c.on.m-other { fill: none;              stroke: var(--fg-primary); }
+
+/* constraint — colour ONLY the rare port-scoped case. Any-port keeps the
+   neutral ink; it is the norm here and the header states its share. */
+.netvis rect.c.on.m-pair:not(.unr)  { fill: var(--nv-scoped); stroke: var(--nv-scoped); }
+.netvis rect.c.on.m-other:not(.unr) { stroke: var(--nv-scoped); }
+
+/* liveness */
+.netvis rect.c.on.dormant { opacity: .32; }
+.netvis rect.c.on.live    { opacity: 1; }
+
+/* ==========================================================================
+   THE REALIZATION LADDER — the aggregate levels' liveness channel.
+
+   `Edge.realization` shipped from day one and was drawn nowhere, so 98 of
+   zagros's 124 permitted group pairs (79%) were unpopulated design rendered
+   identically to live reach. It is a genuine ORDERED variable, so it gets an
+   ordered channel: INK COVERAGE, from solid to hollow.
+
+   Deliberately NOT `opacity`, which is what the peer level uses. Opacity
+   fades the stroke as well, and a faded stroke on a dark ground is very close
+   to "no rule permits it" — the css note two rules up records exactly that
+   mistake (32% read as absent, understating reach). `fill-opacity` empties
+   the cell while the border stays full strength, so a latent cell reads as
+   what it is: a real grant with nothing flowing through it.
+
+   Keeping opacity off this also keeps the HUE free, so `--nv-scoped` still
+   marks the rare port-scoped case at every rung. Two facts, two channels.
+   ========================================================================== */
+.netvis rect.c.on.r-realized { fill-opacity: 1;   stroke-opacity: 1; }
+.netvis rect.c.on.r-dormant  { fill-opacity: .42; stroke-opacity: 1; }
+.netvis rect.c.on.r-latent   { fill-opacity: .10; stroke-opacity: .9; }
+/* Not a rung — the absence of a reading. Dashed, because a dashed border is
+   the one thing on this canvas that cannot be mistaken for a measurement. */
+.netvis rect.c.on.r-unknown  { fill-opacity: 0; stroke-opacity: 1; stroke-dasharray: 2 2; }
+
+.netvis rect.c:hover { stroke: var(--fg-accent); stroke-width: 2.5; }
+
+.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+          gap: 5px 20px; margin: 20px 0 0; font-size: 11px; }
+.legend .key { display: flex; align-items: center; gap: 8px; color: var(--fg-muted); }
+svg.netvis-sw { flex: none; overflow: visible; }
+
+/* ---------------------------------------------------------------- refusal
+   The fence's page. It used to be the bare string "netvis is admin-gated" on
+   the body's black ground — no styling, no group names, no way to tell a
+   wiring fault from a missing permission. */
+.netvis .nv-refuse {
+  max-width: 34rem;
+  margin: 18vh auto 0;
+  padding: 0 1.5rem;
+  line-height: 1.55;
+}
+.netvis .nv-refuse h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 .6rem;
+  color: var(--fg-primary);
+}
+.netvis .nv-refuse p { margin: 0 0 .75rem; color: var(--fg-muted); }
+.netvis .nv-refuse b { color: var(--fg-primary); font-weight: 600; }
+.netvis .nv-refuse code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .9em;
+}
+.netvis .nv-refuse-site {
+  margin-top: 1.5rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: .85rem;
+  opacity: .7;
+}
+
+/* ------------------------------------------------------------------- L4 pair
+   The end of the drill: every rule that permits one pair, both directions
+   answered separately, plus both machines in full. */
+.netvis .pair { display: flex; flex-direction: column; gap: 1.75rem; margin-top: 1rem; }
+.netvis .pair h2 {
+  font-size: .95rem; font-weight: 600; margin: 0 0 .5rem;
+  color: var(--fg-primary); font-family: var(--font-mono);
+}
+.netvis .pair .none { color: var(--fg-muted); margin: 0; }
+.netvis table.rules { border-collapse: collapse; width: 100%; font-size: .82rem; }
+.netvis table.rules th {
+  text-align: left; font-weight: 600; color: var(--fg-muted);
+  padding: .35rem .8rem .35rem 0; vertical-align: top; white-space: nowrap;
+}
+/* A right-aligned number under a left-aligned header is two columns, not one:
+   the eye has nothing to travel down. `count` sat ~110px to the left of every
+   value beneath it, and `unrestricted paths woken` further still. The header
+   takes the alignment of the data, not of the prose beside it. */
+.netvis table.rules th.n { text-align: right; }
+/* The table used to abut the paragraph after it, so the next sentence read as
+   another row. */
+.netvis table.rules { margin-bottom: 1.1rem; }
+.netvis table.rules td {
+  padding: .35rem .8rem .35rem 0; color: var(--fg-primary);
+  vertical-align: top; font-variant-numeric: tabular-nums;
+}
+.netvis table.rules tr + tr th,
+.netvis table.rules tr + tr td { border-top: 1px solid var(--border-color); }
+/* A disabled rule is shown, not hidden — it explains why a path people expect
+   is absent — but it must never read as a live grant. */
+.netvis table.rules tr.off td,
+.netvis table.rules tr.off th { opacity: .45; text-decoration: line-through; }
+
+/* --------------------------------------------------------------- identity
+   Click any machine label on an axis. The short name is a display
+   convenience; this is where the NetBird join key and the full derived form
+   are always available. */
+.netvis text.rl.ident { cursor: pointer; }
+.netvis text.rl.ident:hover { fill: var(--fg-accent); text-decoration: underline; }
+.netvis .idcard {
+  position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 20;
+  max-width: min(30rem, calc(100vw - 2.5rem)); max-height: 70vh; overflow: auto;
+  background: var(--bg-panel); border: 1px solid var(--border-color);
+  border-radius: 6px; padding: .9rem 1rem;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .55);
+}
+.netvis .idhead { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.netvis .idcard h2 { margin: 0 0 .5rem; font-size: .92rem; font-family: var(--font-mono); color: var(--fg-primary); }
+.netvis .idcard .idx {
+  background: none; border: 0; color: var(--fg-muted); font-size: 1.1rem;
+  line-height: 1; cursor: pointer; padding: 0 .2rem;
+}
+.netvis .idcard .idx:hover { color: var(--fg-primary); }
+
+/* Axis name-form control. */
+.netvis .names { display: inline-flex; align-items: baseline; gap: .5rem; margin-right: 1rem; }
+.netvis .names .nl { color: var(--fg-faint); font-size: .78rem; }
+
+/* Density line — the answer to "why is this mostly empty". */
+.netvis p.sum.dens { color: var(--fg-muted); margin-top: -.35rem; }
+
+/* A permitted pair with one end offline was drawn at 32% opacity, which on a
+   black ground is almost exactly "no rule permits this". 63% of the permitted
+   cells on a real developer drill are in that state, so the picture was
+   understating reach — the dangerous direction for a security surface. */
+.netvis rect.c.on.dormant { opacity: .62; }
+
+/* ------------------------------------------------------ the three views
+   One host, three URLs: machines (/), groups + rules (/policy), findings
+   (/findings). The second is the unpopulated altitude that was built with
+   tests and unreachable; the third is the judgement that was computed on
+   every request and discarded. */
+.netvis .views { display: inline-flex; gap: .15rem; margin-right: 1.25rem; }
+.netvis .views .vw {
+  color: var(--fg-muted); text-decoration: none; padding: .2rem .55rem;
+  border: 1px solid transparent; border-radius: 2px; white-space: nowrap;
+}
+.netvis .views .vw:hover { color: var(--fg-primary); border-color: var(--border-color); }
+.netvis .views .vw.cur { color: var(--fg-primary); border-color: var(--fg-accent); }
+.netvis .views .vcount {
+  margin-left: .4rem; padding: 0 .35rem; border-radius: 8px;
+  background: var(--fg-danger-bg, #5a2320); color: var(--fg-primary); font-size: .78em;
+}
+
+/* ------------------------------------------------------------- findings */
+.netvis .finds { display: flex; flex-direction: column; gap: .7rem; margin-top: 1rem; }
+.netvis .find {
+  border: 1px solid var(--border-color); border-left-width: 3px;
+  border-radius: 2px; padding: .7rem .9rem; background: var(--bg-surface);
+}
+.netvis .find.sev-alarm  { border-left-color: var(--c-red, #d9534f); }
+.netvis .find.sev-review { border-left-color: var(--c-amber, #d8a13a); }
+.netvis .find.sev-accepted { border-left-color: var(--border-color); opacity: .75; }
+.netvis .fh { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+.netvis .fh .sev { text-transform: uppercase; font-size: .72rem; letter-spacing: .08em; }
+.netvis .find.sev-alarm .sev  { color: var(--c-red, #d9534f); }
+.netvis .find.sev-review .sev { color: var(--c-amber, #d8a13a); }
+.netvis .fh .fid { color: var(--fg-faint); font-size: .78rem; }
+/* Blast radius is why these are ordered rather than merely listed. */
+.netvis .fh .blast { margin-left: auto; color: var(--fg-muted); font-size: .8rem; }
+.netvis .find .claim { margin: .45rem 0 0; color: var(--fg-primary); }
+.netvis .find .act { margin-top: .6rem; position: relative; }
+.netvis .find pre.dy {
+  margin: 0; padding: .5rem .6rem; overflow-x: auto;
+  background: var(--bg-well); border: 1px solid var(--border-color);
+  border-radius: 2px; font-size: .78rem; color: var(--fg-muted);
+}
+.netvis .find .copy {
+  position: absolute; top: .3rem; right: .3rem;
+  background: var(--bg-panel); color: var(--fg-muted);
+  border: 1px solid var(--border-color); border-radius: 2px;
+  font: inherit; font-size: .74rem; padding: .1rem .5rem; cursor: pointer;
+}
+.netvis .find .copy:hover { color: var(--fg-primary); border-color: var(--fg-accent); }
+.netvis .find .ameta { margin: .4rem 0 0; color: var(--fg-faint); font-size: .78rem; }
+
+/* ------------------------------------------------------------ the gate
+   Assertion outcomes reuse the findings card, because they are the same kind
+   of object — a claim with evidence under it — and a second card style would
+   be a second vocabulary for one idea.
+
+   UNDETERMINED is coloured as loudly as VIOLATED on purpose. It is not a
+   milder failure, it is the absence of an answer, and the whole reason the
+   third state exists is that a surface which greys it out has told you
+   nothing while looking like it told you something. */
+.netvis .gv-satisfied    { border-left-color: var(--c-green, #4a9d5f); }
+.netvis .gv-baselined    { border-left-color: var(--border-color); opacity: .8; }
+.netvis .gv-violated     { border-left-color: var(--c-red, #d9534f); }
+.netvis .gv-undetermined { border-left-color: var(--c-amber, #d8a13a); }
+.netvis .find.gv-satisfied .sev    { color: var(--c-green, #4a9d5f); }
+.netvis .find.gv-violated .sev     { color: var(--c-red, #d9534f); }
+.netvis .find.gv-undetermined .sev { color: var(--c-amber, #d8a13a); }
+.netvis .find.gv-baselined .sev    { color: var(--fg-muted); }
+/* The headline sentence, which is the only thing most readers will read. */
+.netvis p.sum.gv-satisfied    { color: var(--fg-primary); }
+.netvis p.sum.gv-violated,
+.netvis p.sum.gv-undetermined { color: var(--fg-primary); font-weight: 600; }
+.netvis .finds, .netvis .find { max-width: 90ch; }
+
+/* --------------------------------------------------------------- armed
+   Empty groups one enrolment away from every grant written against them.
+   The rows that wake an ANY-PORT path are marked: those are the ones that
+   arm silently and arm wide. */
+.netvis table.rules.armed td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.netvis table.rules.armed tr.hot td { color: var(--fg-primary); }
+.netvis table.rules.armed tr.hot td:nth-child(5) {
+  color: var(--c-amber, #d8a13a); font-weight: 600;
+}
+.netvis table.rules.carry td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.netvis table.rules.carry tr.hot td:last-child { color: var(--c-amber, #d8a13a); font-weight: 600; }
+
+/* ------------------------------------------------------------- ownership
+   "Who is responsible for this machine" on the pair pane. The visual job
+   here is to make PROVENANCE impossible to miss, because the failure mode
+   is a reader treating an unconfirmed handle as a confirmed person and
+   paging the wrong human — or reading "not looked up" as "nobody owns it".
+
+   So: the recorded linkage renders at full contrast and is the only state
+   that is ever a link; everything else is muted and carries its own word.
+   The provenance token is always present, on every row, including the good
+   one — a badge that appears only when something is wrong teaches readers
+   to scan for the badge instead of reading the row. */
+.netvis .owners { margin-top: 1.5rem; }
+.netvis .owners h2 {
+  font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--fg-muted); margin: 0 0 0.6rem;
+}
+.netvis .owner-row {
+  display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--border, #2a2a2a);
+}
+/* The machine name. Monospace so a 40-character peer name stays scannable
+   against its neighbour, which is the comparison a reader actually makes. */
+.netvis .owner-role {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem; color: var(--fg-muted); min-width: 22ch;
+}
+.netvis .owner-val { color: var(--fg-primary); font-weight: 600; }
+.netvis .owner-val.muted { color: var(--fg-muted); font-weight: 400; }
+.netvis a.owner-val { text-decoration: underline; }
+.netvis .owner-org {
+  font-size: 0.75rem; color: var(--fg-muted);
+  border: 1px solid var(--border, #2a2a2a); border-radius: 3px; padding: 0 0.35rem;
+}
+/* A machine still on the mesh whose owner has been offboarded. Amber, not
+   red: the machine is not broken, the attribution is stale — which is a
+   thing to chase, not an outage. */
+.netvis .owner-flag { font-size: 0.75rem; color: var(--c-amber, #d8a13a); font-weight: 600; }
+.netvis .owner-prov {
+  margin-left: auto; font-size: 0.7rem; color: var(--fg-muted);
+  font-variant: small-caps; letter-spacing: 0.04em;
+}
+
+/* Scope stewardship — the fallback row when no person owns the machine.
+   Indented and quieter than an owner row on purpose: it is a WEAKER claim
+   (mesh-derived: who administers the scope) and must not read as an
+   equivalent answer to a resolved identity. */
+.netvis .owner-row.steward { border-bottom: none; padding-top: 0.15rem; }
+.netvis .owner-row.steward .owner-role { padding-left: 1.2rem; font-style: italic; }
+.netvis .steward-why {
+  margin: 0 0 0.5rem 1.2rem; font-size: 0.75rem; color: var(--fg-muted);
+  border-bottom: 1px solid var(--border, #2a2a2a); padding-bottom: 0.5rem;
+}
+/* The revealed admin roster: one line per PERSON, their devices trailing as
+   detail. The devices are the weakest thing in the row and are sized like it —
+   a reader here wants a name to contact, not an inventory. */
+.netvis .steward-person { margin: 0.25rem 0 0.25rem 1.2rem; display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
+.netvis .steward-devices {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem; color: var(--fg-muted);
+}
+
+/* Upstream refused: one headline, the refusals as a list, one line of what to do. */
+.refused { max-width: 60ch; margin: 2rem auto; padding: 1rem 1.25rem; border-left: 4px solid #a03f39; }
+.refused h2 { margin: 0 0 .5rem; font-size: 1.15rem; }
+.refused p { margin: 0 0 .75rem; line-height: 1.5; }
+.refused-notes { margin: 0 0 .75rem 1.2rem; padding: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; line-height: 1.6; }
+.refused .muted { opacity: .75; }

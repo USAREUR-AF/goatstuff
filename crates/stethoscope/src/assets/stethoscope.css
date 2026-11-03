@@ -1,0 +1,672 @@
+/* ============================================================
+   stethoscope — Phase B page styles
+   Built on docs/design-system/{colors_and_type.css,components.css}.
+   Subset of the prototype's stethoscope.css scoped to what Phase B
+   actually renders (header / hero / cards / pills / cost chips /
+   skeletons / spinners). Blood-dye drawer, configure drawer, and
+   drill-down drawer styles land when their Phase C+D surfaces do.
+   ============================================================ */
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: linear-gradient(180deg, var(--bg-page) 0%, var(--bg-surface) 100%);
+  color: var(--fg-body);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  min-height: 100vh;
+}
+
+/* -------- Slim top bar -------------------------------------- */
+.sx-topbar {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--c-line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.sx-topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+.sx-topbar__brand:hover .sx-topbar__word { text-decoration: underline; }
+.sx-crumb-link {
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+.sx-crumb-link:hover { color: var(--fg-primary); text-decoration: underline; }
+.sx-back-btn {
+  background: transparent;
+  border: 1px solid var(--c-line);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 0;
+}
+.sx-back-btn:hover { color: var(--fg-primary); border-color: var(--c-line-2); }
+.sx-topbar__mark {
+  color: var(--fg-accent);
+  font-size: 16px;
+  text-shadow: var(--glow-text);
+}
+.sx-topbar__word { font-weight: 600; }
+.sx-topbar__sep { color: var(--c-line-2); }
+.sx-topbar__crumb { display: inline-flex; gap: 6px; align-items: center; }
+.sx-topbar__right { margin-left: auto; display: inline-flex; gap: 12px; align-items: center; }
+.sx-theme-toggle {
+  background: transparent;
+  border: 1px solid var(--c-line);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 0;
+}
+.sx-theme-toggle:hover { color: var(--fg-primary); border-color: var(--c-line-2); }
+/* Block 94 cross-surface deep-link sibling buttons — match the
+   topbar's back/theme button shape so the row stays visually
+   consistent. */
+.sx-sibling-link {
+  background: transparent;
+  border: 1px solid var(--c-line);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--track-mono);
+  text-transform: lowercase;
+  padding: 4px 8px;
+  border-radius: 0;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sx-sibling-link:hover { color: var(--fg-primary); border-color: var(--c-line-2); }
+
+/* -------- Page layout --------------------------------------- */
+.sx-page {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+/* -------- Hero ---------------------------------------------- */
+.sx-hero {
+  background: var(--bg-card);
+  border: 1px solid var(--c-line);
+  border-top: 1px solid var(--accent);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+.sx-hero__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+.sx-hero__target { flex: 1; min-width: 0; }
+.sx-hero__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  color: var(--fg-accent);
+  margin-bottom: 4px;
+}
+.sx-hero__value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--fg-primary);
+  word-break: break-all;
+}
+/* Identity line: the entity name (in the change-target button) sits beside the
+   short slot anchor, which expands to the full UUID on click. */
+.sx-hero__idline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sx-hero__anchor {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: var(--bg-well);
+  border: 1px solid var(--c-line-2);
+  border-radius: 0;
+  padding: 2px 8px;
+  cursor: pointer;
+  word-break: break-all;
+  text-align: left;
+}
+.sx-hero__anchor:hover { color: var(--fg-primary); border-color: var(--fg-accent); }
+.sx-hero__rollup { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.sx-hero__rollup-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  color: var(--fg-muted);
+}
+.sx-hero__meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sx-hero__meta b { color: var(--fg-primary); font-weight: 500; }
+.sx-hero__meta .sep { color: var(--c-line-2); }
+.sx-hero__actions { display: flex; gap: 8px; align-items: center; }
+.sx-hero__actions .spacer { flex: 1; }
+
+/* -------- Roll-up pill --------------------------------------- */
+.sx-rollup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid currentColor;
+}
+.sx-rollup__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sx-rollup--pass    { color: var(--status-ok-fg);   background: var(--status-ok-bg); }
+.sx-rollup--warn    { color: var(--status-warn-fg); background: var(--status-warn-bg); }
+.sx-rollup--fail    { color: var(--status-err-fg);  background: var(--status-err-bg); }
+.sx-rollup--running { color: var(--status-info-fg); background: var(--status-info-bg); }
+.sx-rollup--pass .sx-rollup__dot { box-shadow: var(--glow-text); }
+
+/* -------- Check cards --------------------------------------- */
+.sx-cards { display: flex; flex-direction: column; gap: 8px; }
+.sx-card {
+  background: var(--bg-card);
+  border: 1px solid var(--c-line);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+.sx-card.is-na { opacity: 0.5; }
+.sx-card.is-skipped { opacity: 0.75; }
+.sx-card.is-flash { border-color: var(--c-green-mid); }
+.sx-card__main {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 14px;
+  align-items: start;
+}
+.sx-card__icon {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--fg-muted);
+  font-size: 16px;
+}
+.sx-card__body { min-width: 0; }
+.sx-card__title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.sx-card__title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-primary);
+}
+.sx-card__id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  letter-spacing: 0;
+}
+.sx-card__kind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  color: var(--c-violet);
+  padding: 1px 6px;
+  border: 1px solid var(--c-violet);
+}
+.sx-card__summary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-body);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sx-card__pill { display: inline-flex; gap: 8px; align-items: center; }
+
+/* -------- Pills (status) ------------------------------------ */
+.sx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid currentColor;
+}
+.sx-pill__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sx-pill--pass    { color: var(--status-ok-fg);   background: var(--status-ok-bg); }
+.sx-pill--warn    { color: var(--status-warn-fg); background: var(--status-warn-bg); }
+.sx-pill--fail    { color: var(--status-err-fg);  background: var(--status-err-bg); }
+.sx-pill--skipped { color: var(--fg-muted);       background: var(--bg-well); }
+.sx-pill--na      { color: var(--fg-faint);       background: transparent; }
+.sx-pill--running { color: var(--status-info-fg); background: var(--status-info-bg); }
+.sx-pill--pass .sx-pill__dot { box-shadow: var(--glow-text); }
+
+/* -------- Cost chips ---------------------------------------- */
+.sx-cost {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 0;
+}
+.sx-cost--none    { color: var(--fg-faint); }
+.sx-cost--read    { color: var(--c-blue-hi); }
+.sx-cost--compute { color: var(--c-amber-hi); }
+.sx-cost--probe   { color: var(--c-violet); }
+
+/* -------- Findings ------------------------------------------ */
+.sx-findings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 38px; /* align under the body, past icon */
+}
+.sx-finding {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid currentColor;
+  border-radius: 0;
+}
+.sx-finding__glyph {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 9px;
+}
+.sx-finding--info { color: var(--c-blue-hi); background: var(--c-blue-bg); }
+.sx-finding--warn { color: var(--c-amber-hi); background: var(--c-amber-bg); }
+/* --c-green-bg isn't a canon token; derived locally to mirror the
+   amber/red dark-on-dark pattern (--c-amber-bg = #2a2110 etc.). */
+.sx-finding--pass { color: var(--c-green-hi); background: #102a14; }
+.sx-finding--fail { color: var(--c-red-hi); background: var(--c-red-bg); }
+/* Anchor variant — topic-roster chips are clickable. */
+a.sx-finding {
+  text-decoration: none;
+  cursor: pointer;
+}
+a.sx-finding:hover {
+  filter: brightness(1.15);
+}
+
+/* -------- Skeleton ------------------------------------------ */
+.sx-skeleton {
+  display: inline-block;
+  height: 12px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-well) 0%,
+    var(--bg-hover) 50%,
+    var(--bg-well) 100%
+  );
+  background-size: 200% 100%;
+  animation: sx-shimmer 1.8s var(--ease) infinite;
+  border-radius: 0;
+}
+.sx-skeleton--wide { width: 280px; max-width: 60%; }
+@keyframes sx-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* -------- Spinner ------------------------------------------- */
+.sx-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--c-line-2);
+  border-top-color: var(--fg-accent);
+  border-radius: 50%;
+  animation: sx-spin 0.8s linear infinite;
+}
+@keyframes sx-spin { to { transform: rotate(360deg); } }
+
+/* -------- Target picker (ported from design-assets app.jsx) -- */
+/* The CHANGE button wrapping the target value in the hero.    */
+.sx-target-button {
+  background: transparent;
+  border: 0;
+  padding: 4px 8px 4px 0;
+  margin: -4px 0 -4px -8px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-radius: var(--r-1);
+  position: relative;
+}
+.sx-target-button:hover { background: var(--bg-hover); }
+.sx-target-button:hover .sx-target-edit { opacity: 1; }
+.sx-target-edit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-accent);
+  opacity: 0.55;
+  transition: opacity var(--dur-fast) var(--ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--c-line);
+}
+.sx-target-button:hover .sx-target-edit { border-color: var(--c-line-2); }
+
+/* The popover. Hidden by default; .is-open shows it. */
+.sx-picker-scrim {
+  position: fixed; inset: 0; z-index: 30;
+  background: transparent;
+  display: none;
+}
+.sx-picker-scrim.is-open { display: block; }
+.sx-picker {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--c-line-2);
+  box-shadow: 0 12px 32px -8px rgba(0,0,0,0.5);
+  padding: 14px 16px 16px;
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  z-index: 31;
+  display: none;
+}
+.sx-picker.is-open {
+  display: block;
+  animation: sx-picker-in var(--dur-slow) var(--ease);
+}
+/* Landing mode: anchored in the hero, no animation flash on first paint. */
+.sx-picker.is-landing {
+  position: relative;
+  top: 0;
+  margin-top: 12px;
+  animation: none;
+}
+@keyframes sx-picker-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+.sx-picker__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+.sx-picker__input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sx-picker__input {
+  flex: 1;
+  height: 34px;
+  background: var(--bg-page);
+  border: 1px solid var(--c-line-2);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+}
+.sx-picker__input:focus {
+  border-color: var(--accent-hi);
+  box-shadow: var(--glow-soft);
+}
+.sx-picker__go {
+  height: 34px;
+  padding: 0 16px;
+  background: var(--accent);
+  border: 1px solid var(--accent-hi);
+  color: var(--fg-on-accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sx-picker__go:hover { box-shadow: var(--glow-soft); }
+.sx-picker__kinds {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.sx-kind-btn {
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--c-line);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sx-kind-btn:hover { border-color: var(--c-line-2); color: var(--fg-primary); }
+.sx-kind-btn.is-on {
+  background: var(--accent-deep);
+  border-color: var(--accent-hi);
+  color: var(--fg-accent);
+}
+.sx-picker__presets {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--c-line);
+}
+.sx-picker__presets:empty { display: none; }
+.sx-preset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-body);
+}
+.sx-preset:hover { background: var(--bg-hover); color: var(--fg-primary); }
+.sx-preset .kind {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  width: 60px;
+  flex-shrink: 0;
+}
+.sx-preset .value { color: var(--fg-primary); }
+.sx-preset.is-current { background: var(--accent-deep); }
+.sx-preset.is-current .value { color: var(--fg-accent); }
+.sx-preset.is-current .kind  { color: var(--fg-accent); }
+.sx-picker__hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-faint);
+  margin-top: 10px;
+  letter-spacing: 0;
+}
+
+/* Live typeahead dropdown — populated from /api/index, breadth-first
+   ordered across (kind, first-segment) groups so the operator sees
+   diverse branches before going deep into any one. Hidden when the
+   filtered set is empty. */
+.sx-typeahead {
+  display: none;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--c-line);
+  margin-bottom: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.sx-typeahead__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-card);
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-body);
+}
+.sx-typeahead__item:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+.sx-typeahead__kind {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  width: 60px;
+  flex-shrink: 0;
+}
+.sx-typeahead__value { color: var(--fg-primary); }
+/* Secondary names the row also matches (the slot handle), muted + monospace so
+   "Example Org · pat-example" reads name-then-handle without competing with the
+   primary label. */
+.sx-typeahead__aka {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-left: 8px;
+}
+.sx-typeahead__more {
+  padding: 6px 10px;
+  background: var(--bg-card);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-faint);
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+/* Remediation block — appears beneath a Fail/Warn card when the check
+   attached actionable steps. Title is the verb; detail is the prose
+   with the exact command or pointer. Optional href on the title turns
+   it into a deep-link the operator can click through. */
+.sx-remediation {
+  margin: 8px 16px 12px 16px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--c-amber-hi);
+  background: var(--bg-card);
+  font-family: var(--font-body);
+  font-size: 12px;
+}
+.sx-remediation__head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 6px;
+}
+.sx-remediation__item {
+  margin-bottom: 8px;
+}
+.sx-remediation__item:last-child {
+  margin-bottom: 0;
+}
+.sx-remediation__title {
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin-bottom: 2px;
+}
+.sx-remediation__title a {
+  color: var(--fg-primary);
+  text-decoration: none;
+}
+.sx-remediation__title a:hover {
+  text-decoration: underline;
+}
+.sx-remediation__detail {
+  color: var(--fg-body);
+  line-height: 1.45;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-word;
+}

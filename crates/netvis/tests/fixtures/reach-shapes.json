@@ -1,0 +1,444 @@
+{
+ "_note": "Fixture for ops/ci/check-netvis-short-names.js: synthetic peers holding every name shape the short-name logic must separate: a first-token handle shared by different unit codes, one person with several machines, a doubled onboarding slug, a slug ending in its own first token, a cohort-letter date, a .local/.lan pair differing only in DNS suffix, and raw names byte-identical across peers.",
+ "site": "zagros",
+ "panels": [
+  {
+   "family": "ZAGROS"
+  },
+  {
+   "family": "<unscoped>"
+  }
+ ],
+ "nodes": [
+  {
+   "i": 0,
+   "name": "ZAGROS-PLATFORM-ADMIN",
+   "family": "ZAGROS",
+   "suffix": "PLATFORM-ADMIN"
+  },
+  {
+   "i": 1,
+   "name": "ZAGROS-DEVELOPER",
+   "family": "ZAGROS",
+   "suffix": "DEVELOPER"
+  },
+  {
+   "i": 2,
+   "name": "ZAGROS-INFRA",
+   "family": "ZAGROS",
+   "suffix": "INFRA"
+  },
+  {
+   "i": 3,
+   "name": "ZAGROS-BACKEND-INFRA",
+   "family": "ZAGROS",
+   "suffix": "BACKEND-INFRA"
+  },
+  {
+   "i": 4,
+   "name": "ZAGROS-QUARANTINED",
+   "family": "ZAGROS",
+   "suffix": "QUARANTINED"
+  },
+  {
+   "i": 5,
+   "name": "All",
+   "family": null,
+   "suffix": null
+  },
+  {
+   "i": 6,
+   "name": "mesh-dns",
+   "family": null,
+   "suffix": null
+  }
+ ],
+ "peers": [
+  {
+   "i": 0,
+   "id": "aaa0000000000000zenh",
+   "name": "peer-org-pl-008-org-pl-008-zagros-2000-06-24-ZENOH1",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.10",
+   "connected": true
+  },
+  {
+   "i": 1,
+   "id": "aaa0000000000001zenh",
+   "name": "peer-org-pl-008-org-pl-008-zagros-2000-06-24-ZENOH2",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.11",
+   "connected": true
+  },
+  {
+   "i": 2,
+   "id": "aaa0000000000002zenh",
+   "name": "peer-org-pl-008-org-pl-008-zagros-2000-06-24-ZENOH3",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.12",
+   "connected": false
+  },
+  {
+   "i": 3,
+   "id": "aaa0000000000003lizz",
+   "name": "peer-org-pl-008-org-pl-008-zagros-2000-06-24-Birch-LAPTOP",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Windows 11",
+   "ip": "100.127.0.13",
+   "connected": true
+  },
+  {
+   "i": 4,
+   "id": "aaa0000000000004dsk3",
+   "name": "peer-org-pl-011-zagros-2000-07-17-DESKTOP-AAAAAAA",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Windows 11",
+   "ip": "100.127.0.14",
+   "connected": true
+  },
+  {
+   "i": 5,
+   "id": "aaa0000000000005zagros",
+   "name": "peer-org-pl-312-zagros-2000-07-17-ZAGROS",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Windows 11",
+   "ip": "100.127.0.15",
+   "connected": false
+  },
+  {
+   "i": 6,
+   "id": "aaa0000000000006piec",
+   "name": "peer-org-pl-500-org-pl-500-zagros-2000-06-24-pine-mac.local",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.16",
+   "connected": true
+  },
+  {
+   "i": 7,
+   "id": "aaa0000000000007piec",
+   "name": "peer-org-pl-500-org-pl-500-zagros-2000-06-24-pine-mac.local",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.17",
+   "connected": false
+  },
+  {
+   "i": 8,
+   "id": "bbb0000000000000mac1",
+   "name": "peer-avery-rossi-vendorp-avery-zagros-2000-06-14-user1-mac",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.20",
+   "connected": true
+  },
+  {
+   "i": 9,
+   "id": "bbb0000000000001mac2",
+   "name": "peer-avery-rossi-vendorp-avery-zagros-2000-06-14-user2-mac",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.21",
+   "connected": true
+  },
+  {
+   "i": 10,
+   "id": "bbb0000000000002mac3",
+   "name": "peer-avery-rossi-vendorp-avery-zagros-2000-06-14-user3-mac",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.22",
+   "connected": false
+  },
+  {
+   "i": 11,
+   "id": "bbb0000000000003ubun",
+   "name": "peer-avery-rossi-vendorp-avery-zagros-2000-06-14-ubuntu",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.23",
+   "connected": true
+  },
+  {
+   "i": 12,
+   "id": "ccc0000000000000same",
+   "name": "peer-morgan-hale-example-data-morgan-zagros-2000-06-14-Morgans-MacBook-Pro.local",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.30",
+   "connected": true
+  },
+  {
+   "i": 13,
+   "id": "ccc0000000000001same",
+   "name": "peer-morgan-hale-example-data-morgan-zagros-2000-06-14-Morgans-MacBook-Pro.local",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.31",
+   "connected": false
+  },
+  {
+   "i": 14,
+   "id": "ccc0000000000002same",
+   "name": "peer-morgan-hale-example-data-morgan-zagros-2000-06-14-Morgans-MacBook-Pro.local",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.32",
+   "connected": false
+  },
+  {
+   "i": 15,
+   "id": "ddd0000000000000dor0",
+   "name": "peer-ntaylor-zagros-2000-07-27-node-10",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.40",
+   "connected": true
+  },
+  {
+   "i": 16,
+   "id": "ddd0000000000001dor2",
+   "name": "peer-ntaylor-zagros-2000-07-27-node-12",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.41",
+   "connected": true
+  },
+  {
+   "i": 17,
+   "id": "ddd0000000000002dor2",
+   "name": "peer-ntaylor-zagros-2000-07-27-node-12",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.42",
+   "connected": false
+  },
+  {
+   "i": 18,
+   "id": "ddd0000000000003dor3",
+   "name": "peer-ntaylor-zagros-2000-07-27-node-13",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.43",
+   "connected": true
+  },
+  {
+   "i": 19,
+   "id": "eee0000000000000mac0",
+   "name": "peer-100200-zagros-2000-07-13-Mac",
+   "groups": [
+    0,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.50",
+   "connected": true
+  },
+  {
+   "i": 20,
+   "id": "eee0000000000001mac1",
+   "name": "peer-100200-zagros-2000-07-13-Mac.lan",
+   "groups": [
+    0,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.51",
+   "connected": true
+  },
+  {
+   "i": 21,
+   "id": "fff0000000000000coho",
+   "name": "peer-jsmith9-zagros-2000-07-08b-Red",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Windows 11",
+   "ip": "100.127.0.60",
+   "connected": true
+  },
+  {
+   "i": 22,
+   "id": "fff0000000000001quar",
+   "name": "peer-jsmith9-zagros-2000-07-08b-Blue",
+   "groups": [
+    1,
+    4,
+    5
+   ],
+   "os": "Windows 11",
+   "ip": "100.127.0.61",
+   "connected": false
+  },
+  {
+   "i": 23,
+   "id": "fff0000000000002dots",
+   "name": "peer-alexsample-zagros-2000-07-29-host-lp14.users.example.org",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.62",
+   "connected": true
+  },
+  {
+   "i": 24,
+   "id": "999000000000000thor1",
+   "name": "mgmt-zagros-01-host",
+   "groups": [
+    2,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.70",
+   "connected": true
+  },
+  {
+   "i": 25,
+   "id": "999000000000001thor2",
+   "name": "mgmt-zagros-02-host",
+   "groups": [
+    2,
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.71",
+   "connected": true
+  },
+  {
+   "i": 26,
+   "id": "999000000000002dnsa",
+   "name": "mesh-dns-zagros-a",
+   "groups": [
+    3,
+    5,
+    6
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.72",
+   "connected": true
+  },
+  {
+   "i": 27,
+   "id": "999000000000003dnsb",
+   "name": "mesh-dns-zagros-b",
+   "groups": [
+    3,
+    5,
+    6
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.73",
+   "connected": true
+  },
+  {
+   "i": 28,
+   "id": "999000000000004work",
+   "name": "box-a",
+   "groups": [
+    5
+   ],
+   "os": "Ubuntu 24.04",
+   "ip": "100.127.0.74",
+   "connected": true
+  },
+  {
+   "i": 29,
+   "id": "999000000000005dsk1",
+   "name": "DESKTOP-BBBBBBB",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "Windows 11",
+   "ip": "100.127.0.75",
+   "connected": true
+  },
+  {
+   "i": 30,
+   "id": "999000000000006slic",
+   "name": "Laptop.local",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.76",
+   "connected": false
+  },
+  {
+   "i": 31,
+   "id": "999000000000007macl",
+   "name": "Mac.lan",
+   "groups": [
+    1,
+    5
+   ],
+   "os": "macOS",
+   "ip": "100.127.0.77",
+   "connected": false
+  }
+ ]
+}
