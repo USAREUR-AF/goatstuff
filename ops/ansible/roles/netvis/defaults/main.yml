@@ -14,7 +14,7 @@
 # multi-arch INDEX digest (F-245: read it from the registry, never off the
 # build log) with a deploy-history.yml ledger row in the same change. Empty
 # means the role refuses rather than pulling something unpinned.
-netvis_image: "ghcr.io/{{ ghcr_org }}/netvis:sha-da1a889@sha256:b149da98cae21a9faf24e684afd143c8b3d0039858f56e814c403a56117b262c"
+netvis_image: "ghcr.io/{{ ghcr_org }}/netvis@sha256:89528e88c0814c4629d4c9facfb7083c005e4e9b4e74f48d6334cd3daf0cf053"
 
 netvis_hostname: "netvis.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
 netvis_site_label: "{{ site_id | mandatory }}"

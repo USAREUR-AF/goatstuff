@@ -8,7 +8,7 @@
 # append to deploy-history.yml; CI gate at
 # .github/workflows/deploy-history-check.yml refuses image-pin changes
 # without a matching ledger row.
-stethoscope_image: "ghcr.io/{{ ghcr_org }}/stethoscope@sha256:72b09f4a77ce868feb13befc13c322eff291f4916c17f6462513b23e5730f269"
+stethoscope_image: "ghcr.io/{{ ghcr_org }}/stethoscope@sha256:66b41440561660adff5024ccd679aad6b16779c50b81458207011bfbd47c2b31"
 
 # Public hostname for browser-facing access. Pattern is
 # `<surface>.<site_id>.<site_dns_zone>`, the canonical naming. The

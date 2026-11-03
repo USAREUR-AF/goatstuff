@@ -187,6 +187,9 @@ mod warrant_lens_tests {
     /// `port_set: null` on it and nobody would notice; this fails instead.
     #[test]
     fn every_port_carrying_rule_in_the_real_declaration_resolves_to_a_set() {
+        if !std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ops/goatbuilder/goatbuilder.yaml").is_file() {
+            return; // checks this deployment's own declaration; a public clone carries an example one
+        }
         let (vocab, _) = warrant_vocab();
         assert!(!vocab.all().is_empty(), "vocabulary parsed");
 
