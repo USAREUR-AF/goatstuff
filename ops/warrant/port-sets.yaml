@@ -1,0 +1,154 @@
+# warrant — the port-set vocabulary (ADR 1129, docs/design/warrant.md §2).
+#
+# EIGHT NAMES: seven extracted rather than designed, and `device-admin`
+# (ADR 1216), the first one designed. Every distinct (protocol, ports)
+# combination in ops/ansible/netbird_acl_matrix.yml resolves to exactly one
+# arm below. The seven extracted names were already written 18 times in the
+# rules' own `name:` parentheticals — "(web/dns/fabric tcp)", "(ssh only)",
+# "(management-plane tcp)" — and stored zero times. This file is where they
+# are stored once.
+#
+# THIS FILE IS THE SOURCE OF PORTS. ops/ansible/netbird_acl_matrix.yml is
+# GENERATED from it plus ops/warrant/rule-intents/netbird-acl.yaml, by
+# ops/warrant/generate.py. Editing the ports in the generated file is a
+# round-trip that CI will reject — change them here.
+#
+# A SET SPANS PROTOCOLS ON PURPOSE. `substrate`'s tcp and udp arms are used in
+# the same rules every time they are used at all, so modelling the pair as one
+# named thing removes the class of change where the TCP half is updated and the
+# UDP half forgotten. A rule still names one arm, because a NetBird rule is
+# single-protocol.
+#
+# OWNERSHIP: `owner:` is the CODEOWNERS reviewer for changes to this set. A
+# vocabulary edit has the highest blast radius in the registry — narrowing one
+# rule affects one pair, narrowing a port-set affects every rule using it — so
+# every set here is platform-admin owned.
+
+port_sets:
+
+  - name: substrate
+    purpose: >
+      Reach the goatnet's own services — mesh web and management (443), DNS
+      (53) and mesh DNS (5353), and the Zenoh fabric (7447 tcp / 7448 udp).
+      This is the peer-facing service surface of a substrate host: what a
+      participant needs to be a participant. Postgres, MinIO, Prometheus and
+      the rest are deliberately NOT here — they are not peer-facing and are
+      not mesh-reachable by non-admins.
+    owner: platform-admin
+    members:
+      - { protocol: tcp, ports: ["443", "53", "5353", "7447"] }
+      - { protocol: udp, ports: ["53", "5353", "7448"] }
+    required_by:
+      - { src: PLATFORM-ADMIN, dst: INFRA }
+      - { src: MONITOR, dst: INFRA }
+      - { src: DEVELOPER, dst: INFRA }
+      - { src: OBSERVER, dst: INFRA }
+
+  - name: substrate-restricted
+    purpose: >
+      The substrate surface minus the fabric — web and DNS only. What a peer
+      under probation or in quarantine keeps: it can still resolve names and
+      reach the logged web path, and it cannot publish or subscribe on the
+      Zenoh fabric. The containment is the absence of 7447/7448, so widening
+      this set silently ends quarantine (ADR 1091).
+    owner: platform-admin
+    members:
+      - { protocol: tcp, ports: ["443", "53", "5353"] }
+      - { protocol: udp, ports: ["53", "5353"] }
+    required_by:
+      # There is no bare PROBATION group — probation is per-class
+      # (PROBATION-GEAR, PROBATION-MONITOR, ...) per ADR 1116 §8, so the
+      # assertion names a class that exists rather than the tier in general.
+      - { src: QUARANTINED, dst: INFRA }
+      - { src: PROBATION-GEAR, dst: INFRA }
+
+  - name: netadmin
+    purpose: >
+      The bearer-gear management plane: web (443), DNS (53), TACACS+ (49),
+      syslog-TLS (6514), NTP (123), syslog (514) and SNMP trap (162). Network
+      gear talking to its own management services — not a participant surface,
+      and deliberately distinct from `substrate` even where the ports overlap,
+      because the two answer to different owners and change for different
+      reasons.
+    owner: platform-admin
+    members:
+      - { protocol: tcp, ports: ["443", "53", "49", "6514"] }
+      - { protocol: udp, ports: ["53", "5353", "123", "514", "162"] }
+    required_by:
+      - { src: NETWORK, dst: INFRA }
+      # ADR 1131 — the jump host is part of this plane, not a participant on
+      # the substrate one. Reusing `netadmin` rather than minting an eighth set
+      # is deliberate: it is the same management surface, and udp 5353 rides
+      # here.
+      - { src: NETWORK-JUMP, dst: INFRA }
+      # ADR 1216 — EDGE-SERVER takes NETWORK's shape exactly, so it talks to
+      # the same management plane and nothing more.
+      - { src: EDGE-SERVER, dst: INFRA }
+
+  - name: device-admin
+    purpose: >
+      A network engineer administering a device — SSH (22), NetBird SSH
+      (22022), and RDP (3389 tcp + udp; GNOME Remote Desktop listens on the
+      same port). Ping is a separate icmp rule, not a member here. VNC (5900)
+      is deliberately NOT here: it is unauthenticated or weakly authenticated
+      on most devices that offer it, and granting it is a separate decision.
+      Distinct from `shell` because this is the engineer's everyday surface,
+      not the break-glass hop, and the two change for different reasons.
+    owner: platform-admin
+    members:
+      - { protocol: tcp, ports: ["22", "22022", "3389"] }
+      - { protocol: udp, ports: ["3389"] }
+    required_by:
+      # ADR 1216 — the one-way engineer path to the devices they look after.
+      - { src: NET-ENGINEER, dst: NETWORK }
+      - { src: NET-ENGINEER, dst: CONTROL }
+      - { src: NET-ENGINEER, dst: EDGE-SERVER }
+
+  - name: shell
+    purpose: >
+      Interactive login — tcp/22, and nothing else. Break-glass access and
+      network administration. The name is `shell` rather than anything about
+      what the session is for: this is the mechanism, and the reference
+      vocabulary ships publicly (docs/project/warrant-plan.md §3A).
+    owner: platform-admin
+    members:
+      - { protocol: tcp, ports: ["22"] }
+    required_by:
+      - { src: BREAKGLASS, dst: INFRA }
+      - { src: BREAKGLASS, dst: NETWORK }
+      # ADR 1131 — the gear console's egress. Same port, different day:
+      # BREAKGLASS is the rescue path, NETWORK-JUMP is the normal one.
+      - { src: NETWORK-JUMP, dst: NETWORK }
+
+  - name: fabric
+    purpose: >
+      The Zenoh router and nothing else — a publish/subscribe leg. 7447 is the
+      TCP listener, 7448 the UDP one. Held separately from `substrate` so that
+      a peer can be given a fabric leg without the web and DNS surface, which
+      is what the site-scope gear rules do.
+    owner: platform-admin
+    members:
+      - { protocol: tcp, ports: ["7447"] }
+      - { protocol: udp, ports: ["7448"] }
+    required_by:
+
+  - name: mesh-dns
+    purpose: >
+      Name resolution alone — udp/5353. What break-glass keeps so that a host
+      reached over the mesh can still resolve mesh names; granting it implies
+      nothing about reaching any service those names point at.
+    owner: platform-admin
+    members:
+      - { protocol: udp, ports: ["5353"] }
+    required_by:
+      - { src: BREAKGLASS, dst: INFRA }
+
+  - name: web
+    purpose: >
+      One HTTPS service and nothing else — tcp/443. The L7 fences behind
+      Traefik gate the per-service access; this set only says the TLS port is
+      reachable.
+    owner: platform-admin
+    members:
+      - { protocol: tcp, ports: ["443"] }
+    required_by:

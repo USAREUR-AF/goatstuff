@@ -1,0 +1,135 @@
+# hello-galaxy — the rule intents. WORK IN PROGRESS.
+#
+# This is the file a person edits to change what may reach what. It is the
+# PRIVATE half in a real deployment (§3A) — here it is an example that belongs
+# to nobody.
+#
+# THE ONE RULE THAT MATTERS WHEN EDITING: there is no `ports:` line anywhere
+# below, and CI refuses one. A rule names a PORT-SET and its own protocol, and
+# `generate.py` resolves the ports. That is the whole point — the Zenoh fabric
+# port appeared eight times as a literal in the real declaration this pattern
+# replaced, and one of those eight is always the one nobody updates.
+#
+# Generate:  ops/warrant/demo/run.sh
+#
+# ---------------------------------------------------------------------------
+# The cast, so the rules below read as something rather than as letters:
+#
+#   HUB          the substrate — runs the goatnet's own services
+#   CREW         people with accounts
+#   PROBE        machines that publish data and read nothing else
+#   OBSERVER     read-only visitors; the narrowest tier that still exists
+#   BREAKGLASS   the way back in when everything else is broken
+#   QUARANTINED  a peer under suspicion; kept, not cut off
+# ---------------------------------------------------------------------------
+
+netbird_acl_matrix:
+
+  hello-galaxy:
+    site_prefix: ZAGROS
+    rules:
+
+      # ----------------------------------------------------------------
+      # A — the substrate reaches everyone, and everyone reaches the
+      # substrate on its service ports ONLY. Two rules, not one, because a
+      # NetBird rule is single-protocol: the tcp arm and the udp arm of a
+      # set are separate rules that happen to name the same set.
+      # ----------------------------------------------------------------
+      - name: "hub → all (any port, any proto)"
+        description: "The substrate initiates to every peer — health probes, administration, delivery."
+        sources: [HUB]
+        destinations: [CREW, PROBE, OBSERVER]
+        protocol: all
+        action: accept
+        bidirectional: false
+
+      - name: "all → hub (web/dns/fabric tcp)"
+        description: "Every participant reaches the substrate's peer-facing TCP services."
+        sources: [CREW, PROBE]
+        destinations: [HUB]
+        protocol: tcp
+        port_set: substrate
+        action: accept
+        bidirectional: false
+
+      - name: "all → hub (dns/fabric udp)"
+        description: "The UDP half of the same grant. Split only because the rule format is single-protocol."
+        sources: [CREW, PROBE]
+        destinations: [HUB]
+        protocol: udp
+        port_set: substrate
+        action: accept
+        bidirectional: false
+
+      # ----------------------------------------------------------------
+      # B — an observer gets the web page and nothing else. This is the
+      # rule to read if you want to know what the narrowest tier can do.
+      # ----------------------------------------------------------------
+      - name: "observer → hub (https only)"
+        description: "Read-only visitors reach the TLS port. Whatever is behind it does its own authorization."
+        sources: [OBSERVER]
+        destinations: [HUB]
+        protocol: tcp
+        port_set: web
+        action: accept
+        bidirectional: false
+
+      # ----------------------------------------------------------------
+      # C — break-glass. Deliberately a rule of its own rather than a
+      # widening of anything else, so that "who can open a shell" is one
+      # grep and not an inference across four rules.
+      #
+      # This one carries an expiry to show the shape. A past date fails CI
+      # and a scheduled job opens the PR that removes it; the field is
+      # stripped before the ACL is applied, so it exists only in the
+      # registry and never on the wire.
+      # ----------------------------------------------------------------
+      - name: "breakglass → hub (ssh only)"
+        description: "The way back in. Narrow on purpose: one protocol, one port, one direction."
+        sources: [BREAKGLASS]
+        destinations: [HUB]
+        protocol: tcp
+        port_set: shell
+        expires: 2099-01-01
+        owner: platform-admin
+        action: accept
+        bidirectional: false
+
+      # ----------------------------------------------------------------
+      # D — quarantine. A quarantined peer is NOT cut off: it keeps web and
+      # DNS so it can still resolve names and read the page explaining its
+      # own state. The containment is the ABSENCE of the fabric ports, which
+      # is why `substrate-restricted` is its own set rather than a comment
+      # on `substrate`.
+      # ----------------------------------------------------------------
+      - name: "quarantined → hub (web/dns only)"
+        description: "Kept, not severed. No fabric leg, so it can neither publish nor subscribe."
+        sources: [QUARANTINED]
+        destinations: [HUB]
+        protocol: tcp
+        port_set: substrate-restricted
+        action: accept
+        bidirectional: false
+
+      - name: "quarantined → hub (dns udp)"
+        description: "The UDP half of the quarantine grant."
+        sources: [QUARANTINED]
+        destinations: [HUB]
+        protocol: udp
+        port_set: substrate-restricted
+        action: accept
+        bidirectional: false
+
+      # ----------------------------------------------------------------
+      # E — a probe publishes and reads nothing else. It has a fabric leg
+      # via rule A already; this rule exists to show a set granted on its
+      # own, without the web and DNS surface around it.
+      # ----------------------------------------------------------------
+      - name: "probe → hub (fabric only)"
+        description: "A sensor's publish leg, granted without the rest of the service surface."
+        sources: [PROBE]
+        destinations: [HUB]
+        protocol: tcp
+        port_set: fabric
+        action: accept
+        bidirectional: false
