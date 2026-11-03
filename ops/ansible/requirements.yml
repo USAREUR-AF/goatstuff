@@ -1,0 +1,25 @@
+# Ansible Galaxy collection prerequisites for every goatnet playbook.
+#
+# THE DEFECT THIS CLOSES: a fresh control node had no single place to learn
+# which collections the playbooks need — they were mentioned in passing in one
+# runbook, and a new operator discovered each one via a raw "couldn't resolve
+# module" failure mid-play. This is the one-command prerequisite:
+#
+#     ansible-galaxy collection install -r ops/ansible/requirements.yml
+#
+# Determined by scanning ops/ansible/roles + playbooks for FQCN module usage
+# (community.aws / .docker / .general, ansible.posix). Version floors are
+# conservative minimums, not pins — raise if a role needs a newer module.
+collections:
+  - name: ansible.posix
+    version: ">=1.5.0"       # mount, sysctl, firewalld, authorized_key
+  - name: community.general
+    version: ">=8.0.0"       # docker_compose_v2 helpers, filters, misc modules
+  - name: community.docker
+    version: ">=3.4.0"       # docker_compose_v2, docker_container, docker_network
+  - name: community.crypto
+    version: ">=2.10.0"      # x509/openssl helpers used by cert-adjacent roles
+  - name: community.aws
+    version: ">=7.0.0"       # SSM connection + AWS modules (relay/bridge tier)
+  - name: amazon.aws
+    version: ">=7.0.0"       # community.aws depends on it (SSM, S3, EC2)

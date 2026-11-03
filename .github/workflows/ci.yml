@@ -65,6 +65,7 @@ jobs:
           python3 -m pip install -q pyyaml jsonschema pytest ansible-core yamllint
           python3 -m pip install -q -r ops/serve/goat-map/requirements.txt
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck ripgrep
+          ansible-galaxy collection install -r ops/ansible/requirements.yml
       - name: every Python file compiles
         run: python3 -m compileall -q .
       - name: Python tests
