@@ -7,7 +7,7 @@
 # append to deploy-history.yml (CI guard at
 # .github/workflows/deploy-history-check.yml). The :latest tag is
 # never used here because it erases the rollback target.
-flashlight_image: "ghcr.io/{{ ghcr_org }}/flashlight@sha256:db5c827c09b975cc975a9db04b12a3cc8962d12d84353771a322f33f441e33d9"
+flashlight_image: "ghcr.io/{{ ghcr_org }}/flashlight@sha256:3042df91b7f2c5846719a5ef12862cf27da49ff125dccc211161187ce6f78af5"
 
 # Public hostname for browser-facing access. Pattern is
 # `<surface>.<site_id>.<site_dns_zone>`. Omitting the <site_id> segment makes
