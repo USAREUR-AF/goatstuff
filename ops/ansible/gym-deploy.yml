@@ -1,0 +1,44 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Operator-fired playbook to bring up goat gym — the training surface — at
+# `gym.<site>.<zone>` on a goatnet's mgmt host. nginx:alpine serves a site
+# rendered on the CONTROL NODE from ops/gym/ at deploy time.
+#
+# Usage:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES aws-vault exec usareur-af --no-session -- \
+#     ../scripts/ansible-preflight.sh -i inventory/hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#     -l mgmt-zagros-01-thor -e target=zagros_hosts gym-deploy.yml
+#
+# THE PREFLIGHT WRAPPER MATTERS MORE HERE THAN ANYWHERE. The served content is
+# your working tree, not a release asset: deploying from a stale trunk serves
+# stale training, and stale training is worse than none because it is believed.
+#
+# Pre-flight (operator-side):
+#   1. `python3 ../gym/check.py` passes locally. The role runs it too and the
+#      deploy is fatal on failure — dead pointers must not ship.
+#   2. `gym.<site>.<zone>` resolves in the mesh. The per-site zone is GENERATED
+#      from the goatnet's `isitup_services` rows, so the isitup row and the DNS
+#      record land together:
+#        a. add the gym row to group_vars/<env>_hosts/vars.yml (see
+#           docs/operations/gym-deploy.md for the exact block)
+#        b. python3 ../dns/generate-mesh-hosts.py
+#        c. re-run the goatnet's coredns play so peers resolve the new name
+#      Skipping (c) is the "server is up but my browser shows nothing" gotcha:
+#      the container and the cert are fine and the name does not resolve.
+#   3. The `le` resolver mints the cert on first request — no static SAN edit.
+#
+# Cross-refs:
+# - docs/design/goat-gym.md
+# - docs/operations/gym-deploy.md
+# - ADR 1133
+
+- name: gym | deploy
+  # Site-agnostic: `-e target=<env>_hosts` deploys gym.<site>.<zone> on any
+  # goatnet (the role keys hostname off site_id / site_dns_zone).
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  roles:
+    - gym

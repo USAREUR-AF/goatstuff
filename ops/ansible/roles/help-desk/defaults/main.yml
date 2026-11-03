@@ -1,0 +1,21 @@
+---
+# help-desk role — the mesh entry point for a help desk that runs on ANOTHER
+# peer (ADR 1176, docs/design/help-desk-service-pattern.md §2). Nothing runs
+# on the management host but a Traefik file-provider route and, when the door
+# is on, the oauth2-proxy-surface sidecar `oauth2-proxy-help` that the route
+# targets. The application itself is a partner-run machine on
+# EXTERNAL-INFRA; its mesh IP and port are stated per goatnet in group_vars.
+#
+# The route is rendered in BOTH door states (authenticated-doors.yml, second
+# play): with `help_oauth2_proxy_enabled: true` it targets the door; otherwise
+# the upstream directly, mesh-only. Turning the door off must never leave the
+# route pointed at a sidecar that is about to be removed.
+help_desk_hostname: "help.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+# REQUIRED per goatnet: the peer that runs the help desk, as Traefik reaches it.
+help_desk_upstream_host: ""
+help_desk_upstream_port: 80
+help_desk_traefik_dynamic_dir: "/etc/traefik/dynamic"
+help_desk_traefik_dynamic_filename: "{{ site_id | mandatory }}-help-desk.yml"
+help_desk_traefik_cert_resolver: "le"
+help_desk_traefik_router_name: "{{ site_id | mandatory }}-help-desk"
+help_desk_traefik_mesh_only_middleware: "mesh-only-allowlist@file"

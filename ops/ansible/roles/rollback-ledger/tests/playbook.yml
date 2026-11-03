@@ -1,0 +1,22 @@
+---
+# Parse-only fixture for the rollback-ledger role.
+#
+# This role is a UNIVERSAL meta-dependency — it runs at the entry of every one
+# of the ~70 deploying roles — so a Jinja or variable-shape error here breaks
+# every deploy at once rather than one. It gained load-bearing Jinja with CF-3's
+# applied-intent stamp (consistency-foundation.md §5.2), which is why it now
+# carries a fixture it did not have before.
+
+- name: rollback-ledger | parse-only fixture
+  hosts: localhost
+  gather_facts: false
+  vars:
+    rollback_component: fixture-component
+    rollback_artifact_type: image
+    rollback_ref: "ghcr.io/example/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    # Ungoverned by default, which is the fixture's point: the stamp path must
+    # parse cleanly on a host that writes no stamp at all, because that is what
+    # every legacy env does under the forward-only scope.
+    consistency_goatnet: ""
+  roles:
+    - role: ../..

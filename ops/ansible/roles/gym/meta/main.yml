@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: gym
+  author: goat-maintainer
+  license: Apache-2.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+# Universal deploy-rollback ledger (ADR 1060). The rollback ref is the nginx
+# image pin; the CONTENT rolls back with the repo, since it is generated from
+# the tree at deploy time rather than from a versioned asset.
+dependencies:
+  - role: rollback-ledger
+    vars:
+      rollback_component: gym
+      rollback_artifact_type: image
+      rollback_promote_mode: explicit  # mid-role flush_handlers; promote after smoke
+      rollback_ref: "{{ gym_image }}"

@@ -1,0 +1,136 @@
+---
+# ops/ansible/roles/openobserve
+#
+# Anchor: ADR 0822 — wide-event observability via OTLP + OpenObserve on
+# the per-site MinIO substrate. This role brings up the OpenObserve
+# server pointed at the telemetry-otlp bucket already created by the
+# `minio` role.
+#
+# Pre-flight: `minio` role must have completed on this host (telemetry-
+# otlp bucket present). The init task verifies via mc.
+
+# 1. Pre-flight
+
+- name: Pre-flight — root creds set
+  ansible.builtin.assert:
+    that:
+      - openobserve_root_email | length > 0
+      - openobserve_root_password | length >= 8
+    fail_msg: |
+      VEGA_C_OPENOBSERVE_ROOT_EMAIL / _PASSWORD must be exported.
+      Set in .envrc.local; password must be ≥8 chars.
+
+- name: Pre-flight — S3 creds set (consume MinIO root for v1)
+  ansible.builtin.assert:
+    that:
+      - openobserve_s3_access_key | length > 0
+      - openobserve_s3_secret_key | length > 0
+    fail_msg: |
+      OpenObserve S3 backend needs MinIO credentials. v1 reuses the
+      MinIO root creds via VEGA_C_MINIO_ROOT_USER / _PASSWORD.
+      Block 27D will replace with a dedicated IAM service-account.
+
+- name: Pre-flight — telemetry-otlp bucket present in MinIO
+  ansible.builtin.uri:
+    url: "http://localhost:9000/{{ openobserve_s3_bucket }}/"
+    method: GET
+    # Anonymous request — MinIO returns 403 for known-existing buckets
+    # without auth, 404 for non-existent. Either confirms reachability;
+    # we only care that the path resolves and we get an XML AccessDenied
+    # or a NoSuchBucket — both are evidence MinIO is up.
+    status_code: [200, 403, 404]
+  register: _minio_bucket_probe
+  failed_when: _minio_bucket_probe.status == 404
+  changed_when: false
+
+# 2. Storage layout
+
+- name: Ensure OpenObserve data dir exists with container-matching ownership
+  ansible.builtin.file:
+    path: "{{ openobserve_data_root }}"
+    state: directory
+    owner: "{{ openobserve_uid }}"
+    group: "{{ openobserve_gid }}"
+    mode: "0750"
+
+- name: Ensure compose dir exists
+  ansible.builtin.file:
+    path: "{{ openobserve_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# 3. Render compose + .env
+
+- name: Render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ openobserve_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: openobserve compose changed
+
+- name: Render .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ openobserve_compose_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: openobserve compose changed
+
+# 4. Bring up
+
+- name: Pull OpenObserve image
+  ansible.builtin.command:
+    cmd: docker compose pull
+    chdir: "{{ openobserve_compose_dir }}"
+  changed_when: true
+
+- name: Bring up OpenObserve
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ openobserve_compose_dir }}"
+  register: _oo_up
+  changed_when: "'Started' in _oo_up.stderr or 'Created' in _oo_up.stderr or 'Recreated' in _oo_up.stderr"
+
+- name: Wait for OpenObserve /healthz
+  ansible.builtin.uri:
+    url: "http://localhost:{{ openobserve_http_port }}/healthz"
+    status_code: 200
+  register: _oo_ready
+  retries: "{{ openobserve_health_retries }}"
+  delay: "{{ openobserve_health_delay_seconds }}"
+  until: _oo_ready.status == 200
+  changed_when: false
+
+# 5. Verify
+#
+# At this point the server is up and the API is responding. Functional
+# spike (ingest → MinIO rotation) is the 27A.3 spike-driver's job, run
+# from the bootstrap orchestrator's Phase 5.5 — not this role.
+- name: Check whether obs-host rules dir exists (co-location probe)
+  ansible.builtin.stat:
+    path: /opt/obs-host/rules
+  register: _oo_obs_rules_dir
+
+- name: Drop openobserve.yml alert rules into obs-host rules dir
+  ansible.builtin.template:
+    src: prom-rules-openobserve.yml.j2
+    dest: /opt/obs-host/rules/openobserve.yml
+    owner: root
+    group: root
+    mode: "0644"
+  when: _oo_obs_rules_dir.stat.exists | default(false)
+  notify: prometheus reload from openobserve role
+
+- name: Banner
+  ansible.builtin.debug:
+    msg: |
+      OpenObserve up at http://{{ ansible_host }}:{{ openobserve_http_port }}/
+      Login: {{ openobserve_root_email }} / (VEGA_C_OPENOBSERVE_ROOT_PASSWORD)
+      Spike harness: ops/ansible/vega-obs-bootstrap.yml Phase 6.5,
+      or run ops/observability/wide-events/spike/run-spike.sh manually.

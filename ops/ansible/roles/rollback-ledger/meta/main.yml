@@ -1,0 +1,28 @@
+---
+# Shared deploy-rollback ledger role per ADR 1060.
+# docs/design/universal-deploy-rollback.md
+galaxy_info:
+  role_name: rollback_ledger
+  author: goat-maintainer
+  description: |
+    Appends the per-host runtime deploy ledger
+    /var/lib/goat/<component>/deploy-history.jsonl recording the ref each
+    ansible run converges the host to. Auto-included by every deploying
+    role via a meta-dependency stanza (zero per-role boilerplate). The
+    on-host jsonl is the source of truth for ops/scripts/rollback.sh,
+    covering role-default, group_vars, and env-var pins uniformly.
+  license: Apache-2.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+
+# CRITICAL (ADR 1060): without allow_duplicates Ansible de-dupes a
+# meta-dependency across the whole play, so only the FIRST deploying role
+# in a play would get a ledger row. allow_duplicates makes each depending
+# role invoke this role with its own component/ref vars.
+allow_duplicates: true
+
+dependencies: []

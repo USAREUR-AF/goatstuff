@@ -1,0 +1,104 @@
+---
+# render-manifest.yml — record what this converge rendered (CF-4).
+#
+# Included by an ADOPTING role at the END of its tasks, after every template
+# has landed:
+#
+#   - name: Record the config render manifest (CF-4)
+#     ansible.builtin.include_role:
+#       name: rollback-ledger
+#       tasks_from: render-manifest
+#     vars:
+#       render_component: <ledger component>   # the /var/lib/goat/<key>/ dir
+#
+# Position is the correctness argument: the ledger row at role entry records
+# what the run INTENDS; this file, running after the renders, hashes what the
+# converge actually produced. The watch-set itself is DECLARED DATA —
+# `consistency_render_watch` in the generated pins.yml, rendered from
+# ops/pins/fleet-pins.yaml `render_watch:` — so the adopting role carries no
+# path list of its own and the table stays the one home. Paths may embed
+# {{ vars }}; ansible resolves them here, on the host being converged.
+#
+# Default-off (consistency_render_manifest_enabled) and declared-off (empty
+# watch-set) — see defaults/main.yml. Fail-closed within a recording: a
+# declared file that cannot be hashed is recorded with an empty hash and a
+# note, never silently omitted — the reader grades it `unreadable` rather
+# than the manifest quietly shrinking to the hashable subset.
+#
+# Canon: docs/design/consistency-foundation.md §5.2a (ADR 1110 D3, CF-4).
+
+- name: render-manifest | require a component name (fail-closed, same as the ledger)
+  ansible.builtin.assert:
+    that:
+      - render_component | default('') | length > 0
+    fail_msg: >-
+      render-manifest included without render_component. Pass the component's
+      ledger key (the /var/lib/goat/<key>/ directory) in the include's vars.
+    quiet: true
+  when: consistency_render_manifest_enabled | bool
+
+- name: render-manifest | resolve this component's declared watch-set
+  ansible.builtin.set_fact:
+    _rm_paths: "{{ consistency_render_watch.get(render_component, []) }}"
+    # Re-initialised on every include: set_fact persists across includes in a
+    # play, and a second adopting role must not inherit the first one's rows.
+    _rm_entries: []
+  when: consistency_render_manifest_enabled | bool
+
+- name: render-manifest | hash each declared file as this converge rendered it
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+    get_checksum: true
+  loop: "{{ _rm_paths | default([]) }}"
+  register: _rm_stat
+  become: true
+  when:
+    - consistency_render_manifest_enabled | bool
+    - (_rm_paths | default([]) | length) > 0
+
+- name: render-manifest | build the entry list (a missing file is recorded, never omitted)
+  ansible.builtin.set_fact:
+    _rm_entries: >-
+      {{ _rm_entries + [ {
+           'path': item.item,
+           'sha256': ('sha256:' + item.stat.checksum)
+                     if (item.stat.exists and item.stat.checksum is defined)
+                     else '',
+           'note': '' if (item.stat.exists and item.stat.checksum is defined)
+                   else 'missing at converge',
+         } ] }}
+  loop: "{{ _rm_stat.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('') }}"
+  when:
+    - consistency_render_manifest_enabled | bool
+    - (_rm_paths | default([]) | length) > 0
+
+- name: render-manifest | ensure the component's ledger dir
+  ansible.builtin.file:
+    path: "{{ consistency_render_manifest_root }}/{{ render_component }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ rollback_ledger_owner }}"
+    group: "{{ rollback_ledger_group }}"
+  become: true
+  when:
+    - consistency_render_manifest_enabled | bool
+    - (_rm_paths | default([]) | length) > 0
+
+# Sorted keys + trailing newline; content changes ONLY when a rendered file's
+# bytes changed, so the file's mtime (the collector's `recorded_at`) moves only
+# when the renders genuinely moved — the same change-only rule as the
+# applied-intent stamp above.
+- name: render-manifest | write {{ consistency_render_manifest_root }}/{{ render_component | default('?') }}/render-manifest.json
+  ansible.builtin.copy:
+    dest: "{{ consistency_render_manifest_root }}/{{ render_component }}/render-manifest.json"
+    content: "{{ {'format': 'goat-render-manifest-v1', 'component': render_component, 'renders': _rm_entries} | to_nice_json(sort_keys=True) }}\n"
+    mode: "0644"
+    owner: "{{ rollback_ledger_owner }}"
+    group: "{{ rollback_ledger_group }}"
+  become: true
+  when:
+    - consistency_render_manifest_enabled | bool
+    - (_rm_paths | default([]) | length) > 0

@@ -1,0 +1,38 @@
+---
+# Defaults for `herd-oidc-client` — registers herd's OAuth2 client at the site
+# Hydra so the oauth2-proxy fence in front of the gear console can authenticate
+# a person. Modelled on roles/isitup-oidc-client (the same GET-then-POST-or-PUT
+# shape); this is the eleventh per-service copy of that pattern.
+#
+# Runs BEFORE roles/herd in herd-deploy.yml: the proxy cannot start without a
+# client that exists at Hydra.
+
+herd_oidc_client_id: "herd"
+herd_oidc_client_name: "herd — bearer-gear console ({{ site_id }})"
+
+herd_oidc_issuer_url: "https://oauth2.{{ site_id }}.{{ site_dns_zone }}"
+
+# MUST match where herd actually serves, or the callback 404s and the failure
+# looks like an auth bug rather than a naming one. Derived from roles/herd's own
+# `herd_hostname` so there is ONE home for that name; the fallback repeats that
+# role's default expression verbatim for the case where this role is run alone.
+herd_oidc_redirect_uri: "https://herd.{{ site_id }}.{{ site_dns_zone }}/oauth2/callback"
+
+# `groups` is load-bearing, not decoration: roles/herd fences on
+# herd_oauth2_proxy_allowed_groups (PLATFORM-ADMIN), and the proxy can only
+# enforce a group claim it was scoped to receive.
+herd_oidc_scopes:
+  - openid
+  - profile
+  - email
+  - groups
+  - offline_access
+
+herd_oidc_hydra_admin: "http://127.0.0.1:{{ hydra_admin_host_port | default(4445) }}"
+
+# ONE HOME FOR THE SECRET. roles/herd reads the same environment variable for
+# the proxy's own config (herd_oauth2_proxy_client_secret). Registering with one
+# value and configuring the proxy with another produces a login loop that looks
+# like an Ory problem and is not, so both sides read HERD_OAUTH2_CLIENT_SECRET
+# and neither has a literal.
+herd_oidc_client_secret: "{{ lookup('env', 'HERD_OAUTH2_CLIENT_SECRET') }}"

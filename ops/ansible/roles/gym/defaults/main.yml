@@ -1,0 +1,75 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the `gym` role — goat gym, the training surface, served
+# mesh-internally at gym.<site>.<zone>. docs/design/goat-gym.md (ADR 1133).
+#
+# HOW THE PAYLOAD DIFFERS FROM goat-docs, the role this one is shaped after.
+# goat-docs pulls a release tarball built from a tagged binary, because its
+# content must match that binary. The gym's content is the REPO — the registry
+# at ops/gym/gym.yaml and its in-place content — so it is generated on the
+# CONTROL NODE at deploy time from the checked-out tree and copied to the host.
+# No release asset, no GitHub token, and the served site is exactly the branch
+# you deployed from. That is also why the ansible-preflight wrapper matters
+# here: a stale trunk serves stale training.
+
+# OFF BY DEFAULT, and that is the load-bearing part. A goatnet hosts the gym
+# because its own group_vars says so, never because a playbook was pointed at
+# it. A production goatnet deliberately does not host it (ADR 1132 A7): the surface is
+# unfenced on the mesh and carries a library of internal project documents,
+# which is a reasonable trade where people are onboarded and a poor one on a
+# production goatnet. Its absence is recorded in the group_vars parity
+# exclusions so it reads as a decision rather than a gap.
+gym_enabled: false
+
+# Public hostname for on-mesh access. `gym.<site>.<zone>`, sibling to
+# docs.<site> and guide.<site>.
+gym_hostname: "gym.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# Where the registry and generator live in the repo (control-node paths,
+# resolved relative to the playbook's repo root).
+gym_repo_dir: "{{ playbook_dir }}/../gym"
+
+# Refuse to deploy a registry that does not pass its own gate. A gym whose
+# pointers are dead is worse than no gym: the whole anti-duplication rule
+# rests on the pointer being live, and a dead pointer is a dead end that
+# looks like a curated one.
+gym_gate_registry: true
+
+# Diagram renderer. Project documents draw their state machines and flows as
+# mermaid; without this they render as their own source, which is what the
+# first hosted library did and it read as a bug.
+#
+# VENDORED INTO THE SITE, not fetched by the browser. The gym is served where
+# there may be no internet, so a CDN reference would leave every diagram broken
+# exactly where the training is most needed. Pinned by version AND checksum:
+# this is third-party JavaScript served to readers on the mesh.
+gym_mermaid_version: "11.6.0"
+gym_mermaid_url: "https://cdn.jsdelivr.net/npm/mermaid@{{ gym_mermaid_version }}/dist/mermaid.min.js"
+gym_mermaid_sha256: "3a93016a73dc82ba890d919f9bbb176f3da9d98341650c0b517f2595cc68fef8"
+gym_mermaid_cache: "{{ lookup('env', 'HOME') }}/.cache/goat-gym/mermaid-{{ gym_mermaid_version }}.min.js"
+
+# nginx static server. SHA-pin per ADR 0859 (easy rollback).
+gym_image: "nginx:1.27-alpine"
+gym_container_name: "gym"
+gym_internal_port: 80
+
+# On-host paths.
+gym_compose_dir: "/opt/gym"
+gym_www_dir: "/opt/gym/www"
+
+# Traefik wiring — file provider on the `mgmt` network, `le` resolver,
+# distinct filename + router name so a gym redeploy cannot stomp its
+# neighbours' routes.
+gym_traefik_network: "mgmt"
+gym_traefik_dynamic_dir: "/etc/traefik/dynamic"
+gym_traefik_dynamic_filename: "gym.yml"
+gym_traefik_cert_resolver: "le"
+gym_traefik_router_name: "gym"
+
+# Mesh-only gating and NOTHING else — deliberately unfenced beyond the mesh,
+# exactly like the onboarding guide. F-326: a "start here" link must be
+# openable by the person you sent it to, and every drill in the gym is safe to
+# fail. Fencing this would make the training unreachable to the people it is
+# written for.
+gym_traefik_mesh_only_middleware: "mesh-only-allowlist@file"

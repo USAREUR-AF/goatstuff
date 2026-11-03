@@ -1,0 +1,63 @@
+---
+# promote.yml — promote THIS component's pending ledger row to `deploy`, from the
+# END of a role whose deploy path runs `meta: flush_handlers` mid-role.
+#
+# WHY NOT THE PLAY-END HANDLER. rollback-ledger normally promotes from a handler
+# ansible runs at end of play, only for hosts that did not fail. But ~19 roles
+# call `meta: flush_handlers` BEFORE their own bring-up/health/smoke (to land a
+# compose or cert change first), and flush_handlers is PLAY-scoped: it fires the
+# promote handler too, stamping `deploy`+`promoted_at` BEFORE the health gate. A
+# task failing after that flush then left a `deploy` row for a deploy that did
+# not finish, and deploy-component.sh / goatbuilder read the host as converged.
+#
+# Such a role sets `rollback_promote_mode: explicit` in its rollback-ledger
+# dependency stanza (so the meta-dep does NOT queue its row for the handler) and
+# includes THIS file as the LAST step of its deploy path, after health/smoke:
+#
+#   - name: <role> | record deploy convergence in the ledger after smoke
+#     ansible.builtin.include_role:
+#       name: rollback-ledger
+#       tasks_from: promote
+#     vars:
+#       rollback_component: <ledger component>   # the /var/lib/goat/<key>/ dir
+#       rollback_ref: "{{ <the deployed ref> }}" # same ref as the meta stanza
+#
+# Position is the correctness argument, the same one render-manifest makes: a
+# task placed after health/smoke runs only if the role reached it — i.e. the
+# deploy finished. A role that fails earlier never gets here, so its row stays
+# `pending`. Idempotent: promote-pending.py is a no-op on a row already `deploy`,
+# and a no-op when there is no pending row for this ref (an `include_role`
+# invocation that fired no meta-dep, or a disabled component).
+#
+# SERVED PAYLOADS. The serving roles (goat-get, goat-docs) do NOT flush handlers
+# mid-role, so they stay on the handler path, where the handler reads each file
+# back as `served`. None of the explicit roles declare rollback_served, so this
+# file promotes the ref only. If a serving role ever gains a mid-role flush, it
+# would need `--served` here too; the structural test in
+# ops/ci/test-ledger-promote-pending.py would flag it as newly explicit.
+#
+# Canon: docs/design/universal-deploy-rollback.md, F-530.
+
+- name: promote | require component + ref (fail-closed, same as the ledger)
+  ansible.builtin.assert:
+    that:
+      - rollback_component | length > 0
+      - rollback_ref | length > 0
+    fail_msg: >-
+      rollback-ledger tasks_from: promote included without rollback_component
+      and rollback_ref. Pass both in the include's vars (the same values the
+      meta dependency stanza carries). See docs/design/universal-deploy-rollback.md.
+    quiet: true
+
+# The same script the end-of-play handler runs, so both promotion paths flip the
+# row identically (action -> deploy, promoted_at stamped). `script` copies it
+# from this role's files/, so the handler and this include stay one implementation.
+- name: promote | promote this component's pending row to deploy
+  ansible.builtin.script:
+    cmd: >-
+      promote-pending.py
+      {{ rollback_ledger_path | quote }}
+      {{ rollback_ref | quote }}
+    executable: /usr/bin/python3
+  become: true
+  changed_when: false

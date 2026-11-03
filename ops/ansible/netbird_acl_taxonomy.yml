@@ -1,0 +1,1038 @@
+# netbird_acl_taxonomy.yml — per-goatnet NetBird group taxonomy.
+# Convention: site_prefix = site_id|upper. `_default` is the template a new
+# conventional goatnet inherits (operator-onboard.yml resolve block), so no
+# hand-edit is needed per goatnet.
+netbird_acl_taxonomy:
+  _default:
+    site_prefix: __DERIVED__
+    groups:
+    - suffix: INFRA
+      description: Substrate/infra peers (mgmt hosts, mesh-dns, relay-health, site-hosted service peers).
+        Omni-reachable AND omni-reaching (rule A, bidirectional). Renamed from MGMT-HOST; legacy group
+        deleted 2026-07-16.
+    - suffix: EXTERNAL-INFRA
+      description: Externally-hosted service peers (partner/cloud collab servers). Reachable by every
+        peer (one-way rule C); initiates only toward the substrate (rule A source). Lower trust tier than
+        INFRA.
+    - suffix: PLATFORM-ADMIN
+      description: "Human platform admins (matches the Ory PLATFORM-ADMIN group so the role reads identically\
+        \ in both planes). Full access to all services including dashboard / mgmt. Renamed from ADMIN;\
+        \ legacy group deleted 2026-07-16 (the Ory ADMINS alias remains dual-accepted until the goat-id-console\
+        \ port). HUMANS ONLY \u2014 a MACHINE must never hold this group. It is the only inward cross-scope\
+        \ source ADR 1124 permits, and it is any-port, so granting it to a service account to let a guard\
+        \ reach a scope buys any-port administrative reach for a machine where the deliberate answer is\
+        \ port-scoped function (subordinate-scope-substrate.md 5.2b)."
+    - suffix: MONITOR
+      description: "Observability-support role \u2014 RATIFIED 2026-07-16: obs staff WITHOUT IAM-admin.\
+        \ Participant-grade mesh reach (can reach peers to diagnose); dashboard rights ride the paired\
+        \ Ory obs groups (GRAFANA-*/ALL-*), NOT this mesh group. Identity administration stays with the\
+        \ Ory IAM-ADMIN group. Distinct from OBSERVER (browse-only, substrate reach only)."
+    - suffix: DEVELOPER
+      description: "Affiliation-neutral full-participation role (ADR 1043). Capability-equal to legacy\
+        \ VENDOR \u2014 Zenoh router :7447 sub/pub (per-uuid slot) + brief / portal / panoscope / stethoscope\
+        \ / flashlight \u2014 but carries no vendor connotation, so organic + partner devs land here.\
+        \ Affiliation (vendor/organic/partner/civil) is the separate manifest affiliation block, NOT this\
+        \ group. No observability / dashboard / mgmt / compliance."
+    - suffix: OBSERVER
+      description: "Browse-only participants + read-only observers. Mesh web surfaces (auth / isitup /\
+        \ panoscope / portal / brief) \u2014 no fabric pub/sub, no dashboard / mgmt / compliance."
+    - suffix: PROBATION-PLATFORM-ADMIN
+      description: 'Probation satellite (ADR 1089): dormant PLATFORM-ADMIN holding lane. INFRA :443+DNS
+        only (explainer + petition). Restore target = the suffix.'
+    - suffix: PROBATION-MONITOR
+      description: 'Probation satellite (ADR 1089): dormant MONITOR holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-DEVELOPER
+      description: 'Probation satellite (ADR 1089): dormant DEVELOPER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-OBSERVER
+      description: 'Probation satellite (ADR 1089): dormant OBSERVER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-MOON
+      description: 'Probation satellite (ADR 1089/1092): dormant MOON uplink holding lane. INFRA :443+DNS
+        only.'
+    - suffix: PROBATION-POD
+      description: 'Probation satellite (ADR 1089/1092): dormant POD appliance holding lane. INFRA :443+DNS
+        only.'
+    - suffix: QUARANTINED
+      description: "Security satellite lane (ADR 1091), NOT probation: admin-placed on suspected/confirmed\
+        \ threat-actor behavior, flat (no role suffix \u2014 restore target lives in the transfer-engine\
+        \ audit record). Reach: INFRA :443 + DNS ONLY (no fabric :7447/:7448 \u2014 a compromised slot\
+        \ cert must not keep publishing); INFRA reaches it any-port for inspection. No explainer page,\
+        \ no petition, no self-service exit \u2014 exit is operator restore or ADR 1031 sever. Entry strips\
+        \ ALL other groups incl. P2P."
+    - suffix: MOON
+      description: "Node-class (ADR 1092): uplink peer of a foreign-stack goatnet (own mgmt/identity/CA;\
+        \ not federated into this mesh \u2014 its whole presence here is this one data-passage peer, e.g.\
+        \ the lab-node uplink). Initiates to INFRA on peer-facing service ports only; NOTHING initiates\
+        \ toward it (sovereign box, reveal-only health). No external-infra, no lateral, never P2P."
+    - suffix: POD
+      description: 'Node-class (ADR 1092): moon-pod-guidance appliance INSIDE our identity planes (our
+        NetBird/Ory/X.509 CA; may run its own local zenoh router). OPSYSTEM-grade substrate reach + normal
+        infra probe/admin destination; excluded from external-infra reach (grant on real need). Peering
+        into the pod''s local router = ADR 1087 router-peer graduated capability, never base reach.'
+    - suffix: NETWORK
+      description: "Node-class (ADR 1113): network TRANSPORT infrastructure \u2014 routers, switches,\
+        \ radios and other bearer gear carrying the IP underlay. Deliberately asymmetric and strictly\
+        \ narrower than INFRA: platform admins + INFRA reach it any-port; it initiates ONLY toward INFRA\
+        \ management-plane services (443 / DNS / NTP / syslog / TACACS+ / SNMP-trap) and NO fabric ports.\
+        \ No lateral reach, NEVER P2P \u2014 a bearer device is the most physically exposed peer on the\
+        \ mesh. Enrollable by a site network admin holding the delegated entitlement, not only the operator."
+    - suffix: BREAKGLASS
+      description: "Node-class (ADR 1114): operator reach-in of LAST RESORT \u2014 a dual-homed, minimal\
+        \ node positioned so it can be reached, and can reach the local substrate, when the normal control\
+        \ plane is the broken thing. Shape follows NETWORK: reachable any-port by PLATFORM-ADMIN + INFRA,\
+        \ but initiates ONLY to INFRA and NETWORK on tcp 22, no fabric ports in either direction, no lateral\
+        \ reach, NEVER P2P (p2p -> all would silently restore exactly the over-grant this tier exists\
+        \ to avoid). Unlike NETWORK it is NOT delegable: the entitlement that lets a site admin enroll\
+        \ a switch must not let them enroll their own way into the rescue path. A node may not be declared\
+        \ BREAKGLASS with only the normal-day path configured \u2014 the bad-day path is half the definition\
+        \ (ADR 1114 D3)."
+    - suffix: NETWORK-JUMP
+      description: "Node-class (ADR 1131): the ONLY peer permitted to open an interactive session to NETWORK-class\
+        \ bearer gear \u2014 the egress half of the herd gear console, split off from the console itself\
+        \ because a mgmt host IS INFRA and NetBird groups only UNION reach, so nothing hosted there can\
+        \ be narrowed. Initiates to NETWORK on tcp 22 (port-set `shell`) and to INFRA on the bearer-gear\
+        \ management plane (port-set `netadmin`, which carries udp 5353 \u2014 see F-314: tcp 22 alone\
+        \ leaves a jump host able to reach the gear and unable to NAME it). NO fabric ports in either\
+        \ direction, no lateral reach, NEVER P2P. Unlike BREAKGLASS this is a NORMAL-DAY path and carries\
+        \ no second WAN transport, so it is not a rescue tier and must never be treated as one. Unlike\
+        \ NETWORK it is NOT delegable: the people who drive it hold a site-scoped network_admin entitlement\
+        \ (ADR 1113 \xA73), but the peer itself is operator-enrolled. Inbound from INFRA is deliberately\
+        \ NOT declared yet \u2014 the connector control port is an ADR 1131 open item, and the intent\
+        \ lands with the port rather than a placeholder, so the class is fail-closed until it does."
+    - suffix: P2P
+      description: 'CAPABILITY group, not a role (ratified 2026-07-16/17): graduated lateral reach. Members
+        can INITIATE to any peer (one-way rule D); non-members navigate only the restrictive paths. Role
+        groups no longer imply lateral reach (contracted 2026-07-17). Graduation: docs/operations/p2p-graduation.md;
+        seeded with the platform-admin peers.'
+    - suffix: BACKEND-INFRA
+      description: "Hidden backend tier (ratified 2026-07-16): backend service peers (postgres, object\
+        \ stores, anything fronted by an INFRA service). NOT in INFRA, NOT a rule-A destination \u2014\
+        \ invisible to ordinary peers. Reached only by INFRA (bidirectional) and PLATFORM-ADMIN (one-way)."
+    - suffix: PUBLIC-INFRA
+      description: "ADR 1162 (accepted 2026-09-08): ours, doing infra work, and reachable from the PUBLIC\
+        \ INTERNET \u2014 exposure as its own axis, distinct from what a peer does (INFRA) and whose\
+        \ hardware it sits on (EXTERNAL-INFRA). Completes the ladder BACKEND-INFRA (hidden even from\
+        \ P2P) \u2192 INFRA (peer-facing ports) \u2192 PUBLIC-INFRA (public ingress). Asymmetric: INFRA\
+        \ and operators reach it any-port; it initiates ONLY toward INFRA on the peer-facing service\
+        \ surface (port-set `substrate`). No lateral, no intra-tier, never P2P. Membership is a per-peer\
+        \ decision with its own evidence \u2014 declaring the class moves nobody."
+    - suffix: HANDSET
+      description: "Device-attribute group (ADR 1175), NOT a role and in NO ACL rule: a phone or tablet\
+        \ enrolled on a person's handset key holds it beside OBSERVER so the PRIMARY `<site_id>-handset-dns`\
+        \ nameserver group reaches it (NetBird pushes match-domain nameservers to desktop clients only;\
+        \ measured working on iOS regardless, M-116, so the group is created default-off and switched\
+        \ on per goatnet with `handset_dns_enabled` after the Android measurement). Distributes DNS and\
+        \ nothing else; membership comes from the handset key's auto_groups, never by hand."
+    - suffix: SENSOR-FEED
+      family: SENSOR
+      slot: data-plane
+      description: "ADR 1116 gear class: publishes observations onto the fabric. Publish + INFRA; nothing\
+        \ initiates toward it. Sub-types (radar, eo-ir, rf, acoustic) are LABELS \u2014 they differ in\
+        \ phenomenology, not wire behaviour."
+    - suffix: SENSOR-TASKING
+      family: SENSOR
+      slot: command-intake
+      description: 'ADR 1116 gear class: accepts tasking (point, cue, change mode). Destination only,
+        from an ENUMERATED source list. Deliberately a different word from an effector''s COMMAND: pointing
+        a radar and ordering an engagement are not the same consequence.'
+    - suffix: SENSOR-TELEMETRY
+      family: SENSOR
+      slot: telemetry
+      description: "ADR 1116 gear class: publishes a sensor's own health and state. Publish only; nothing\
+        \ initiates toward it. Split from tasking on purpose \u2014 telemetry should be widely readable,\
+        \ command narrowly writable, and one class holding both forces a choice that is wrong for one\
+        \ of them."
+    - suffix: SENSOR-ARBITER
+      family: SENSOR
+      slot: arbiter
+      description: "ADR 1116 gear class: tasking + current state -> the actual scan or collection plan.\
+        \ NOT primarily a conflict resolver \u2014 refinement is the normal path and deconfliction is\
+        \ subsumed. Consumes the data plane, so it is simultaneously a heavy subscriber and a high-consequence\
+        \ actor."
+    - suffix: EFFECTOR-CUE
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: receives the coarse cue \u2014 'something is there, orient'.\
+        \ Subscribe + INFRA; NO command path. Labels: navigator, aggregator."
+    - suffix: EFFECTOR-TRACK
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: fire-control-quality track feeding the solution. Separate from\
+        \ CUE because QoS binds to IDENTITY (ADR 1033) \u2014 one shared class means one identity, and\
+        \ the track could not hold a reservation the cue stream cannot consume. RESERVED QoS envelope."
+    - suffix: EFFECTOR-TELEMETRY
+      family: EFFECTOR
+      slot: telemetry
+      description: 'ADR 1116 gear class: publishes an effector''s own health and state. Publish only;
+        nothing initiates toward it.'
+    - suffix: EFFECTOR-COMMAND
+      family: EFFECTOR
+      slot: command-intake
+      description: "ADR 1116 gear class: accepts engagement commands. Destination only; the source list\
+        \ is enumerated BY HAND, permanently \u2014 a mesh-connected ground station may take commands\
+        \ from a local operator, a C2 sequence, or an automated agent. Label:\
+        \ fire-control."
+    - suffix: EFFECTOR-ARBITER
+      family: EFFECTOR
+      slot: arbiter
+      description: 'ADR 1116 gear class: command + live track + own state -> executable engagement. Subsumes
+        navigation. Consumes the data plane, which is why cue and arbiter co-locate on an effector navigator box.'
+    - suffix: KID
+      family: KID
+      slot: element
+      description: 'ADR 1116 gear class: OUR appliance fronting devices that do not speak fabric (GATEWAY_ONE
+        nodes). As SENSOR-FEED, plus local sensor-side reach.'
+    - suffix: EXTERNAL-KID
+      family: KID
+      slot: element
+      description: "ADR 1116 gear class: same function as KID but with EGRESS WE DO NOT CONTROL \u2014\
+        \ a vendor box dual-sending to its own platform. Own topics only; INFRA management plane only;\
+        \ NEVER a P2P destination, because granting graduated lateral reach to a box with external egress\
+        \ makes it a route from our fabric to somebody else's cloud."
+    - suffix: EXTERNAL-INTERMEDIARY
+      family: INTERMEDIARY
+      slot: element
+      description: "ADR 1116 gear class: someone else's box sitting BETWEEN platforms, never a terminus\
+        \ (e.g. NATO ACT's Kyber over SAPIENT). When it dies both sides stay healthy and simply cannot\
+        \ reach each other. Carry `broker` as a LABEL where true \u2014 our fabric is brokerless, but\
+        \ that is a fact about OUR architecture, not a reason to avoid naming someone else's SPOF."
+    - suffix: FUSION
+      family: FUSION
+      slot: data-plane
+      description: 'ADR 1116 gear class: publishes DERIVED data, not observation. Consumers must be able
+        to tell inference from measurement (SourceInfo, ADR 1041).'
+    - suffix: SENSOR
+      family: SENSOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the sensing element itself (radar head, camera).\
+        \ Named now so that if one ever carries a radio there is a correct class waiting; naming a ground\
+        \ station SENSOR would repeat the OPSYSTEM trap where the name stops describing the members."
+    - suffix: EFFECTOR
+      family: EFFECTOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the interceptor itself. Not a mesh peer today,\
+        \ but it is a drone and could carry a radio. An empty reserved class costs nothing; a wrongly-named\
+        \ one costs a migration."
+    - suffix: CONTROL
+      family: CONTROL
+      slot: arbiter
+      description: "ADR 1116 gear class: battle management / C2 \u2014 the station that DIRECTS other\
+        \ gear (e.g. a C2 server or a sensor control laptop). It ISSUES tasking; SENSOR-TASKING\
+        \ is the class for a box that ACCEPTS it. A director placed in SENSOR-TASKING has no outbound reach. Ours and administrable.\
+        \ Being an enumerated SOURCE toward SENSOR-TASKING / EFFECTOR-COMMAND is a SEPARATE standing authorization\
+        \ decision \u2014 declaring this class does not grant it."
+    - suffix: PROBATION-GEAR
+      family: PROBATION
+      slot: element
+      description: "Probation satellite for GEAR (ADR 1116 \xA78) \u2014 ONE lane for every gear class,\
+        \ not a mirror per class. The probation posture is identical whatever the origin (INFRA :443+DNS\
+        \ only), so a per-class mirror would encode no policy, only a restore hint, and that hint belongs\
+        \ in the registry (ADR 1051). The trigger must differ from the people lane: gear goes dormant\
+        \ NORMALLY (a sensor packed between exercises is offline for weeks), so the 14-day-inactive rule\
+        \ would generate churn and train everyone to ignore the lane."
+    _note: Template inherited by any goatnet not explicitly listed; site_prefix derived as site_id|upper.
+  zagros:
+    site_prefix: ZAGROS
+    groups:
+    - suffix: INFRA
+      description: Substrate/infra peers (mgmt hosts, mesh-dns, relay-health, site-hosted service peers).
+        Omni-reachable AND omni-reaching (rule A, bidirectional). Renamed from MGMT-HOST; legacy group
+        deleted 2026-07-16.
+    - suffix: EXTERNAL-INFRA
+      description: Externally-hosted service peers (partner/cloud collab servers). Reachable by every
+        peer (one-way rule C); initiates only toward the substrate (rule A source). Lower trust tier than
+        INFRA.
+    - suffix: PLATFORM-ADMIN
+      description: "Human platform admins (matches the Ory PLATFORM-ADMIN group so the role reads identically\
+        \ in both planes). Full access to all services including dashboard / mgmt. Renamed from ADMIN;\
+        \ legacy group deleted 2026-07-16 (the Ory ADMINS alias remains dual-accepted until the goat-id-console\
+        \ port). HUMANS ONLY \u2014 a MACHINE must never hold this group. It is the only inward cross-scope\
+        \ source ADR 1124 permits, and it is any-port, so granting it to a service account to let a guard\
+        \ reach a scope buys any-port administrative reach for a machine where the deliberate answer is\
+        \ port-scoped function (subordinate-scope-substrate.md 5.2b)."
+    - suffix: MONITOR
+      description: "Observability-support role \u2014 RATIFIED 2026-07-16: obs staff WITHOUT IAM-admin.\
+        \ Participant-grade mesh reach (can reach peers to diagnose); dashboard rights ride the paired\
+        \ Ory obs groups (GRAFANA-*/ALL-*), NOT this mesh group. Identity administration stays with the\
+        \ Ory IAM-ADMIN group. Distinct from OBSERVER (browse-only, substrate reach only)."
+    - suffix: DEVELOPER
+      description: "Affiliation-neutral full-participation role (ADR 1043). Capability-equal to legacy\
+        \ VENDOR \u2014 Zenoh router :7447 sub/pub (per-uuid slot) + brief / portal / panoscope / stethoscope\
+        \ / flashlight \u2014 but carries no vendor connotation, so organic + partner devs land here.\
+        \ Affiliation (vendor/organic/partner/civil) is the separate manifest affiliation block, NOT this\
+        \ group. No observability / dashboard / mgmt / compliance."
+    - suffix: OBSERVER
+      description: "Browse-only participants + read-only observers. Mesh web surfaces (auth / isitup /\
+        \ panoscope / portal / brief) \u2014 no fabric pub/sub, no dashboard / mgmt / compliance."
+    - suffix: PROBATION-PLATFORM-ADMIN
+      description: 'Probation satellite (ADR 1089): dormant PLATFORM-ADMIN holding lane. INFRA :443+DNS
+        only (explainer + petition). Restore target = the suffix.'
+    - suffix: PROBATION-MONITOR
+      description: 'Probation satellite (ADR 1089): dormant MONITOR holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-DEVELOPER
+      description: 'Probation satellite (ADR 1089): dormant DEVELOPER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-OBSERVER
+      description: 'Probation satellite (ADR 1089): dormant OBSERVER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-MOON
+      description: 'Probation satellite (ADR 1089/1092): dormant MOON uplink holding lane. INFRA :443+DNS
+        only.'
+    - suffix: PROBATION-POD
+      description: 'Probation satellite (ADR 1089/1092): dormant POD appliance holding lane. INFRA :443+DNS
+        only.'
+    - suffix: QUARANTINED
+      description: "Security satellite lane (ADR 1091), NOT probation: admin-placed on suspected/confirmed\
+        \ threat-actor behavior, flat (no role suffix \u2014 restore target lives in the transfer-engine\
+        \ audit record). Reach: INFRA :443 + DNS ONLY (no fabric :7447/:7448 \u2014 a compromised slot\
+        \ cert must not keep publishing); INFRA reaches it any-port for inspection. No explainer page,\
+        \ no petition, no self-service exit \u2014 exit is operator restore or ADR 1031 sever. Entry strips\
+        \ ALL other groups incl. P2P."
+    - suffix: MOON
+      description: "Node-class (ADR 1092): uplink peer of a foreign-stack goatnet (own mgmt/identity/CA;\
+        \ not federated into this mesh \u2014 its whole presence here is this one data-passage peer, e.g.\
+        \ the lab-node uplink). Initiates to INFRA on peer-facing service ports only; NOTHING initiates\
+        \ toward it (sovereign box, reveal-only health). No external-infra, no lateral, never P2P."
+    - suffix: POD
+      description: 'Node-class (ADR 1092): moon-pod-guidance appliance INSIDE our identity planes (our
+        NetBird/Ory/X.509 CA; may run its own local zenoh router). OPSYSTEM-grade substrate reach + normal
+        infra probe/admin destination; excluded from external-infra reach (grant on real need). Peering
+        into the pod''s local router = ADR 1087 router-peer graduated capability, never base reach.'
+    - suffix: NETWORK
+      description: "Node-class (ADR 1113): network TRANSPORT infrastructure \u2014 routers, switches,\
+        \ radios and other bearer gear carrying the IP underlay. Deliberately asymmetric and strictly\
+        \ narrower than INFRA: platform admins + INFRA reach it any-port; it initiates ONLY toward INFRA\
+        \ management-plane services (443 / DNS / NTP / syslog / TACACS+ / SNMP-trap) and NO fabric ports.\
+        \ No lateral reach, NEVER P2P \u2014 a bearer device is the most physically exposed peer on the\
+        \ mesh. Enrollable by a site network admin holding the delegated entitlement, not only the operator."
+    - suffix: BREAKGLASS
+      description: "Node-class (ADR 1114): operator reach-in of LAST RESORT \u2014 a dual-homed, minimal\
+        \ node positioned so it can be reached, and can reach the local substrate, when the normal control\
+        \ plane is the broken thing. Shape follows NETWORK: reachable any-port by PLATFORM-ADMIN + INFRA,\
+        \ but initiates ONLY to INFRA and NETWORK on tcp 22, no fabric ports in either direction, no lateral\
+        \ reach, NEVER P2P (p2p -> all would silently restore exactly the over-grant this tier exists\
+        \ to avoid). Unlike NETWORK it is NOT delegable: the entitlement that lets a site admin enroll\
+        \ a switch must not let them enroll their own way into the rescue path. A node may not be declared\
+        \ BREAKGLASS with only the normal-day path configured \u2014 the bad-day path is half the definition\
+        \ (ADR 1114 D3)."
+    - suffix: NETWORK-JUMP
+      description: "Node-class (ADR 1131): the ONLY peer permitted to open an interactive session to NETWORK-class\
+        \ bearer gear \u2014 the egress half of the herd gear console, split off from the console itself\
+        \ because a mgmt host IS INFRA and NetBird groups only UNION reach, so nothing hosted there can\
+        \ be narrowed. Initiates to NETWORK on tcp 22 (port-set `shell`) and to INFRA on the bearer-gear\
+        \ management plane (port-set `netadmin`, which carries udp 5353 \u2014 see F-314: tcp 22 alone\
+        \ leaves a jump host able to reach the gear and unable to NAME it). NO fabric ports in either\
+        \ direction, no lateral reach, NEVER P2P. Unlike BREAKGLASS this is a NORMAL-DAY path and carries\
+        \ no second WAN transport, so it is not a rescue tier and must never be treated as one. Unlike\
+        \ NETWORK it is NOT delegable: the people who drive it hold a site-scoped network_admin entitlement\
+        \ (ADR 1113 \xA73), but the peer itself is operator-enrolled. Inbound from INFRA is deliberately\
+        \ NOT declared yet \u2014 the connector control port is an ADR 1131 open item, and the intent\
+        \ lands with the port rather than a placeholder, so the class is fail-closed until it does."
+    - suffix: P2P
+      description: 'CAPABILITY group, not a role (ratified 2026-07-16/17): graduated lateral reach. Members
+        can INITIATE to any peer (one-way rule D); non-members navigate only the restrictive paths. Role
+        groups no longer imply lateral reach (contracted 2026-07-17). Graduation: docs/operations/p2p-graduation.md;
+        seeded with the platform-admin peers.'
+    - suffix: BACKEND-INFRA
+      description: "Hidden backend tier (ratified 2026-07-16): backend service peers (postgres, object\
+        \ stores, anything fronted by an INFRA service). NOT in INFRA, NOT a rule-A destination \u2014\
+        \ invisible to ordinary peers. Reached only by INFRA (bidirectional) and PLATFORM-ADMIN (one-way)."
+    - suffix: PUBLIC-INFRA
+      description: "ADR 1162 (accepted 2026-09-08): ours, doing infra work, and reachable from the PUBLIC\
+        \ INTERNET \u2014 exposure as its own axis, distinct from what a peer does (INFRA) and whose\
+        \ hardware it sits on (EXTERNAL-INFRA). Completes the ladder BACKEND-INFRA (hidden even from\
+        \ P2P) \u2192 INFRA (peer-facing ports) \u2192 PUBLIC-INFRA (public ingress). Asymmetric: INFRA\
+        \ and operators reach it any-port; it initiates ONLY toward INFRA on the peer-facing service\
+        \ surface (port-set `substrate`). No lateral, no intra-tier, never P2P. Membership is a per-peer\
+        \ decision with its own evidence \u2014 declaring the class moves nobody."
+    - suffix: HANDSET
+      description: "Device-attribute group (ADR 1175), NOT a role and in NO ACL rule: a phone or tablet\
+        \ enrolled on a person's handset key holds it beside OBSERVER so the PRIMARY `<site_id>-handset-dns`\
+        \ nameserver group reaches it (NetBird pushes match-domain nameservers to desktop clients only;\
+        \ measured working on iOS regardless, M-116, so the group is created default-off and switched\
+        \ on per goatnet with `handset_dns_enabled` after the Android measurement). Distributes DNS and\
+        \ nothing else; membership comes from the handset key's auto_groups, never by hand."
+    - suffix: SENSOR-FEED
+      family: SENSOR
+      slot: data-plane
+      description: "ADR 1116 gear class: publishes observations onto the fabric. Publish + INFRA; nothing\
+        \ initiates toward it. Sub-types (radar, eo-ir, rf, acoustic) are LABELS \u2014 they differ in\
+        \ phenomenology, not wire behaviour."
+    - suffix: SENSOR-TASKING
+      family: SENSOR
+      slot: command-intake
+      description: 'ADR 1116 gear class: accepts tasking (point, cue, change mode). Destination only,
+        from an ENUMERATED source list. Deliberately a different word from an effector''s COMMAND: pointing
+        a radar and ordering an engagement are not the same consequence.'
+    - suffix: SENSOR-TELEMETRY
+      family: SENSOR
+      slot: telemetry
+      description: "ADR 1116 gear class: publishes a sensor's own health and state. Publish only; nothing\
+        \ initiates toward it. Split from tasking on purpose \u2014 telemetry should be widely readable,\
+        \ command narrowly writable, and one class holding both forces a choice that is wrong for one\
+        \ of them."
+    - suffix: SENSOR-ARBITER
+      family: SENSOR
+      slot: arbiter
+      description: "ADR 1116 gear class: tasking + current state -> the actual scan or collection plan.\
+        \ NOT primarily a conflict resolver \u2014 refinement is the normal path and deconfliction is\
+        \ subsumed. Consumes the data plane, so it is simultaneously a heavy subscriber and a high-consequence\
+        \ actor."
+    - suffix: EFFECTOR-CUE
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: receives the coarse cue \u2014 'something is there, orient'.\
+        \ Subscribe + INFRA; NO command path. Labels: navigator, aggregator."
+    - suffix: EFFECTOR-TRACK
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: fire-control-quality track feeding the solution. Separate from\
+        \ CUE because QoS binds to IDENTITY (ADR 1033) \u2014 one shared class means one identity, and\
+        \ the track could not hold a reservation the cue stream cannot consume. RESERVED QoS envelope."
+    - suffix: EFFECTOR-TELEMETRY
+      family: EFFECTOR
+      slot: telemetry
+      description: 'ADR 1116 gear class: publishes an effector''s own health and state. Publish only;
+        nothing initiates toward it.'
+    - suffix: EFFECTOR-COMMAND
+      family: EFFECTOR
+      slot: command-intake
+      description: "ADR 1116 gear class: accepts engagement commands. Destination only; the source list\
+        \ is enumerated BY HAND, permanently \u2014 a mesh-connected ground station may take commands\
+        \ from a local operator, a C2 sequence, or an automated agent. Label:\
+        \ fire-control."
+    - suffix: EFFECTOR-ARBITER
+      family: EFFECTOR
+      slot: arbiter
+      description: 'ADR 1116 gear class: command + live track + own state -> executable engagement. Subsumes
+        navigation. Consumes the data plane, which is why cue and arbiter co-locate on an effector navigator box.'
+    - suffix: KID
+      family: KID
+      slot: element
+      description: 'ADR 1116 gear class: OUR appliance fronting devices that do not speak fabric (GATEWAY_ONE
+        nodes). As SENSOR-FEED, plus local sensor-side reach.'
+    - suffix: EXTERNAL-KID
+      family: KID
+      slot: element
+      description: "ADR 1116 gear class: same function as KID but with EGRESS WE DO NOT CONTROL \u2014\
+        \ a vendor box dual-sending to its own platform. Own topics only; INFRA management plane only;\
+        \ NEVER a P2P destination, because granting graduated lateral reach to a box with external egress\
+        \ makes it a route from our fabric to somebody else's cloud."
+    - suffix: EXTERNAL-INTERMEDIARY
+      family: INTERMEDIARY
+      slot: element
+      description: "ADR 1116 gear class: someone else's box sitting BETWEEN platforms, never a terminus\
+        \ (e.g. NATO ACT's Kyber over SAPIENT). When it dies both sides stay healthy and simply cannot\
+        \ reach each other. Carry `broker` as a LABEL where true \u2014 our fabric is brokerless, but\
+        \ that is a fact about OUR architecture, not a reason to avoid naming someone else's SPOF."
+    - suffix: FUSION
+      family: FUSION
+      slot: data-plane
+      description: 'ADR 1116 gear class: publishes DERIVED data, not observation. Consumers must be able
+        to tell inference from measurement (SourceInfo, ADR 1041).'
+    - suffix: SENSOR
+      family: SENSOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the sensing element itself (radar head, camera).\
+        \ Named now so that if one ever carries a radio there is a correct class waiting; naming a ground\
+        \ station SENSOR would repeat the OPSYSTEM trap where the name stops describing the members."
+    - suffix: EFFECTOR
+      family: EFFECTOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the interceptor itself. Not a mesh peer today,\
+        \ but it is a drone and could carry a radio. An empty reserved class costs nothing; a wrongly-named\
+        \ one costs a migration."
+    - suffix: CONTROL
+      family: CONTROL
+      slot: arbiter
+      description: "ADR 1116 gear class: battle management / C2 \u2014 the station that DIRECTS other\
+        \ gear (e.g. a C2 server or a sensor control laptop). It ISSUES tasking; SENSOR-TASKING\
+        \ is the class for a box that ACCEPTS it. A director placed in SENSOR-TASKING has no outbound reach. Ours and administrable.\
+        \ Being an enumerated SOURCE toward SENSOR-TASKING / EFFECTOR-COMMAND is a SEPARATE standing authorization\
+        \ decision \u2014 declaring this class does not grant it."
+    - suffix: PROBATION-GEAR
+      family: PROBATION
+      slot: element
+      description: "Probation satellite for GEAR (ADR 1116 \xA78) \u2014 ONE lane for every gear class,\
+        \ not a mirror per class. The probation posture is identical whatever the origin (INFRA :443+DNS\
+        \ only), so a per-class mirror would encode no policy, only a restore hint, and that hint belongs\
+        \ in the registry (ADR 1051). The trigger must differ from the people lane: gear goes dormant\
+        \ NORMALLY (a sensor packed between exercises is offline for weeks), so the 14-day-inactive rule\
+        \ would generate churn and train everyone to ignore the lane."
+  zagros-prod:
+    site_prefix: ZAGROS-PROD
+    groups:
+    - suffix: INFRA
+      description: Substrate/infra peers (the three Orins, mesh-dns, relay-health, site-hosted service
+        peers). Omni-reachable AND omni-reaching (rule A, bidirectional).
+    - suffix: EXTERNAL-INFRA
+      description: Externally-hosted service peers (partner/cloud collab servers). Reachable by every
+        peer (one-way rule C); initiates only toward the substrate (rule A source). Lower trust tier than
+        INFRA.
+    - suffix: PLATFORM-ADMIN
+      description: "Human platform admins (matches the Ory PLATFORM-ADMIN group so the role reads identically\
+        \ in both planes). Full access to all services including dashboard / mgmt. HUMANS ONLY \u2014\
+        \ a MACHINE must never hold this group. It is the only inward cross-scope source ADR 1124 permits,\
+        \ and it is any-port, so granting it to a service account to let a guard reach a scope buys any-port\
+        \ administrative reach for a machine where the deliberate answer is port-scoped function (subordinate-scope-substrate.md\
+        \ 5.2b)."
+    - suffix: MONITOR
+      description: 'Observability-support role: obs staff WITHOUT IAM-admin. Participant-grade mesh reach
+        (can reach peers to diagnose); dashboard rights ride the paired Ory obs groups, NOT this mesh
+        group. Identity administration stays with the Ory IAM-ADMIN group. Distinct from OBSERVER (browse-only,
+        substrate reach only).'
+    - suffix: DEVELOPER
+      description: Affiliation-neutral full-participation role (ADR 1043). Zenoh router :7447 sub/pub
+        (per-uuid slot) + the web surfaces. Affiliation (vendor/organic/partner/civil) is the separate
+        manifest affiliation block, NOT this group. No observability / dashboard / mgmt / compliance.
+    - suffix: OBSERVER
+      description: "Browse-only participants + read-only observers. Mesh web surfaces (auth / isitup /\
+        \ panoscope / portal) \u2014 no fabric pub/sub, no dashboard / mgmt / compliance."
+    - suffix: P2P
+      description: 'CAPABILITY group, not a role: graduated lateral reach. Members can INITIATE to any
+        peer (one-way rule D); non-members navigate only the restrictive paths. Role groups do not imply
+        lateral reach. Graduation: docs/operations/p2p-graduation.md; seed with the platform-admin peers.'
+    - suffix: BACKEND-INFRA
+      description: "Hidden backend tier: backend service peers (postgres, object stores, anything fronted\
+        \ by an INFRA service). NOT in INFRA, NOT a rule-A destination \u2014 invisible to ordinary peers.\
+        \ Reached only by INFRA (bidirectional) and PLATFORM-ADMIN (one-way)."
+    - suffix: PUBLIC-INFRA
+      description: "ADR 1162 (accepted 2026-09-08): ours, doing infra work, and reachable from the PUBLIC\
+        \ INTERNET \u2014 exposure as its own axis, distinct from what a peer does (INFRA) and whose\
+        \ hardware it sits on (EXTERNAL-INFRA). Completes the ladder BACKEND-INFRA (hidden even from\
+        \ P2P) \u2192 INFRA (peer-facing ports) \u2192 PUBLIC-INFRA (public ingress). Asymmetric: INFRA\
+        \ and operators reach it any-port; it initiates ONLY toward INFRA on the peer-facing service\
+        \ surface (port-set `substrate`). No lateral, no intra-tier, never P2P. Membership is a per-peer\
+        \ decision with its own evidence \u2014 declaring the class moves nobody."
+    - suffix: HANDSET
+      description: "Device-attribute group (ADR 1175), NOT a role and in NO ACL rule: a phone or tablet\
+        \ enrolled on a person's handset key holds it beside OBSERVER so the PRIMARY `<site_id>-handset-dns`\
+        \ nameserver group reaches it (NetBird pushes match-domain nameservers to desktop clients only;\
+        \ measured working on iOS regardless, M-116, so the group is created default-off and switched\
+        \ on per goatnet with `handset_dns_enabled` after the Android measurement). Distributes DNS and\
+        \ nothing else; membership comes from the handset key's auto_groups, never by hand."
+    - suffix: MOON
+      description: 'Node-class (ADR 1092): uplink peer of a foreign-stack goatnet (own mgmt/identity/CA).
+        Initiates to INFRA on peer-facing service ports only; NOTHING initiates toward it. No external-infra,
+        no lateral, never P2P.'
+    - suffix: POD
+      description: 'Node-class (ADR 1092): moon-pod-guidance appliance INSIDE our identity planes. OPSYSTEM-grade
+        substrate reach + normal infra probe/admin destination; excluded from external-infra reach (grant
+        on real need).'
+    - suffix: NETWORK
+      description: "Node-class (ADR 1113): network TRANSPORT infrastructure \u2014 routers, switches,\
+        \ radios and other bearer gear carrying the IP underlay. Deliberately asymmetric and strictly\
+        \ narrower than INFRA: platform admins + INFRA reach it any-port; it initiates ONLY toward INFRA\
+        \ management-plane services (443 / DNS / NTP / syslog / TACACS+ / SNMP-trap) and NO fabric ports.\
+        \ No lateral reach, NEVER P2P \u2014 a bearer device is the most physically exposed peer on the\
+        \ mesh. Enrollable by a site network admin holding the delegated entitlement, not only the operator."
+    - suffix: BREAKGLASS
+      description: "Node-class (ADR 1114): operator reach-in of LAST RESORT \u2014 a dual-homed, minimal\
+        \ node positioned so it can be reached, and can reach the local substrate, when the normal control\
+        \ plane is the broken thing. Shape follows NETWORK: reachable any-port by PLATFORM-ADMIN + INFRA,\
+        \ but initiates ONLY to INFRA and NETWORK on tcp 22, no fabric ports in either direction, no lateral\
+        \ reach, NEVER P2P (p2p -> all would silently restore exactly the over-grant this tier exists\
+        \ to avoid). Unlike NETWORK it is NOT delegable: the entitlement that lets a site admin enroll\
+        \ a switch must not let them enroll their own way into the rescue path. A node may not be declared\
+        \ BREAKGLASS with only the normal-day path configured \u2014 the bad-day path is half the definition\
+        \ (ADR 1114 D3)."
+    - suffix: NETWORK-JUMP
+      description: "Node-class (ADR 1131): the ONLY peer permitted to open an interactive session to NETWORK-class\
+        \ bearer gear \u2014 the egress half of the herd gear console, split off from the console itself\
+        \ because a mgmt host IS INFRA and NetBird groups only UNION reach, so nothing hosted there can\
+        \ be narrowed. Initiates to NETWORK on tcp 22 (port-set `shell`) and to INFRA on the bearer-gear\
+        \ management plane (port-set `netadmin`, which carries udp 5353 \u2014 see F-314: tcp 22 alone\
+        \ leaves a jump host able to reach the gear and unable to NAME it). NO fabric ports in either\
+        \ direction, no lateral reach, NEVER P2P. Unlike BREAKGLASS this is a NORMAL-DAY path and carries\
+        \ no second WAN transport, so it is not a rescue tier and must never be treated as one. Unlike\
+        \ NETWORK it is NOT delegable: the people who drive it hold a site-scoped network_admin entitlement\
+        \ (ADR 1113 \xA73), but the peer itself is operator-enrolled. Inbound from INFRA is deliberately\
+        \ NOT declared yet \u2014 the connector control port is an ADR 1131 open item, and the intent\
+        \ lands with the port rather than a placeholder, so the class is fail-closed until it does."
+    - suffix: SENSOR-FEED
+      family: SENSOR
+      slot: data-plane
+      description: "ADR 1116 gear class: publishes observations onto the fabric. Publish + INFRA; nothing\
+        \ initiates toward it. Sub-types (radar, eo-ir, rf, acoustic) are LABELS \u2014 they differ in\
+        \ phenomenology, not wire behaviour."
+    - suffix: SENSOR-TASKING
+      family: SENSOR
+      slot: command-intake
+      description: 'ADR 1116 gear class: accepts tasking (point, cue, change mode). Destination only,
+        from an ENUMERATED source list. Deliberately a different word from an effector''s COMMAND: pointing
+        a radar and ordering an engagement are not the same consequence.'
+    - suffix: SENSOR-TELEMETRY
+      family: SENSOR
+      slot: telemetry
+      description: "ADR 1116 gear class: publishes a sensor's own health and state. Publish only; nothing\
+        \ initiates toward it. Split from tasking on purpose \u2014 telemetry should be widely readable,\
+        \ command narrowly writable, and one class holding both forces a choice that is wrong for one\
+        \ of them."
+    - suffix: SENSOR-ARBITER
+      family: SENSOR
+      slot: arbiter
+      description: "ADR 1116 gear class: tasking + current state -> the actual scan or collection plan.\
+        \ NOT primarily a conflict resolver \u2014 refinement is the normal path and deconfliction is\
+        \ subsumed. Consumes the data plane, so it is simultaneously a heavy subscriber and a high-consequence\
+        \ actor."
+    - suffix: EFFECTOR-CUE
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: receives the coarse cue \u2014 'something is there, orient'.\
+        \ Subscribe + INFRA; NO command path. Labels: navigator, aggregator."
+    - suffix: EFFECTOR-TRACK
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: fire-control-quality track feeding the solution. Separate from\
+        \ CUE because QoS binds to IDENTITY (ADR 1033) \u2014 one shared class means one identity, and\
+        \ the track could not hold a reservation the cue stream cannot consume. RESERVED QoS envelope."
+    - suffix: EFFECTOR-TELEMETRY
+      family: EFFECTOR
+      slot: telemetry
+      description: 'ADR 1116 gear class: publishes an effector''s own health and state. Publish only;
+        nothing initiates toward it.'
+    - suffix: EFFECTOR-COMMAND
+      family: EFFECTOR
+      slot: command-intake
+      description: "ADR 1116 gear class: accepts engagement commands. Destination only; the source list\
+        \ is enumerated BY HAND, permanently \u2014 a mesh-connected ground station may take commands\
+        \ from a local operator, a C2 sequence, or an automated agent. Label:\
+        \ fire-control."
+    - suffix: EFFECTOR-ARBITER
+      family: EFFECTOR
+      slot: arbiter
+      description: 'ADR 1116 gear class: command + live track + own state -> executable engagement. Subsumes
+        navigation. Consumes the data plane, which is why cue and arbiter co-locate on an effector navigator box.'
+    - suffix: KID
+      family: KID
+      slot: element
+      description: 'ADR 1116 gear class: OUR appliance fronting devices that do not speak fabric (GATEWAY_ONE
+        nodes). As SENSOR-FEED, plus local sensor-side reach.'
+    - suffix: EXTERNAL-KID
+      family: KID
+      slot: element
+      description: "ADR 1116 gear class: same function as KID but with EGRESS WE DO NOT CONTROL \u2014\
+        \ a vendor box dual-sending to its own platform. Own topics only; INFRA management plane only;\
+        \ NEVER a P2P destination, because granting graduated lateral reach to a box with external egress\
+        \ makes it a route from our fabric to somebody else's cloud."
+    - suffix: EXTERNAL-INTERMEDIARY
+      family: INTERMEDIARY
+      slot: element
+      description: "ADR 1116 gear class: someone else's box sitting BETWEEN platforms, never a terminus\
+        \ (e.g. NATO ACT's Kyber over SAPIENT). When it dies both sides stay healthy and simply cannot\
+        \ reach each other. Carry `broker` as a LABEL where true \u2014 our fabric is brokerless, but\
+        \ that is a fact about OUR architecture, not a reason to avoid naming someone else's SPOF."
+    - suffix: FUSION
+      family: FUSION
+      slot: data-plane
+      description: 'ADR 1116 gear class: publishes DERIVED data, not observation. Consumers must be able
+        to tell inference from measurement (SourceInfo, ADR 1041).'
+    - suffix: SENSOR
+      family: SENSOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the sensing element itself (radar head, camera).\
+        \ Named now so that if one ever carries a radio there is a correct class waiting; naming a ground\
+        \ station SENSOR would repeat the OPSYSTEM trap where the name stops describing the members."
+    - suffix: EFFECTOR
+      family: EFFECTOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the interceptor itself. Not a mesh peer today,\
+        \ but it is a drone and could carry a radio. An empty reserved class costs nothing; a wrongly-named\
+        \ one costs a migration."
+    - suffix: CONTROL
+      family: CONTROL
+      slot: arbiter
+      description: "ADR 1116 gear class: battle management / C2 \u2014 the station that DIRECTS other\
+        \ gear (e.g. a C2 server or a sensor control laptop). It ISSUES tasking; SENSOR-TASKING\
+        \ is the class for a box that ACCEPTS it. A director placed in SENSOR-TASKING has no outbound reach. Ours and administrable.\
+        \ Being an enumerated SOURCE toward SENSOR-TASKING / EFFECTOR-COMMAND is a SEPARATE standing authorization\
+        \ decision \u2014 declaring this class does not grant it."
+    - suffix: PROBATION-GEAR
+      family: PROBATION
+      slot: element
+      description: "Probation satellite for GEAR (ADR 1116 \xA78) \u2014 ONE lane for every gear class,\
+        \ not a mirror per class. The probation posture is identical whatever the origin (INFRA :443+DNS\
+        \ only), so a per-class mirror would encode no policy, only a restore hint, and that hint belongs\
+        \ in the registry (ADR 1051). The trigger must differ from the people lane: gear goes dormant\
+        \ NORMALLY (a sensor packed between exercises is offline for weeks), so the 14-day-inactive rule\
+        \ would generate churn and train everyone to ignore the lane."
+    - suffix: PROBATION-PLATFORM-ADMIN
+      description: 'Probation satellite (ADR 1089): dormant PLATFORM-ADMIN holding lane. INFRA :443+DNS
+        only (explainer + petition). Restore target = the suffix.'
+    - suffix: PROBATION-MONITOR
+      description: 'Probation satellite (ADR 1089): dormant MONITOR holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-DEVELOPER
+      description: 'Probation satellite (ADR 1089): dormant DEVELOPER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-OBSERVER
+      description: 'Probation satellite (ADR 1089): dormant OBSERVER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-MOON
+      description: 'Probation satellite (ADR 1089/1092): dormant MOON uplink holding lane. INFRA :443+DNS
+        only.'
+    - suffix: PROBATION-POD
+      description: 'Probation satellite (ADR 1089/1092): dormant POD appliance holding lane. INFRA :443+DNS
+        only.'
+    - suffix: QUARANTINED
+      description: "Security satellite lane (ADR 1091), NOT probation: admin-placed on suspected/confirmed\
+        \ threat-actor behavior, flat (no role suffix \u2014 restore target lives in the transfer-engine\
+        \ audit record). Reach: INFRA :443 + DNS ONLY (no fabric :7447/:7448 \u2014 a compromised slot\
+        \ cert must not keep publishing); INFRA reaches it any-port for inspection. No explainer page,\
+        \ no petition, no self-service exit \u2014 exit is operator restore or ADR 1031 sever. Entry strips\
+        \ ALL other groups incl. P2P."
+  zagros-dev:
+    site_prefix: ZAGROS-DEV
+    groups:
+    - suffix: INFRA
+      description: Substrate/infra peers (mgmt hosts, mesh-dns, relay-health, site-hosted service peers).
+        Omni-reachable AND omni-reaching (rule A, bidirectional). Renamed from MGMT-HOST; legacy group
+        deleted 2026-07-16.
+    - suffix: EXTERNAL-INFRA
+      description: Externally-hosted service peers (partner/cloud collab servers). Reachable by every
+        peer (one-way rule C); initiates only toward the substrate (rule A source). Lower trust tier than
+        INFRA.
+    - suffix: PLATFORM-ADMIN
+      description: "Human platform admins (matches the Ory PLATFORM-ADMIN group so the role reads identically\
+        \ in both planes). Full access to all services including dashboard / mgmt. Renamed from ADMIN;\
+        \ legacy group deleted 2026-07-16 (the Ory ADMINS alias remains dual-accepted until the goat-id-console\
+        \ port). HUMANS ONLY \u2014 a MACHINE must never hold this group. It is the only inward cross-scope\
+        \ source ADR 1124 permits, and it is any-port, so granting it to a service account to let a guard\
+        \ reach a scope buys any-port administrative reach for a machine where the deliberate answer is\
+        \ port-scoped function (subordinate-scope-substrate.md 5.2b)."
+    - suffix: MONITOR
+      description: "Observability-support role \u2014 RATIFIED 2026-07-16: obs staff WITHOUT IAM-admin.\
+        \ Participant-grade mesh reach (can reach peers to diagnose); dashboard rights ride the paired\
+        \ Ory obs groups (GRAFANA-*/ALL-*), NOT this mesh group. Identity administration stays with the\
+        \ Ory IAM-ADMIN group. Distinct from OBSERVER (browse-only, substrate reach only)."
+    - suffix: DEVELOPER
+      description: "Affiliation-neutral full-participation role (ADR 1043). Capability-equal to legacy\
+        \ VENDOR \u2014 Zenoh router :7447 sub/pub (per-uuid slot) + brief / portal / panoscope / stethoscope\
+        \ / flashlight \u2014 but carries no vendor connotation, so organic + partner devs land here.\
+        \ Affiliation (vendor/organic/partner/civil) is the separate manifest affiliation block, NOT this\
+        \ group. No observability / dashboard / mgmt / compliance."
+    - suffix: OBSERVER
+      description: "Browse-only participants + read-only observers. Mesh web surfaces (auth / isitup /\
+        \ panoscope / portal / brief) \u2014 no fabric pub/sub, no dashboard / mgmt / compliance."
+    - suffix: PROBATION-PLATFORM-ADMIN
+      description: 'Probation satellite (ADR 1089): dormant PLATFORM-ADMIN holding lane. INFRA :443+DNS
+        only (explainer + petition). Restore target = the suffix.'
+    - suffix: PROBATION-MONITOR
+      description: 'Probation satellite (ADR 1089): dormant MONITOR holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-DEVELOPER
+      description: 'Probation satellite (ADR 1089): dormant DEVELOPER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-OBSERVER
+      description: 'Probation satellite (ADR 1089): dormant OBSERVER holding lane. INFRA :443+DNS only.'
+    - suffix: PROBATION-MOON
+      description: 'Probation satellite (ADR 1089/1092): dormant MOON uplink holding lane. INFRA :443+DNS
+        only.'
+    - suffix: PROBATION-POD
+      description: 'Probation satellite (ADR 1089/1092): dormant POD appliance holding lane. INFRA :443+DNS
+        only.'
+    - suffix: QUARANTINED
+      description: "Security satellite lane (ADR 1091), NOT probation: admin-placed on suspected/confirmed\
+        \ threat-actor behavior, flat (no role suffix \u2014 restore target lives in the transfer-engine\
+        \ audit record). Reach: INFRA :443 + DNS ONLY (no fabric :7447/:7448 \u2014 a compromised slot\
+        \ cert must not keep publishing); INFRA reaches it any-port for inspection. No explainer page,\
+        \ no petition, no self-service exit \u2014 exit is operator restore or ADR 1031 sever. Entry strips\
+        \ ALL other groups incl. P2P."
+    - suffix: MOON
+      description: "Node-class (ADR 1092): uplink peer of a foreign-stack goatnet (own mgmt/identity/CA;\
+        \ not federated into this mesh \u2014 its whole presence here is this one data-passage peer, e.g.\
+        \ the lab-node uplink). Initiates to INFRA on peer-facing service ports only; NOTHING initiates\
+        \ toward it (sovereign box, reveal-only health). No external-infra, no lateral, never P2P."
+    - suffix: POD
+      description: 'Node-class (ADR 1092): moon-pod-guidance appliance INSIDE our identity planes (our
+        NetBird/Ory/X.509 CA; may run its own local zenoh router). OPSYSTEM-grade substrate reach + normal
+        infra probe/admin destination; excluded from external-infra reach (grant on real need). Peering
+        into the pod''s local router = ADR 1087 router-peer graduated capability, never base reach.'
+    - suffix: NETWORK
+      description: "Node-class (ADR 1113): network TRANSPORT infrastructure \u2014 routers, switches,\
+        \ radios and other bearer gear carrying the IP underlay. Deliberately asymmetric and strictly\
+        \ narrower than INFRA: platform admins + INFRA reach it any-port; it initiates ONLY toward INFRA\
+        \ management-plane services (443 / DNS / NTP / syslog / TACACS+ / SNMP-trap) and NO fabric ports.\
+        \ No lateral reach, NEVER P2P \u2014 a bearer device is the most physically exposed peer on the\
+        \ mesh. Enrollable by a site network admin holding the delegated entitlement, not only the operator."
+    - suffix: BREAKGLASS
+      description: "Node-class (ADR 1114): operator reach-in of LAST RESORT \u2014 a dual-homed, minimal\
+        \ node positioned so it can be reached, and can reach the local substrate, when the normal control\
+        \ plane is the broken thing. Shape follows NETWORK: reachable any-port by PLATFORM-ADMIN + INFRA,\
+        \ but initiates ONLY to INFRA and NETWORK on tcp 22, no fabric ports in either direction, no lateral\
+        \ reach, NEVER P2P (p2p -> all would silently restore exactly the over-grant this tier exists\
+        \ to avoid). Unlike NETWORK it is NOT delegable: the entitlement that lets a site admin enroll\
+        \ a switch must not let them enroll their own way into the rescue path. A node may not be declared\
+        \ BREAKGLASS with only the normal-day path configured \u2014 the bad-day path is half the definition\
+        \ (ADR 1114 D3)."
+    - suffix: NETWORK-JUMP
+      description: "Node-class (ADR 1131): the ONLY peer permitted to open an interactive session to NETWORK-class\
+        \ bearer gear \u2014 the egress half of the herd gear console, split off from the console itself\
+        \ because a mgmt host IS INFRA and NetBird groups only UNION reach, so nothing hosted there can\
+        \ be narrowed. Initiates to NETWORK on tcp 22 (port-set `shell`) and to INFRA on the bearer-gear\
+        \ management plane (port-set `netadmin`, which carries udp 5353 \u2014 see F-314: tcp 22 alone\
+        \ leaves a jump host able to reach the gear and unable to NAME it). NO fabric ports in either\
+        \ direction, no lateral reach, NEVER P2P. Unlike BREAKGLASS this is a NORMAL-DAY path and carries\
+        \ no second WAN transport, so it is not a rescue tier and must never be treated as one. Unlike\
+        \ NETWORK it is NOT delegable: the people who drive it hold a site-scoped network_admin entitlement\
+        \ (ADR 1113 \xA73), but the peer itself is operator-enrolled. Inbound from INFRA is deliberately\
+        \ NOT declared yet \u2014 the connector control port is an ADR 1131 open item, and the intent\
+        \ lands with the port rather than a placeholder, so the class is fail-closed until it does."
+    - suffix: P2P
+      description: 'CAPABILITY group, not a role (ratified 2026-07-16/17): graduated lateral reach. Members
+        can INITIATE to any peer (one-way rule D); non-members navigate only the restrictive paths. Role
+        groups no longer imply lateral reach (contracted 2026-07-17). Graduation: docs/operations/p2p-graduation.md;
+        seeded with the platform-admin peers.'
+    - suffix: BACKEND-INFRA
+      description: "Hidden backend tier (ratified 2026-07-16): backend service peers (postgres, object\
+        \ stores, anything fronted by an INFRA service). NOT in INFRA, NOT a rule-A destination \u2014\
+        \ invisible to ordinary peers. Reached only by INFRA (bidirectional) and PLATFORM-ADMIN (one-way)."
+    - suffix: PUBLIC-INFRA
+      description: "ADR 1162 (accepted 2026-09-08): ours, doing infra work, and reachable from the PUBLIC\
+        \ INTERNET \u2014 exposure as its own axis, distinct from what a peer does (INFRA) and whose\
+        \ hardware it sits on (EXTERNAL-INFRA). Completes the ladder BACKEND-INFRA (hidden even from\
+        \ P2P) \u2192 INFRA (peer-facing ports) \u2192 PUBLIC-INFRA (public ingress). Asymmetric: INFRA\
+        \ and operators reach it any-port; it initiates ONLY toward INFRA on the peer-facing service\
+        \ surface (port-set `substrate`). No lateral, no intra-tier, never P2P. Membership is a per-peer\
+        \ decision with its own evidence \u2014 declaring the class moves nobody."
+    - suffix: HANDSET
+      description: "Device-attribute group (ADR 1175), NOT a role and in NO ACL rule: a phone or tablet\
+        \ enrolled on a person's handset key holds it beside OBSERVER so the PRIMARY `<site_id>-handset-dns`\
+        \ nameserver group reaches it (NetBird pushes match-domain nameservers to desktop clients only;\
+        \ measured working on iOS regardless, M-116, so the group is created default-off and switched\
+        \ on per goatnet with `handset_dns_enabled` after the Android measurement). Distributes DNS and\
+        \ nothing else; membership comes from the handset key's auto_groups, never by hand."
+    - suffix: SENSOR-FEED
+      family: SENSOR
+      slot: data-plane
+      description: "ADR 1116 gear class: publishes observations onto the fabric. Publish + INFRA; nothing\
+        \ initiates toward it. Sub-types (radar, eo-ir, rf, acoustic) are LABELS \u2014 they differ in\
+        \ phenomenology, not wire behaviour."
+    - suffix: SENSOR-TASKING
+      family: SENSOR
+      slot: command-intake
+      description: 'ADR 1116 gear class: accepts tasking (point, cue, change mode). Destination only,
+        from an ENUMERATED source list. Deliberately a different word from an effector''s COMMAND: pointing
+        a radar and ordering an engagement are not the same consequence.'
+    - suffix: SENSOR-TELEMETRY
+      family: SENSOR
+      slot: telemetry
+      description: "ADR 1116 gear class: publishes a sensor's own health and state. Publish only; nothing\
+        \ initiates toward it. Split from tasking on purpose \u2014 telemetry should be widely readable,\
+        \ command narrowly writable, and one class holding both forces a choice that is wrong for one\
+        \ of them."
+    - suffix: SENSOR-ARBITER
+      family: SENSOR
+      slot: arbiter
+      description: "ADR 1116 gear class: tasking + current state -> the actual scan or collection plan.\
+        \ NOT primarily a conflict resolver \u2014 refinement is the normal path and deconfliction is\
+        \ subsumed. Consumes the data plane, so it is simultaneously a heavy subscriber and a high-consequence\
+        \ actor."
+    - suffix: EFFECTOR-CUE
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: receives the coarse cue \u2014 'something is there, orient'.\
+        \ Subscribe + INFRA; NO command path. Labels: navigator, aggregator."
+    - suffix: EFFECTOR-TRACK
+      family: EFFECTOR
+      slot: data-plane
+      description: "ADR 1116 gear class: fire-control-quality track feeding the solution. Separate from\
+        \ CUE because QoS binds to IDENTITY (ADR 1033) \u2014 one shared class means one identity, and\
+        \ the track could not hold a reservation the cue stream cannot consume. RESERVED QoS envelope."
+    - suffix: EFFECTOR-TELEMETRY
+      family: EFFECTOR
+      slot: telemetry
+      description: 'ADR 1116 gear class: publishes an effector''s own health and state. Publish only;
+        nothing initiates toward it.'
+    - suffix: EFFECTOR-COMMAND
+      family: EFFECTOR
+      slot: command-intake
+      description: "ADR 1116 gear class: accepts engagement commands. Destination only; the source list\
+        \ is enumerated BY HAND, permanently \u2014 a mesh-connected ground station may take commands\
+        \ from a local operator, a C2 sequence, or an automated agent. Label:\
+        \ fire-control."
+    - suffix: EFFECTOR-ARBITER
+      family: EFFECTOR
+      slot: arbiter
+      description: 'ADR 1116 gear class: command + live track + own state -> executable engagement. Subsumes
+        navigation. Consumes the data plane, which is why cue and arbiter co-locate on an effector navigator box.'
+    - suffix: KID
+      family: KID
+      slot: element
+      description: 'ADR 1116 gear class: OUR appliance fronting devices that do not speak fabric (GATEWAY_ONE
+        nodes). As SENSOR-FEED, plus local sensor-side reach.'
+    - suffix: EXTERNAL-KID
+      family: KID
+      slot: element
+      description: "ADR 1116 gear class: same function as KID but with EGRESS WE DO NOT CONTROL \u2014\
+        \ a vendor box dual-sending to its own platform. Own topics only; INFRA management plane only;\
+        \ NEVER a P2P destination, because granting graduated lateral reach to a box with external egress\
+        \ makes it a route from our fabric to somebody else's cloud."
+    - suffix: EXTERNAL-INTERMEDIARY
+      family: INTERMEDIARY
+      slot: element
+      description: "ADR 1116 gear class: someone else's box sitting BETWEEN platforms, never a terminus\
+        \ (e.g. NATO ACT's Kyber over SAPIENT). When it dies both sides stay healthy and simply cannot\
+        \ reach each other. Carry `broker` as a LABEL where true \u2014 our fabric is brokerless, but\
+        \ that is a fact about OUR architecture, not a reason to avoid naming someone else's SPOF."
+    - suffix: FUSION
+      family: FUSION
+      slot: data-plane
+      description: 'ADR 1116 gear class: publishes DERIVED data, not observation. Consumers must be able
+        to tell inference from measurement (SourceInfo, ADR 1041).'
+    - suffix: SENSOR
+      family: SENSOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the sensing element itself (radar head, camera).\
+        \ Named now so that if one ever carries a radio there is a correct class waiting; naming a ground\
+        \ station SENSOR would repeat the OPSYSTEM trap where the name stops describing the members."
+    - suffix: EFFECTOR
+      family: EFFECTOR
+      slot: element
+      description: "ADR 1116: RESERVED and EMPTY \u2014 the interceptor itself. Not a mesh peer today,\
+        \ but it is a drone and could carry a radio. An empty reserved class costs nothing; a wrongly-named\
+        \ one costs a migration."
+    - suffix: CONTROL
+      family: CONTROL
+      slot: arbiter
+      description: "ADR 1116 gear class: battle management / C2 \u2014 the station that DIRECTS other\
+        \ gear (e.g. a C2 server or a sensor control laptop). It ISSUES tasking; SENSOR-TASKING\
+        \ is the class for a box that ACCEPTS it. A director placed in SENSOR-TASKING has no outbound reach. Ours and administrable.\
+        \ Being an enumerated SOURCE toward SENSOR-TASKING / EFFECTOR-COMMAND is a SEPARATE standing authorization\
+        \ decision \u2014 declaring this class does not grant it."
+    - suffix: PROBATION-GEAR
+      family: PROBATION
+      slot: element
+      description: "Probation satellite for GEAR (ADR 1116 \xA78) \u2014 ONE lane for every gear class,\
+        \ not a mirror per class. The probation posture is identical whatever the origin (INFRA :443+DNS\
+        \ only), so a per-class mirror would encode no policy, only a restore hint, and that hint belongs\
+        \ in the registry (ADR 1051). The trigger must differ from the people lane: gear goes dormant\
+        \ NORMALLY (a sensor packed between exercises is offline for weeks), so the 14-day-inactive rule\
+        \ would generate churn and train everyone to ignore the lane."
+netbird_exercise_template:
+  groups:
+  - suffix: INFRA
+    description: Exercise substrate peers (own host node, or the host site's substrate dual-homed in).
+      Rule-A anchor.
+  - suffix: EXTERNAL-INFRA
+    description: Externally-hosted service peers for this exercise. One-way reachable (rule C).
+  - suffix: PLATFORM-ADMIN
+    description: Exercise platform admins. Any-port to exercise INFRA.
+  - suffix: MONITOR
+    description: Observability-support role (exercise scope).
+  - suffix: DEVELOPER
+    description: Full-participation role (exercise scope, affiliation-neutral).
+  - suffix: OBSERVER
+    description: Browse-only participants (exercise scope). Rule-A source only.
+  - suffix: P2P
+    description: 'CAPABILITY group: graduated lateral reach within the exercise (rule D). Same discipline
+      as the persistent sets.'
+  - suffix: MOON
+    description: Foreign-stack goatnet uplink attached to this exercise (ADR 1092). Source-only; nothing
+      initiates toward it.
+  - suffix: POD
+    description: Moon-pod appliance inside our identity planes, attached to this exercise (ADR 1092).
+  - suffix: NETWORK
+    description: 'Node-class (ADR 1113): bearer gear (routers/switches/radios) for this site/activity.
+      Manageable any-port by this scope''s PLATFORM-ADMIN + INFRA; initiates only to INFRA management-plane
+      services. No lateral reach, never P2P.'
+  - suffix: BREAKGLASS
+    description: 'Node-class (ADR 1114, scope-local): reach-in of last resort. Reachable any-port by this
+      scope''s PLATFORM-ADMIN + INFRA; initiates only to INFRA and NETWORK on tcp 22. No fabric ports,
+      no lateral reach, never P2P, not delegable.'
+  - suffix: NETWORK-JUMP
+    description: "Node-class (ADR 1131, scope-local): the ONLY peer permitted to open an interactive session\
+      \ to this scope's NETWORK-class bearer gear \u2014 the egress half of the herd gear console. SCOPE-LOCAL\
+      \ IS THE POINT: bearer gear belongs to the site it serves, and a goatnet-wide NETWORK-JUMP cannot\
+      \ reach a site-rung NETWORK group \u2014 cross-scope reach runs the other way (ADR 1124 `HOST:`\
+      \ resolves a forward site toward the host substrate, not the reverse). So the egress peer lives\
+      \ in the SAME scope as the gear it serves. Outbound-only and reachable by NOTHING: the connector\
+      \ dials the console, so no rule makes this a destination. Initiates to this scope's NETWORK on tcp\
+      \ 22 (port-set `shell`) and to INFRA on the management plane (port-set `netadmin`, which carries\
+      \ the udp 5353 that F-314 proved is the difference between reaching gear and being able to NAME\
+      \ it). NO fabric ports, no lateral reach, NEVER P2P. Not delegable \u2014 the entitlement that lets\
+      \ a site admin enroll a switch must not let them enroll the box that reaches every switch."
+  - suffix: QUARANTINED
+    description: Security satellite lane (ADR 1091), exercise scope. INFRA :443+DNS only; no fabric ports;
+      no self-service exit.
+netbird_exercise_gear_template:
+  groups:
+  - suffix: SENSOR-FEED
+    family: SENSOR
+    slot: data-plane
+    description: 'ADR 1116 gear class (scope-local): publishes observations onto the fabric. Publish +
+      INFRA; nothing initiates toward it.'
+  - suffix: SENSOR-TASKING
+    family: SENSOR
+    slot: command-intake
+    description: "ADR 1116 gear class (scope-local): accepts tasking. Destination only, from an ENUMERATED\
+      \ source list \u2014 empty until someone writes one."
+  - suffix: SENSOR-TELEMETRY
+    family: SENSOR
+    slot: telemetry
+    description: 'ADR 1116 gear class (scope-local): publishes a sensor''s own health and state. Publish
+      only.'
+  - suffix: SENSOR-ARBITER
+    family: SENSOR
+    slot: arbiter
+    description: 'ADR 1116 gear class (scope-local): tasking + current state -> the actual scan or collection
+      plan. Heavy subscriber and high-consequence actor.'
+  - suffix: EFFECTOR-CUE
+    family: EFFECTOR
+    slot: data-plane
+    description: 'ADR 1116 gear class (scope-local): receives the coarse cue. Subscribe + INFRA; NO command
+      path.'
+  - suffix: EFFECTOR-TRACK
+    family: EFFECTOR
+    slot: data-plane
+    description: 'ADR 1116 gear class (scope-local): fire-control-quality track. Separate identity from
+      CUE because QoS binds to identity (ADR 1033).'
+  - suffix: EFFECTOR-TELEMETRY
+    family: EFFECTOR
+    slot: telemetry
+    description: 'ADR 1116 gear class (scope-local): publishes an effector''s own health and state. Publish
+      only.'
+  - suffix: EFFECTOR-COMMAND
+    family: EFFECTOR
+    slot: command-intake
+    description: 'ADR 1116 gear class (scope-local): accepts engagement commands. Destination only; source
+      list enumerated BY HAND, permanently.'
+  - suffix: EFFECTOR-ARBITER
+    family: EFFECTOR
+    slot: arbiter
+    description: 'ADR 1116 gear class (scope-local): command + live track + own state -> executable engagement.'
+  - suffix: KID
+    family: KID
+    slot: element
+    description: 'ADR 1116 gear class (scope-local): OUR appliance fronting devices that do not speak
+      fabric (GATEWAY_ONE nodes).'
+  - suffix: EXTERNAL-KID
+    family: KID
+    slot: element
+    description: 'ADR 1116 gear class (scope-local): a KID with egress WE DO NOT CONTROL. NEVER a P2P
+      destination.'
+  - suffix: EXTERNAL-INTERMEDIARY
+    family: INTERMEDIARY
+    slot: element
+    description: 'ADR 1116 gear class (scope-local): someone else''s box between platforms, never a terminus.'
+  - suffix: FUSION
+    family: FUSION
+    slot: data-plane
+    description: 'ADR 1116 gear class (scope-local): publishes DERIVED data, not observation.'
+  - suffix: SENSOR
+    family: SENSOR
+    slot: element
+    description: "ADR 1116: RESERVED and EMPTY \u2014 the sensing element itself."
+  - suffix: EFFECTOR
+    family: EFFECTOR
+    slot: element
+    description: "ADR 1116: RESERVED and EMPTY \u2014 the interceptor itself."
+  - suffix: CONTROL
+    family: CONTROL
+    slot: arbiter
+    description: "ADR 1116 gear class (scope-local): battle management / C2 \u2014 the station that DIRECTS\
+      \ other gear. It issues tasking; SENSOR-TASKING accepts it."
+  - suffix: PROBATION-GEAR
+    family: PROBATION
+    slot: element
+    description: "Probation satellite for GEAR (ADR 1116 \xA78) \u2014 ONE lane for every gear class.\
+      \ INFRA :443+DNS only."
+netbird_exercises:
+  # One worked example. An exercise or operational scope your goatnet hosts is a
+  # row here; the groups and rules it stamps come from the taxonomy above.
+  ex-demo:
+    site_prefix: EX-DEMO
+    host_site: zagros
+    kind: exercise

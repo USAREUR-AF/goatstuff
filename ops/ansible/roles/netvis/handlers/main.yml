@@ -1,0 +1,7 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+- name: restart netvis
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate netvis
+    chdir: "{{ netvis_compose_dir }}"
+  changed_when: true

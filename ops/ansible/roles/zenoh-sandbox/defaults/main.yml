@@ -1,0 +1,109 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the zenoh-sandbox role — a disposable, mesh-internal,
+# browser-based Zenoh learning playground. Deploys TWO containers in one
+# isolated compose project:
+#   - zenoh-sandbox-router : stock eclipse/zenoh + the remote_api WebSocket
+#     plugin (.so downloaded from the matching upstream zenoh-ts release).
+#     NO `connect:` endpoints — peers with NOTHING. NO storage — stateless.
+#   - zenoh-sandbox-web    : nginx serving the zenoh-ts browser demo SPA.
+#
+# This is NOT the trial fabric. See docs/design/zenoh-sandbox.md for the
+# distinction (no auth, no audit, no peering, disposable). Override in
+# group_vars/nova_hosts/zenoh-sandbox.yml.
+
+zenoh_sandbox_enabled: false
+
+# -- Public hostname (mesh-internal; mesh CoreDNS only, no Cloudflare) -------
+zenoh_sandbox_hostname: "sandbox.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# -- Compose project ---------------------------------------------------------
+zenoh_sandbox_compose_dir: "/opt/zenoh-sandbox"
+zenoh_sandbox_config_path: "/opt/zenoh-sandbox/config.json5"
+zenoh_sandbox_plugin_dir: "/opt/zenoh-sandbox/plugins"
+
+zenoh_sandbox_router_container: "zenoh-sandbox-router"
+zenoh_sandbox_web_container: "zenoh-sandbox-web"
+
+# Router ports (inside the compose network; host-published only if
+# zenoh_sandbox_publish_router_on_mesh_ip is set — default off).
+zenoh_sandbox_ws_port: 10000      # remote_api WebSocket (browser → Traefik → here)
+zenoh_sandbox_rest_port: 8000     # rest plugin (ad-hoc GET <keyexpr> for engineers)
+zenoh_sandbox_router_port: 7447   # native zenoh (internal; or dialed over mesh if published)
+
+# Optionally publish the native zenoh port on the mesh IP so engineers can
+# point the CLI / native SDK at the sandbox too. Mesh-internal only (bound
+# to the mesh IP, never 0.0.0.0).
+#
+# DEFAULT OFF (""): where a trial-fabric router already owns
+# <mesh-ip>:7447, so publishing the sandbox router there collides
+# ("port is already allocated") and the router can't start. The sandbox is
+# browser-first — the demo reaches the router through Traefik's wss /ws
+# path (internal :10000), which needs no host publish. To enable
+# CLI-against-sandbox on a host that already runs a zenoh router, set this
+# to the mesh IP AND override zenoh_sandbox_router_port to a free port
+# (e.g. 7448) so it doesn't collide.
+zenoh_sandbox_publish_router_on_mesh_ip: ""
+
+# -- Zenoh router image — SAME digest-pinned upstream image the fleet runs
+# (ops/ansible/roles/zenoh/defaults/main.yml). Reusing it keeps
+# ops/ci/check-zenoh-pinning.sh green with no allowlist marker, and makes
+# the remote_api plugin .so (from the matching upstream zenoh-ts 1.9.0
+# release) ABI-compatible by construction. See docs/design/zenoh-version-pinning.md.
+#
+# NOTE: deliberately NOT named `*_image` — this is the fleet-shared static
+# upstream pin, not a per-service rollback artifact, so it must stay out of
+# the deploy-history-check's `*_image` scan (ops/ci/check-deploy-history.sh).
+# The rollback-tracked artifact is zenoh_sandbox_web_image below.
+zenoh_sandbox_router_oci: "eclipse/zenoh:1.9.0@sha256:157965d71e0bfd0a044d76a985ff0e5c306ad3968929168fb9678cd2a7fec23f"
+
+# -- remote_api plugin artifact (upstream zenoh-ts release) ------------------
+# The plugin .so is NOT in the upstream eclipse/zenoh image. Mirror the
+# rocksdb-backend pattern: download the matching per-arch standalone zip
+# (contains libzenoh_plugin_remote_api.so + the standalone bridge binary),
+# verify SHA256, unzip into the host plugin dir, bind-mount read-only.
+# musl variant matches the eclipse/zenoh image libc (same choice the
+# rocksdb-backend role makes). Bump in lockstep with zenoh_sandbox_router_oci
+# and docs/design/zenoh-version-pinning.md.
+zenoh_sandbox_remote_api_version: "1.9.0"
+zenoh_sandbox_remote_api_url_template: >-
+  https://github.com/eclipse-zenoh/zenoh-ts/releases/download/{version}/zenoh-ts-{version}-{arch}-unknown-linux-musl-standalone.zip
+zenoh_sandbox_remote_api_arch_map:
+  aarch64: "aarch64"
+  x86_64:  "x86_64"
+zenoh_sandbox_remote_api_sha256_map:
+  aarch64: "87861d616043ccd6c6ac0d28a647b98a410e745b3866e77e32ce7805b9e1a744"
+  x86_64:  "c97c703ffeaa0dcc1692d10dcc91f57e276ec6ee593d56fc5b79135fd8553a67"
+
+# -- Web SPA image -----------------------------------------------------------
+# Built by .github/workflows/zenoh-sandbox-image.yml from
+# ops/serve/zenoh-sandbox/. SHA-pinned per ADR 0859 (easy rollback) —
+# bumps require appending the new sha to deploy-history.yml
+# (ops/ci/check-deploy-history.sh enforces top-row match). sha-4b4084b is the
+# first image that built after the @swc/core pin (PR #924); the app itself is
+# unchanged since sha-6d261d3 (PR #843, the /community.html page). Digest-pinned
+# to the multi-arch index, which resolves identically under both GHCR orgs.
+zenoh_sandbox_web_image: "ghcr.io/{{ ghcr_org }}/zenoh-sandbox:sha-4b4084b@sha256:bd0ef2dc94c72065c4dbb32fd51add128fe6cc82f103050a30b94beb23ad662e"
+
+# Private-registry pull auth (off by default; ghcr package is public).
+zenoh_sandbox_pull_auth_enabled: false
+zenoh_sandbox_pull_registry: "ghcr.io"
+zenoh_sandbox_pull_username: "goat-maintainer"
+zenoh_sandbox_pull_password: ""
+
+# -- Traefik wiring (file provider, same shape as dataflows) -----------------
+zenoh_sandbox_traefik_network: "mgmt"
+zenoh_sandbox_traefik_dynamic_dir: "/etc/traefik/dynamic"
+zenoh_sandbox_traefik_dynamic_filename: "zenoh-sandbox.yml"
+
+# The pre-rename filename, removed from the host on deploy. Leaving it
+# behind would give Traefik two routers on the same Host() rule.
+zenoh_sandbox_traefik_dynamic_filename_legacy: "nova-zenoh-sandbox.yml"
+zenoh_sandbox_traefik_cert_resolver: "le"
+zenoh_sandbox_traefik_router_name: "zenoh-sandbox"
+
+# Mesh-only gating — the sandbox has NO application-layer auth, so this
+# middleware (defined in mgmt-dynamic.yml.j2) is the WHOLE auth surface.
+# DO NOT disable without a substitute gate.
+zenoh_sandbox_traefik_mesh_only_middleware: "mesh-only-allowlist@file"

@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: herd-connector
+  description: >-
+    The herd gear connector (ADR 1131). Runs on a NETWORK-JUMP peer and dials
+    the herd console. This is the ONLY process permitted to open an interactive
+    session to NETWORK-class bearer gear, and it exists as its own role because
+    it must not be co-tenanted on a mgmt host.
+dependencies:
+  - role: rollback-ledger
+    vars:
+      rollback_component: herd-connector
+      rollback_artifact_type: image
+      rollback_ref: "{{ herd_connector_image }}"

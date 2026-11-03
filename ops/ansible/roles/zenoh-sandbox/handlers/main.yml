@@ -1,0 +1,10 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# zenoh-sandbox handlers.
+
+- name: zenoh-sandbox | recreate containers
+  community.docker.docker_compose_v2:
+    project_src: "{{ zenoh_sandbox_compose_dir }}"
+    state: present
+    recreate: always
+  become: true

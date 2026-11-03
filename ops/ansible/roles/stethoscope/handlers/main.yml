@@ -1,0 +1,11 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+
+- name: stethoscope | recreate container
+  community.docker.docker_compose_v2:
+    project_src: "{{ stethoscope_compose_dir }}"
+    state: present
+    recreate: always
+    pull: missing
+  become: true
+  listen: stethoscope | recreate container

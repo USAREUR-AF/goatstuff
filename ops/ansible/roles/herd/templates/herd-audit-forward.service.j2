@@ -1,0 +1,18 @@
+# Rendered by ops/ansible/roles/herd/ — DO NOT EDIT ON HOST.
+[Unit]
+Description=Forward herd operator-action rows onto the goat audit bus (ADR 1131)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=GOAT_ENV={{ site_id }}
+Environment=GOAT_CONTEXT={{ herd_audit_goat_context }}
+Environment=HERD_PG_CONTAINER=herd-postgres
+Environment=HERD_PG_USER={{ herd_db_user }}
+Environment=HERD_PG_DB={{ herd_db_name }}
+ExecStart={{ herd_dir }}/herd-audit-forward.sh
+# Runs as root because it needs the docker socket and the operator age identity.
+# It does NOT run inside the herd container: roster key material must not sit in
+# a browser-facing process with a shell broker attached.
+User=root

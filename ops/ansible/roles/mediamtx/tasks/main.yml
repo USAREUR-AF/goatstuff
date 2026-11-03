@@ -1,0 +1,58 @@
+---
+# Block 35E v1 — MediaMTX install + run via docker compose.
+# Pre-reqs (handled elsewhere): docker installed, /opt/docker-data writable
+# by the deploy user, the host's mesh interface up.
+
+- name: "ensure mediamtx data dirs exist"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ ansible_user_id | default('root') }}"
+    mode: "0755"
+  loop:
+    - "{{ mediamtx_data_dir }}"
+    - "{{ mediamtx_recording_dir }}"
+    - "{{ mediamtx_compose_dir }}"
+
+- name: "render mediamtx.yml"
+  ansible.builtin.template:
+    src: mediamtx.yml.j2
+    dest: "{{ mediamtx_config_path }}"
+    mode: "0644"
+  notify: restart mediamtx
+
+- name: "render docker-compose.yml"
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ mediamtx_compose_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: restart mediamtx
+
+- name: "ensure mediamtx container is up"
+  community.docker.docker_compose_v2:
+    project_src: "{{ mediamtx_compose_dir }}"
+    state: present
+  register: mediamtx_compose_result
+
+- name: "wait for mediamtx API to come up"
+  ansible.builtin.uri:
+    url: "http://{{ mediamtx_bind_address }}:{{ mediamtx_port_api }}/v3/paths/list"
+    status_code: [200, 401]   # 401 acceptable here — API auth is on; we just want the listener live
+  register: mediamtx_api_check
+  retries: 30
+  delay: 2
+  until: mediamtx_api_check.status in [200, 401]
+
+- name: "verify mediamtx version matches the pin"
+  ansible.builtin.command:
+    cmd: "docker inspect {{ mediamtx_container_name }} --format '{% raw %}{{index .Image}}{% endraw %}'"
+  register: mediamtx_image_id
+  changed_when: false
+
+- name: "fail if image digest drifted from pin"
+  ansible.builtin.fail:
+    msg: |
+      MediaMTX image digest mismatch:
+        expected: {{ mediamtx_image_digest }}
+        running:  {{ mediamtx_image_id.stdout }}
+  when: mediamtx_image_digest not in mediamtx_image_id.stdout

@@ -1,0 +1,120 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the microscope role (ADR 1090 Phase C).
+# Override in group_vars; per-goatnet wiring is REQUIRED for the image
+# pin + the source endpoints (instance-variability fail-closed).
+
+# Image — SHA-pinned per ADR 0859. NO default pin: the first deploy
+# pins the multi-arch manifest-list digest from the first main build
+# of .github/workflows/microscope-image.yml, with a deploy-history.yml
+# ledger row in the same change (CI fence). Empty = the role refuses.
+microscope_image: ""
+
+microscope_hostname: "microscope.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+microscope_site_label: "{{ site_id | mandatory }}"
+
+microscope_compose_dir: /opt/microscope
+microscope_traefik_network: mgmt
+microscope_traefik_dynamic_dir: /etc/traefik/dynamic
+microscope_traefik_dynamic_filename: microscope.yml
+microscope_traefik_router_name: microscope
+microscope_traefik_cert_resolver: le
+# Mesh-only middleware stays ON EVEN THOUGH the admin fence gates too —
+# defense in depth; this surface is never internet-reachable.
+microscope_traefik_mesh_only_middleware: ""
+# Per-source browsing rate ceiling (goat-ratelimit, 50 r/s / burst 100),
+# attached per router — surface-overload-protection.md §3.1.
+# Set to "" to disable.
+microscope_traefik_ratelimit_middleware: "goat-ratelimit@file"
+
+# ---- source endpoints (each empty ⇒ that adapter reports `skipped`) ----
+microscope_portal_url: "https://portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+# Self-provisioning portal key (the onboard-runner pattern).
+#
+# Without it, an unminted key makes the portal-audit adapter report `skipped` and
+# the capability pane cannot answer whether a person holds write anchors. A
+# deploy step that depends on somebody remembering is a step that does not happen.
+#
+# The role now generates the key on first deploy, persists it OUTSIDE the
+# portal's control (so a portal redeploy cannot drop it), registers it in the
+# portal's service-key store, and bounces the portal only when the entry
+# actually changes. Steady-state reruns are a no-op.
+microscope_portal_api_key: ""            # set in tasks from the persisted file
+microscope_portal_key_file: /etc/goat/microscope-portal.key
+microscope_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
+microscope_portal_container_name: goat-zenoh-portal
+# The identity the portal sees for this service's calls.
+microscope_portal_key_id: microscope
+# ONE-TIME seed: if a direnv value exists AND no key file is present yet, adopt
+# it instead of generating, so an environment that already published a key
+# keeps it. After first deploy the env var can be dropped.
+microscope_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_MICROSCOPE_PORTAL_KEY') | default('', true) }}"
+# Same F-126 shape as panoscope/stethoscope: portal name pinned to the
+# mgmt-host mesh IP for Docker's embedded resolver.
+microscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+# Kratos admin API — loopback via the docker bridge gateway on the mgmt
+# host (NEVER exposed on the mesh; see F-198 for the extra_hosts shape).
+microscope_kratos_admin_url: ""
+# Hydra ADMIN API. Kratos answers "this person authenticated"; Hydra answers
+# "to WHICH SERVICE" (the consent-grant record per client_id). Empty here means
+# the hydra-consents adapter reports `skipped` with the reason, never a silent
+# absence — but a goatnet that leaves it empty gets timelines that cannot say
+# what anyone actually reached, so it belongs in every goatnet's group_vars.
+microscope_hydra_admin_url: ""
+# id-admin-console audit JSONL, bind-mounted READ-ONLY into the container.
+microscope_console_audit_path: "/var/lib/goat-id-console/audit.jsonl"
+microscope_console_audit_mount_enabled: true
+microscope_netbird_url: ""
+microscope_netbird_token: ""
+# Where the NetBird management hostname in microscope_netbird_url points INSIDE the container.
+# On a mgmt host `mesh-coredns` pins that name to 127.0.0.1 in /etc/hosts, and
+# Docker's embedded DNS hands the host resolver's answer to containers, where it
+# arrives as `CNAME localhost.` and glibc discards it. Inside a container
+# 127.0.0.1 would be the container anyway. So the name is pinned to
+# `host-gateway`, the host, where traefik publishes :443 for it. Without the pin
+# every NetBird read fails with `error sending request`. Never a bridge or mesh IP; ""
+# drops the pin for a host whose traefik does not serve the name.
+microscope_netbird_host_addr: "host-gateway"
+
+# ---- MinIO audit-integrity tail (fabric-audit + operator-audit) -------
+# Disabled by default (empty endpoint/creds => both adapters report
+# `skipped`). Per-goatnet wiring mints a read-only IAM user via the
+# minio_extra_users substrate (stethoscope shape).
+microscope_audit_endpoint: ""
+microscope_audit_region: "us-east-1"
+microscope_audit_bucket: "audit-integrity"
+microscope_audit_key_prefix: "{{ audit_subscriber_id | default('') }}/"
+microscope_audit_access_key: ""
+microscope_audit_secret_key: ""
+microscope_audit_window_hours: "24"
+
+# ---- RBAC (panoscope /who precedent; in-app PEP + sidecar fence) ------
+# `off` ships inert for bring-up; flip to `enforce` per-goatnet once the
+# sidecar is deployed. Case-sensitive group names.
+microscope_rbac_mode: "off"
+microscope_rbac_who_groups: "PLATFORM-ADMIN,IAM-ADMIN"
+
+# View-audit trail (every look recorded) — host path bind-mounted rw.
+microscope_view_audit_dir: /var/lib/microscope
+microscope_view_audit_path: /var/lib/microscope/view-audit.jsonl
+
+# ---- oauth2-proxy admin fence (mirrors relay-health / id-console, ADR 0860) --
+microscope_oauth2_proxy_enabled: true
+microscope_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.6.0@sha256:dcb6ff8dd21bf3058f6a22c6fa385fa5b897a9cd3914c88a2cc2bb0a85f8065d"
+microscope_oauth2_proxy_oidc_issuer_url: ""
+microscope_oauth2_proxy_client_id: "microscope"
+microscope_oauth2_proxy_client_secret: ""
+microscope_oauth2_proxy_cookie_secret: ""
+# On-container OIDC-discovery resolution for the issuer's mesh-DNS name
+# (F-126 pattern; mesh_ip_a is bind-safe at boot per F-182 — the same live
+# relay-health shape, NOT the MinIO bridge-gateway variant).
+microscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ public_mgmt_fqdn | default(site_dns_zone | mandatory) }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+# Ory groups admitted at the fence. Same set as the in-app gate.
+# Literal (not templated) — the ADR 1073 parity ratchet reads this value
+# and asserts it equals the matrix grant set exactly.
+microscope_oauth2_proxy_allowed_groups: "PLATFORM-ADMIN,IAM-ADMIN"
+
+# Block 94 sibling base URLs (empty = button hidden on consumers).
+microscope_sibling_panoscope: ""
+microscope_sibling_stethoscope: ""

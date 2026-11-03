@@ -1,0 +1,158 @@
+---
+# peerview — the peer/demand reading surfaces (ADR 1135).
+#
+# NOT a new service. The isitup nginx already serves static pages on the mesh
+# zone behind oauth2-proxy; these are three more files in its `data/` mount,
+# exactly as netview's two pages are. No new vhost, no new Traefik route, no
+# new DNS record, no new Ory client.
+#
+# The browser never reads the access log and never queries Prometheus or the
+# NetBird API. A host timer writes ONE json and every viewer reads the same
+# bytes (ADR 1123: client demand must not amplify into backend work).
+peerview_enabled: false
+
+# THE ISITUP data/ DIRECTORY. Two facts about this path, both learned the hard
+# way and both still true:
+#   1. isitup's nginx bind-mounts INDIVIDUAL FILES for its docroot
+#      (index.html, nginx.conf, check.sh). A new file dropped beside them never
+#      appears inside the container — the inode is pinned at create time, the
+#      F-330 shape. `data/` and `icons/` are the only DIRECTORY mounts, so
+#      `data/` is the one seam that works with no container recreate.
+#   2. /opt/relay-health/www on a mgmt host looks like a docroot and is not:
+#      the relay-health page is served by a separate cloud VM. Files dropped
+#      there are real, gated, and served by nothing.
+peerview_www_dir: /opt/mgmt-host/isitup/data
+peerview_bin_dir: /opt/peerview
+
+# The ledger lives OUTSIDE the served directory. It is the poller's own state,
+# it is not a page asset, and it must not be fetchable by anyone who can reach
+# the surface — even though the surface is admin-gated, a state file is not a
+# publication. Written 0600, root-owned.
+peerview_state_dir: /var/lib/peerview
+
+# ADR 1136 dormancy sweep, deployed alongside peerview because it writes its
+# roster into peerview_state_dir. Report-only by construction — neither the unit
+# nor its wrapper passes --apply or --lane. Default ON where peerview is: a stale
+# roster is the failure this exists to prevent, and it mutates nothing.
+#
+# Conforms to the live-state-guard-scheduling.md §4 contract. Anything below that
+# looks like ceremony is a row of that contract; read it there before trimming.
+lifecycle_sweep_enabled: true
+# Hourly at :23 — offset from peerview's own poll and from the host's other
+# timers, because this one reads the entire peer and setup-key list.
+lifecycle_sweep_oncalendar: "*:23"
+lifecycle_sweep_jitter_sec: 300
+lifecycle_sweep_timeout_sec: 300
+lifecycle_sweep_report_dir: /var/log/goat
+# Reuses the goatnet's public NetBird management endpoint (the bare public_mgmt_fqdn, with no extra host label).
+lifecycle_sweep_nb_api: "https://{{ public_mgmt_fqdn | default(site_dns_zone) }}"
+# Admin-scoped NetBird token. Defaults to the one peerview already holds on this
+# goatnet; the role REFUSES to install the timer when it is empty rather than
+# deploying a unit that fails hourly.
+lifecycle_sweep_nb_token: "{{ peerview_netbird_token | default('') }}"
+# Hold records (ops/lifecycle/schema/hold-record.v1.schema.json): one JSON line
+# per held peer, prior groups included — the restore source of truth the console
+# and `--lane release` read. Declared HERE and nowhere else; the sweep gets it as
+# LIFECYCLE_HOLD_RECORDS. Inside peerview_state_dir so the unit's ReadWritePaths
+# already covers it.
+lifecycle_hold_records: "{{ peerview_state_dir }}/hold-records.jsonl"
+#
+# Metrics: DELIBERATELY UNSET, meaning the sweep runs and publishes no metric.
+# The textfile dir differs per goatnet and a directory existing is NOT evidence a
+# scraper reads it — writing a metric nobody scrapes is the F-335 fault, added by
+# hand, on purpose, by someone being helpful. Set this when a scraper exists.
+lifecycle_sweep_textfile_dir: ""
+
+# Prometheus. Per-goatnet, because this genuinely differs: goat-obs can run on
+# the mgmt host itself (loopback :9192) or on the
+# observability Orin, reached over the mesh on :9090. A wrong value here does
+# not fail loudly — it blanks the transport panels and the page says the
+# source did not answer, which is the correct behaviour and is still worth
+# not triggering by accident.
+peerview_prom_url: "http://127.0.0.1:9192"
+
+# NetBird management API. The census source; without it the pages have nothing
+# to count. The URL is the goatnet's public enrollment apex, which is what the
+# portal already uses from this host.
+peerview_netbird_url: ""
+# The API token. Set in group_vars as `{{ lookup('env', 'X_NB_API_TOKEN') }}`,
+# matching netvis's convention exactly — resolved on the machine running
+# ansible, written into a 0600 env file on the host, never into a committed
+# file and never onto a command line where `ps` would show it.
+#
+# THE TOKEN NEEDS ADMIN. Listing peers is an admin-scoped read on this NetBird
+# build; there is no read-only role that can enumerate the population. That is
+# a real cost of this surface, and it is stated in the design doc rather than
+# discovered when someone tries to narrow it.
+peerview_netbird_token: ""
+
+# The Traefik container whose access log carries the per-peer join. Named
+# rather than discovered: a wrong name should blank the demand panels with a
+# stated reason, not silently pick a different container's log.
+peerview_traefik_container: traefik
+
+# How much of the access log to read per run, and how often to run. The window
+# and the interval are deliberately EQUAL by default so successive runs neither
+# overlap nor leave a gap — the document then describes one contiguous slice of
+# time rather than a sample of it.
+#
+# Sizing: a busy goatnet logs on the order of 13 MB per five minutes. The byte
+# cap is well above that; if it ever trips
+# the document says the window was truncated rather than reporting a partial
+# count as a total.
+peerview_interval_s: 300
+peerview_window_s: 300
+peerview_max_log_bytes: 50331648        # 48 MiB
+
+# ── who owns a peer ─────────────────────────────────────────────────────────
+# The identity surface these pages link a peer's owner INTO — panoscope's `/who`
+# roster (ADR 1047), which is itself group-gated. Empty renders every owner as
+# plain text rather than as a link to nowhere, so a goatnet without panoscope
+# still gets the owner column and simply cannot click it.
+#
+# It is the goatnet's own panoscope, not a fleet-wide URL: the roster it serves
+# is that goatnet's.
+peerview_identity_url: ""
+
+# The SHARED peer→person resolver (docs/design/peer-identity-resolution.md).
+# Same endpoint `goat who`, panoscope, netvis and the relay-health card use, so
+# this surface cannot disagree with them about who owns a machine.
+#
+# Reaching it from a mgmt host: leave the URL empty and name the container. The
+# portal's mesh hostname does not resolve from the host itself and the published
+# :8088 is the oauth2 gate rather than the app, so the app's IP on its docker
+# network is resolved per run (the container IP changes on restart). This is the
+# same path the relay-health resolver uses.
+peerview_portal_url: ""
+peerview_portal_container: ""
+peerview_portal_network: mgmt
+peerview_portal_port: "8090"
+# Operator API key. Without it the owner column falls back to the registry file
+# on disk and SAYS it did — a local answer can name a handle but can never
+# confirm a live identity behind it.
+peerview_portal_key: ""
+
+# The id-admin-console base. A person the resolver reconciled against a live
+# identity links to `<base>/users/<ory-id>` there — the same deep-link the
+# relay-health card uses, so two surfaces land an operator in the same place.
+# Empty falls back to the identity roster link below.
+peerview_id_console_url: ""
+
+# Owners for peers that carry no onboarding name — the mgmt host, relays, a
+# kiosk box. `<peer-name-or-glob>: <handle>`. A FALLBACK only: a peer whose name
+# resolves to a person in the declared registry stays theirs whatever this says.
+#
+# Left EMPTY on purpose. An undeclared substrate peer reads "no owner recorded",
+# which is the true answer, and the surface counts how many there are — filling
+# this in is a decision somebody makes, not a default this role invents.
+peerview_declared_owners: {}
+
+# Goatnet name. Used for two things: the label in the page masthead, and
+# stripping the env token off a mint handle so `peer-<handle>-<env>-<date>-<host>`
+# yields the handle alone. Wrong here is not dangerous — handles keep the env
+# suffix and grouping still works — but it is ugly.
+peerview_goatnet: "{{ site_id | mandatory }}"
+
+# The onboard runner's container uid, for the shared hold records. Declared here
+# because the onboard-runner role's defaults are not visible to this role's play.
+onboard_runner_uid: 65532

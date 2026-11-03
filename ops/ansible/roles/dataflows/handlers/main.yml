@@ -1,0 +1,6 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+- name: dataflows | recreate container
+  community.docker.docker_compose_v2:
+    project_src: "{{ dataflows_compose_dir }}"
+    state: restarted

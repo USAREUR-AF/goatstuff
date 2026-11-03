@@ -1,0 +1,148 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# zenoh-sandbox role — disposable browser-based Zenoh playground.
+# Router (eclipse/zenoh + remote_api plugin, peers with nothing) + web SPA
+# (zenoh-ts demo) behind the signal Traefik, mesh-only gated.
+# Design: docs/design/zenoh-sandbox.md
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. Mesh DNS record for sandbox.<site>.<zone> published — in
+#      the site's mesh-hosts; re-run mesh-coredns.yml.
+#   2. sandbox.<site>.<zone> in the master LE tls.domains SAN list — set
+#      zenoh_sandbox_enabled: true in group_vars then re-run traefik-acme.yml.
+#   3. Image ghcr.io/{{ ghcr_org }}/zenoh-sandbox exists (zenoh-sandbox-image.yml).
+#
+# Idempotent — re-running on a healthy host is a no-op beyond a pull if the
+# image changed or a config re-render.
+
+- name: zenoh-sandbox | ensure dirs exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ zenoh_sandbox_compose_dir }}"
+    - "{{ zenoh_sandbox_plugin_dir }}"
+
+# -- remote_api plugin .so (not in the upstream image) ----------------------
+- name: zenoh-sandbox | resolve remote_api plugin artifact for this architecture
+  ansible.builtin.set_fact:
+    zenoh_sandbox_remote_api_arch: "{{ zenoh_sandbox_remote_api_arch_map[ansible_architecture] }}"
+    zenoh_sandbox_remote_api_sha256: "{{ zenoh_sandbox_remote_api_sha256_map[ansible_architecture] }}"
+  failed_when: ansible_architecture not in zenoh_sandbox_remote_api_arch_map
+
+- name: zenoh-sandbox | fetch + verify upstream zenoh-ts standalone zip
+  ansible.builtin.get_url:
+    url: "{{ zenoh_sandbox_remote_api_url_template | regex_replace('\\{version\\}', zenoh_sandbox_remote_api_version) | regex_replace('\\{arch\\}', zenoh_sandbox_remote_api_arch) }}"
+    dest: "{{ zenoh_sandbox_compose_dir }}/zenoh-ts-{{ zenoh_sandbox_remote_api_version }}-{{ zenoh_sandbox_remote_api_arch }}-musl.zip"
+    checksum: "sha256:{{ zenoh_sandbox_remote_api_sha256 }}"
+    mode: "0644"
+  become: true
+  register: zenoh_sandbox_plugin_zip
+  notify: zenoh-sandbox | recreate containers
+
+- name: zenoh-sandbox | install libzenoh_plugin_remote_api.so to host plugin dir
+  ansible.builtin.unarchive:
+    src: "{{ zenoh_sandbox_plugin_zip.dest }}"
+    dest: "{{ zenoh_sandbox_plugin_dir }}/"
+    remote_src: true
+    creates: "{{ zenoh_sandbox_plugin_dir }}/libzenoh_plugin_remote_api.so"
+  become: true
+  notify: zenoh-sandbox | recreate containers
+
+# -- render config + compose + traefik route --------------------------------
+- name: zenoh-sandbox | render router config.json5
+  ansible.builtin.template:
+    src: config.json5.j2
+    dest: "{{ zenoh_sandbox_config_path }}"
+    mode: "0644"
+  become: true
+  notify: zenoh-sandbox | recreate containers
+
+- name: zenoh-sandbox | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ zenoh_sandbox_compose_dir }}/docker-compose.yml"
+    mode: "0644"
+  become: true
+  notify: zenoh-sandbox | recreate containers
+
+- name: zenoh-sandbox | render Traefik dynamic config (file provider)
+  ansible.builtin.template:
+    src: traefik-zenoh-sandbox.yml.j2
+    dest: "{{ zenoh_sandbox_traefik_dynamic_dir }}/{{ zenoh_sandbox_traefik_dynamic_filename }}"
+    mode: "0644"
+  become: true
+  # Traefik picks up file-provider changes automatically — no SIGHUP.
+
+# -- pull + bring up --------------------------------------------------------
+# The route filename changed (nova-zenoh-sandbox.yml -> zenoh-sandbox.yml). Traefik's file provider reads
+# the whole directory, so an orphaned old file is not inert: it declares a
+# second router on the same Host() rule. Guarded on the two names differing so
+# this is a no-op once the rename is old.
+- name: zenoh-sandbox | remove pre-rename Traefik route file
+  ansible.builtin.file:
+    path: "{{ zenoh_sandbox_traefik_dynamic_dir }}/{{ zenoh_sandbox_traefik_dynamic_filename_legacy }}"
+    state: absent
+  become: true
+  when:
+    - zenoh_sandbox_traefik_dynamic_filename_legacy | default('') | length > 0
+    - zenoh_sandbox_traefik_dynamic_filename_legacy != zenoh_sandbox_traefik_dynamic_filename
+
+- name: zenoh-sandbox | log target docker daemon in to private registry (when enabled)
+  community.docker.docker_login:
+    registry_url: "{{ zenoh_sandbox_pull_registry }}"
+    username: "{{ zenoh_sandbox_pull_username }}"
+    password: "{{ zenoh_sandbox_pull_password }}"
+  become: true
+  when:
+    - zenoh_sandbox_pull_auth_enabled | bool
+    - zenoh_sandbox_pull_password | length > 0
+  no_log: true
+
+- name: zenoh-sandbox | pull web image
+  community.docker.docker_image:
+    name: "{{ zenoh_sandbox_web_image }}"
+    source: pull
+    force_source: true
+  become: true
+
+- name: zenoh-sandbox | pull zenoh router image
+  community.docker.docker_image:
+    name: "{{ zenoh_sandbox_router_oci }}"
+    source: pull
+  become: true
+  changed_when: false
+
+- name: zenoh-sandbox | bring up via docker compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ zenoh_sandbox_compose_dir }}"
+    state: present
+    pull: missing
+  become: true
+
+- name: zenoh-sandbox | wait for router REST to answer
+  ansible.builtin.command:
+    cmd: "docker exec {{ zenoh_sandbox_router_container }} wget -qO- http://127.0.0.1:{{ zenoh_sandbox_rest_port }}/@/local/router"
+  register: zenoh_sandbox_router_health
+  retries: 20
+  delay: 3
+  until: zenoh_sandbox_router_health.rc == 0
+  changed_when: false
+  become: true
+
+- name: zenoh-sandbox | wait for web container to be Running
+  ansible.builtin.command:
+    cmd: "docker inspect -f '{{ '{{' }}.State.Running{{ '}}' }}' {{ zenoh_sandbox_web_container }}"
+  register: zenoh_sandbox_web_running
+  retries: 30
+  delay: 2
+  until: zenoh_sandbox_web_running.stdout | trim == 'true'
+  changed_when: false
+  become: true
+# Deploy ledger now written by the shared `rollback-ledger`
+# meta-dependency (meta/main.yml) per ADR 1060 — no per-role task here.

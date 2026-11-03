@@ -1,0 +1,14 @@
+# Rendered by ops/ansible/roles/herd/ — DO NOT EDIT ON HOST.
+[Unit]
+Description=Periodic forward of herd operator-action rows onto the goat audit bus
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec={{ herd_audit_forward_interval }}
+# Jittered: several goatnets running this on the same cadence would otherwise
+# hit the bus in lockstep.
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target

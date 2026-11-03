@@ -1,0 +1,43 @@
+---
+# ops/ansible/roles/herd-connector/defaults/main.yml
+#
+# The herd gear connector (ADR 1131 · docs/design/herd-adoption.md §4a).
+#
+# WHY THIS IS A SEPARATE ROLE FROM `herd`, and must stay one: a mgmt host IS
+# `INFRA`, and `infra -> network (any port)` already exists, so a process there
+# already reaches every switch on every port. NetBird groups only ever UNION
+# reach, so no group assignment narrows it. The only thing that bounds herd's
+# reach is which PEER the SSH egress leaves from. Deploying this beside the
+# console would silently undo the entire containment.
+#
+# TARGET HOST: a peer whose node-class is NETWORK-JUMP — outbound-only, tcp 22
+# to NETWORK plus its own management plane, never a destination of any rule.
+
+# Default OFF, following onboard-runner: this is a shell-on-any-switch
+# capability, and rendering the role must not bring it up.
+herd_connector_enabled: false
+
+herd_connector_dir: "/opt/herd-connector"
+# NOT YET MIRRORED into the goat-maintainer namespace — herd-connector still exists
+# only under usareur-af. Mirror it before the connector is first deployed, the
+# same way herd was, or this resolves to a path that does not exist.
+herd_connector_image: "ghcr.io/{{ ghcr_org }}/herd-connector:v0.2.0@sha256:b01060d5f63f8dc4f199d2d0bb3d64188085685f6840e8c548b36b3c7264f8b0"
+
+# The console it DIALS. Nothing initiates toward this peer, so there is no
+# listener here and no inbound rule anywhere for it.
+herd_connector_console_ws_url: "wss://herd.{{ site_id }}.{{ site_dns_zone }}/ws/gear-connector"
+
+# The site whose gear this connector reaches. Load-bearing: the console routes
+# sessions on it, and a connector that registered with an empty site would never
+# be selected — a process that looks healthy and can carry nothing. The role
+# refuses to deploy without it.
+herd_connector_site: "{{ site_id }}"
+
+# SPIFFE identity, written by a spiffe-helper sidecar (runner-console-mtls.md).
+# The console reads the ID off the VERIFIED client certificate and refuses a
+# hello that claims a different one, so these paths are the identity — not the
+# env var below, which only gets to agree with them.
+herd_connector_spiffe_id: ""
+herd_connector_cert: "/run/spiffe/cert.pem"
+herd_connector_key: "/run/spiffe/key.pem"
+herd_connector_ca: "/run/spiffe/spire-bundle.pem"

@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=netview poll ({{ netview_interval_s }}s)
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec={{ netview_interval_s }}s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

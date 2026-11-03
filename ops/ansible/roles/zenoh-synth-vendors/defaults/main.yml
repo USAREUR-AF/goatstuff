@@ -1,0 +1,362 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the zenoh-synth-vendors role — small synthetic publishers
+# that populate a Zenoh trial fabric with real traffic so
+# panoscope has nodes/edges to render and the vendor portal references
+# real registered feeds.
+#
+# Override `synth_vendors:` in group_vars or via -e.
+
+# Optional per-goatnet choice: notional publishers/subscribers are synthetic
+# demo traffic, wanted on a dev or demo goatnet and unwanted on a real one, so
+# they are OFF by default and a goatnet opts in with `synth_vendors_enabled:
+# true` in its group_vars. The deploy playbook and the goat-standup driver both
+# gate on this flag, so a goatnet that does not set it never gets synthetic
+# producers.
+synth_vendors_enabled: false
+
+# Image — built by .github/workflows/synth-vendor-image.yml. Operators
+# pin to a `:sha-<short>` for reproducible builds; default tracks main.
+synth_vendor_image: "ghcr.io/{{ ghcr_org }}/synth-vendor:sha-3d59cd1"
+
+# Zenoh router endpoint. Internal docker network — container-name
+# resolution. A router that listens mTLS-only on 7447
+# (plain TCP socket opens but the zenoh-protocol handshake requires
+# TLS), so the default is `tls/...`. The synth-vendor binary
+# auto-detects from the endpoint scheme.
+synth_vendor_zenoh_endpoint: "tls/{{ zenoh_stack | default('goat-zenoh') }}-router:7447"
+
+# When the router's serving-cert SAN does NOT include `<zenoh_stack>-router`
+# — a goatnet whose zenoh stack was renamed off the generic `goat-zenoh`, so
+# the router cert kept the SAN `goat-zenoh-router` — the container-name
+# endpoint above fails `verify_name_on_connect`. Point the endpoint at a name
+# the cert DOES carry (`tls/goat-zenoh-router:7447`) and map that name to the
+# router's reachable address here, e.g. "goat-zenoh-router:{{ mesh_ip_a }}".
+# Empty on a goatnet whose container name already matches its cert SAN.
+synth_vendor_router_extra_host: ""
+
+# Docker network the zenoh-router container actually lives on. The
+# router was deployed via `ops/ansible/roles/goat-zenoh/` whose
+# compose project name is `<zenoh_stack>`, which materializes as the
+# `<zenoh_stack>_default` external network. NOT `zenoh_default` — that one belongs to a different project
+# and has no router.
+synth_vendor_zenoh_network: "{{ zenoh_stack | default('goat-zenoh') }}_default"
+
+# Host-side cert directory. Per-vendor subdirs match what
+# ops/zenoh-trial-peers/bootstrap-portal-vendors.sh drops:
+#   {cert_dir}/{vendor}/{vendor}-cert.pem
+#   {cert_dir}/{vendor}/{vendor}-key.pem
+#
+# CA root is NOT per-vendor — it's the trial fabric's single CA. The
+# role mounts it from synth_vendor_ca_root_src as /certs/ca-root.pem
+# into each container.
+#
+# Operator runs ops/zenoh-trial-peers/bootstrap-portal-vendors.sh once
+# to mint vendor identities via the portal API and SCP the resulting
+# tarballs into this directory. Re-deploys idempotently as long as the
+# tree is present. Only consulted when an entry's `endpoint` starts
+# with `tls/`.
+synth_vendor_cert_dir: "/opt/synth-vendors/certs"
+
+# Source path on the host for the trial fabric's CA root
+# certificate (the same file the router itself uses). Read-only
+# bind-mounted into each synth-vendor container as /certs/ca-root.pem
+# so the client verifies the router's server cert.
+synth_vendor_ca_root_src: "/etc/{{ zenoh_stack | default('goat-zenoh') }}/tls/ca-root-cert.pem"
+
+# Host-side compose project dir.
+synth_vendor_compose_dir: "/opt/synth-vendors"
+
+# Per-vendor logging knob.
+synth_vendor_rust_log: "synth_vendor=info"
+
+# ---------------------------------------------------------------------------
+# Three synthetic publishers for a trial fabric. Override the
+# whole list in group_vars to populate a different set; each entry becomes
+# one systemd-managed docker-compose service.
+#
+# Field reference:
+#   id            — compose service name + container hostname; unique
+#   personality   — tracks-demo | power-demo | beacon-demo (binary picks
+#                   which synthetic payload shape to publish)
+#   vendor        — portal-registered vendor prefix (drives ACL allowlist
+#                   when running under mTLS; also informs operator audit)
+#   topic         — full Zenoh key-expression; must be under <vendor>/**
+#   rate_hz       — publish frequency
+#   subscribe_key — optional key-expression to subscribe to. beacon-demo
+#                   subscribes to `caracal/**` to render a cross-vendor edge
+#                   in panoscope.
+# ---------------------------------------------------------------------------
+synth_vendors:
+  # Notional air-defense ecosystem populating the Data-COP. All peer
+  # names are esoteric animals (consistent single naming scheme).
+  # Three forward operating sites: alpha-fob, bravo-fob, charlie-fob.
+  # Topology: sensors → fusion → correlation → theater C2 → tactical
+  # C2 → effectors, plus an omniwatch universal consumer.
+  #
+  # Two ACL cert trust-domains (caracal, community) — the "vendor"
+  # field below maps to the cert. The "logical_vendor" field in the
+  # schema-declaration JSON drives panoscope clustering (one cluster
+  # per animal). Workaround until per-vendor ACL lands.
+
+  # ---- Sensors (caracal cert) -----------------------------------------------
+  - id: tarsier-alpha
+    personality: tracks-demo
+    vendor: caracal
+    logical_vendor: tarsier
+    role_class: sensor
+    site: alpha-fob
+    topic: "caracal/tarsier/alpha-fob/contacts/v1"
+    rate_hz: 2.0
+    subscribe_key: ""
+    peer_id: "tarsier-alpha-radar"
+    format_hint: protobuf
+  - id: tarsier-bravo
+    personality: tracks-demo
+    vendor: caracal
+    logical_vendor: tarsier
+    role_class: sensor
+    site: bravo-fob
+    topic: "caracal/tarsier/bravo-fob/contacts/v1"
+    rate_hz: 2.0
+    subscribe_key: ""
+    peer_id: "tarsier-bravo-radar"
+    format_hint: protobuf
+  - id: mantis-alpha
+    personality: tracks-demo
+    vendor: caracal
+    logical_vendor: mantis
+    role_class: sensor
+    site: alpha-fob
+    topic: "caracal/mantis/alpha-fob/imagery/v1"
+    rate_hz: 5.0
+    subscribe_key: ""
+    peer_id: "mantis-alpha-eo-camera"
+    format_hint: cbor
+  - id: echidna-alpha
+    personality: tracks-demo
+    vendor: caracal
+    logical_vendor: echidna
+    role_class: sensor
+    site: alpha-fob
+    topic: "caracal/echidna/alpha-fob/detections/v1"
+    rate_hz: 1.0
+    subscribe_key: ""
+    peer_id: "echidna-alpha-acoustic"
+    format_hint: json
+  - id: narwhal-alpha
+    personality: power-demo
+    vendor: caracal
+    logical_vendor: narwhal
+    role_class: sensor
+    site: alpha-fob
+    topic: "caracal/narwhal/alpha-fob/events/v1"
+    rate_hz: 0.2
+    subscribe_key: ""
+    peer_id: "narwhal-alpha-seismic"
+    format_hint: cbor
+  - id: kingfisher-bravo
+    personality: tracks-demo
+    vendor: caracal
+    logical_vendor: kingfisher
+    role_class: sensor
+    site: bravo-fob
+    topic: "caracal/kingfisher/bravo-fob/emissions/v1"
+    rate_hz: 1.0
+    subscribe_key: ""
+    peer_id: "kingfisher-bravo-rf-detect"
+    format_hint: protobuf
+  - id: axolotl-charlie
+    personality: tracks-demo
+    vendor: caracal
+    logical_vendor: axolotl
+    role_class: sensor
+    site: charlie-fob
+    topic: "caracal/axolotl/charlie-fob/composite/v1"
+    rate_hz: 0.5
+    subscribe_key: ""
+    peer_id: "axolotl-charlie-aerostat"
+    format_hint: protobuf
+
+  # ---- Effectors (caracal cert, subscribe to C2) ---------------------------
+  - id: mongoose-alpha
+    personality: power-demo
+    vendor: caracal
+    logical_vendor: mongoose
+    role_class: effector
+    site: alpha-fob
+    topic: "caracal/mongoose/alpha-fob/status/v1"
+    rate_hz: 0.5
+    subscribe_key: "community/peregrine/**"
+    peer_id: "mongoose-alpha-ew-jammer"
+    format_hint: json
+  - id: wolverine-alpha
+    personality: power-demo
+    vendor: caracal
+    logical_vendor: wolverine
+    role_class: effector
+    site: alpha-fob
+    topic: "caracal/wolverine/alpha-fob/engagements/v1"
+    rate_hz: 0.2
+    subscribe_key: "community/peregrine/**"
+    peer_id: "wolverine-alpha-counter-uas"
+    format_hint: protobuf
+  - id: ibex-alpha
+    personality: power-demo
+    vendor: caracal
+    logical_vendor: ibex
+    role_class: effector
+    site: alpha-fob
+    topic: "caracal/ibex/alpha-fob/launched/v1"
+    rate_hz: 0.1
+    subscribe_key: "community/peregrine/**"
+    peer_id: "ibex-alpha-small-interceptor"
+    format_hint: protobuf
+  - id: aurochs-charlie
+    personality: power-demo
+    vendor: caracal
+    logical_vendor: aurochs
+    role_class: effector
+    site: charlie-fob
+    topic: "caracal/aurochs/charlie-fob/launched/v1"
+    rate_hz: 0.05
+    subscribe_key: "community/condor/**"
+    peer_id: "aurochs-charlie-heavy-interceptor"
+    format_hint: protobuf
+  - id: basilisk-alpha
+    personality: power-demo
+    vendor: caracal
+    logical_vendor: basilisk
+    role_class: effector
+    site: alpha-fob
+    topic: "caracal/basilisk/alpha-fob/deployed/v1"
+    rate_hz: 0.1
+    subscribe_key: "community/peregrine/**"
+    peer_id: "basilisk-alpha-decoy"
+    format_hint: json
+
+  # ---- Data services (community cert) --------------------------------------
+  - id: octopus-alpha
+    personality: tracks-demo
+    vendor: community
+    logical_vendor: octopus
+    role_class: fusion
+    site: alpha-fob
+    topic: "community/octopus/alpha-fob/tracks/v1"
+    rate_hz: 1.0
+    subscribe_key: "caracal/**"
+    peer_id: "octopus-alpha-fusion"
+    format_hint: protobuf
+  - id: cuttlefish-theater
+    personality: tracks-demo
+    vendor: community
+    logical_vendor: cuttlefish
+    role_class: correlation
+    site: theater
+    topic: "community/cuttlefish/theater/confirmed/v1"
+    rate_hz: 0.5
+    subscribe_key: "community/octopus/**"
+    peer_id: "cuttlefish-theater-correlation"
+    format_hint: protobuf
+  - id: chameleon-translator
+    personality: tracks-demo
+    vendor: community
+    logical_vendor: chameleon
+    role_class: translator
+    site: theater
+    topic: "community/chameleon/theater/normalized/v1"
+    rate_hz: 2.0
+    subscribe_key: "caracal/echidna/**"
+    peer_id: "chameleon-translator"
+    format_hint: json
+
+  # ---- C2 (community cert) -------------------------------------------------
+  - id: condor-theater
+    personality: power-demo
+    vendor: community
+    logical_vendor: condor
+    role_class: c2
+    site: theater
+    topic: "community/condor/theater/orders/v1"
+    rate_hz: 0.5
+    subscribe_key: "community/cuttlefish/**"
+    peer_id: "condor-theater-c2"
+    format_hint: json
+  - id: peregrine-alpha
+    personality: power-demo
+    vendor: community
+    logical_vendor: peregrine
+    role_class: c2
+    site: alpha-fob
+    topic: "community/peregrine/alpha-fob/orders/v1"
+    rate_hz: 0.5
+    subscribe_key: "community/condor/**"
+    peer_id: "peregrine-alpha-tactical-c2"
+    format_hint: json
+  - id: falcon-bravo
+    personality: power-demo
+    vendor: community
+    logical_vendor: falcon
+    role_class: c2
+    site: bravo-fob
+    topic: "community/falcon/bravo-fob/orders/v1"
+    rate_hz: 0.5
+    subscribe_key: "community/condor/**"
+    peer_id: "falcon-bravo-site-c2"
+    format_hint: json
+
+  # ---- Universal consumer --------------------------------------------------
+  - id: omniwatch
+    personality: beacon-demo
+    vendor: community
+    logical_vendor: omniwatch
+    role_class: observer
+    site: theater
+    topic: "community/omniwatch/theater/heartbeat/v1"
+    rate_hz: 0.2
+    subscribe_key: "**"
+    peer_id: "omniwatch-universal"
+    format_hint: text
+
+  # ---- Pure sinks ----------------------------------------------------------
+  # These peers ONLY subscribe — they never publish. They surface in
+  # panoscope's COP with role=sink (the third role beyond source +
+  # deriver). Realistic air-defense consumers: glass displays for
+  # the operator, long-term archives, audit-log forwarders.
+  - id: glass-display
+    personality: beacon-demo
+    vendor: community
+    logical_vendor: glass-display
+    role_class: display
+    site: theater
+    topic: "community/glass-display/theater/unused/v1"
+    rate_hz: 0.1
+    subscribe_key: "community/condor/**"
+    peer_id: "glass-display-theater"
+    format_hint: text
+    no_publish: true
+  - id: archive-vault
+    personality: beacon-demo
+    vendor: community
+    logical_vendor: archive-vault
+    role_class: archive
+    site: theater
+    topic: "community/archive-vault/theater/unused/v1"
+    rate_hz: 0.1
+    subscribe_key: "**"
+    peer_id: "archive-vault-theater"
+    format_hint: text
+    no_publish: true
+  - id: audit-log
+    personality: beacon-demo
+    vendor: community
+    logical_vendor: audit-log
+    role_class: audit
+    site: theater
+    topic: "community/audit-log/theater/unused/v1"
+    rate_hz: 0.1
+    subscribe_key: "attest/schema/**"
+    peer_id: "audit-log-theater"
+    format_hint: text
+    no_publish: true

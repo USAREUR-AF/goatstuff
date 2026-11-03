@@ -1,0 +1,34 @@
+# {{ ansible_managed }}
+[Unit]
+Description=peerview — one JSON for the peer and demand reading surfaces (ADR 1135)
+# The poller shells out to `docker logs`. Without docker up it degrades
+# correctly (the demand panels blank and say why), but there is no reason to
+# race the socket on boot.
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+# The token arrives by environment file, mode 0600, so it is never on a command
+# line where `ps` would show it to any user on the box.
+EnvironmentFile={{ peerview_bin_dir }}/peerview.env
+ExecStart=/usr/bin/env python3 {{ peerview_bin_dir }}/peerview-poll.py \
+  --out {{ peerview_www_dir }}/peerview.json \
+  --ledger {{ peerview_state_dir }}/peerview-ledger.jsonl \
+  --goatnet '{{ peerview_goatnet }}' \
+  --vantage '{{ inventory_hostname }}' \
+  --prom '{{ peerview_prom_url }}' \
+  --traefik-container '{{ peerview_traefik_container }}' \
+  --window-s {{ peerview_window_s }} \
+  --max-log-bytes {{ peerview_max_log_bytes }} \
+  --taxonomy {{ peerview_bin_dir }}/netbird_acl_taxonomy.yml \
+  --service-classes {{ peerview_bin_dir }}/peerview-service-classes.yaml \
+  --roster {{ peerview_bin_dir }}/roster.json \
+  --declared-owners {{ peerview_bin_dir }}/declared-owners.txt \
+  --identity-url '{{ peerview_identity_url }}'
+# Below every service it measures. A reading surface must never be the reason
+# the thing it reads gets slower.
+Nice=10
+IOSchedulingClass=idle
+# A run that hangs on a slow API must not wedge the timer forever.
+TimeoutStartSec=180

@@ -1,0 +1,293 @@
+---
+# Append the per-host runtime deploy ledger (ADR 1060).
+#
+# Runs as a meta-dependency at the entry of every deploying role, so it
+# records the ref the run INTENDS to converge to. ops/scripts/rollback.sh
+# reconciles every target against the live `docker inspect` before acting,
+# so an optimistic row from a failed mid-deploy never drives a wrong
+# rollback. changed_when:false throughout — the ledger is audit-only.
+#
+# Dedup: a row is appended only when the (ref, artifact_type, reversible)
+# tuple differs from the last row, so the jsonl carries one row per actual
+# change rather than one per ansible run.
+
+- name: rollback-ledger | require a component name (fail-closed per ADR 1060)
+  ansible.builtin.assert:
+    that:
+      - rollback_component | length > 0
+    fail_msg: >-
+      rollback-ledger invoked without rollback_component. Every deploying
+      role must pass rollback_component (+ rollback_ref for image/config/acl)
+      in its meta/main.yml dependency stanza. See
+      docs/design/universal-deploy-rollback.md.
+    quiet: true
+
+# The row's ts needs ansible_facts.date_time. Gather the date_time subset
+# ourselves, every time: this role runs as a meta-dependency inside plays that
+# may set gather_facts: false (first hit: goat-coredns.yml pushing a zone to the
+# SSM mesh-dns hosts), and ansible.cfg caches facts for an hour
+# (gathering = smart, fact_caching = jsonfile), so a date_time the play found
+# already defined can be the PREVIOUS play's clock, and the row's timestamp would
+# then predate the write. The subset is cheap; the row's time is the
+# write time, nothing older.
+- name: rollback-ledger | gather date_time facts fresh (never the fact cache's)
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - "!min"
+      - date_time
+
+- name: rollback-ledger | ensure ledger dir
+  ansible.builtin.file:
+    path: "{{ rollback_ledger_dir }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ rollback_ledger_owner }}"
+    group: "{{ rollback_ledger_group }}"
+  become: true
+
+- name: rollback-ledger | stat existing ledger
+  ansible.builtin.stat:
+    path: "{{ rollback_ledger_path }}"
+  register: _rbl_stat
+  become: true
+
+- name: rollback-ledger | read last ledger row
+  ansible.builtin.command:
+    cmd: "tail -n 1 {{ rollback_ledger_path }}"
+  register: _rbl_last
+  changed_when: false
+  become: true
+  when: _rbl_stat.stat.exists and _rbl_stat.stat.size | default(0) | int > 0
+
+- name: rollback-ledger | parse the prior row (empty dict if none / unparseable)
+  ansible.builtin.set_fact:
+    _rbl_prev: >-
+      {{
+        (_rbl_last.stdout | from_json)
+        if (_rbl_last.stdout is defined and (_rbl_last.stdout | default('') | trim | length) > 0)
+        else {}
+      }}
+  failed_when: false
+
+# Served payloads (goat-get, goat-docs): a role that serves release assets it
+# downloads at deploy time (the goat CLI, goatbuilder, the SDK) carries the
+# release tag in a role var, not in its image, so the image ref alone cannot say
+# what the host serves. Such a role declares rollback_served in its meta stanza
+# (name, tag_var, optional enabled_var, file under rollback_served_root). The
+# declared map is what this play intends to serve; the promote handler reads
+# each file back at the end of the play and records what the host actually
+# serves as `served`. A payload change with an unchanged image is a change.
+# A role that installs a release another role declares (onboard-runner's host
+# goat is goat-get's goat-cli) names that role in tag_role: the tag is read from
+# the play's vars when set there, else from that role's defaults.
+# ops/scripts/served-payloads.py resolves the same declaration from the repo, so
+# both avenues compare the row with main (docs/design/universal-deploy-rollback.md).
+- name: rollback-ledger | declared served payloads (reset; empty for most roles)
+  ansible.builtin.set_fact:
+    _rbl_served_declared: {}
+
+- name: rollback-ledger | declared served payloads
+  ansible.builtin.set_fact:
+    _rbl_served_declared: >-
+      {{ _rbl_served_declared | combine({item.name:
+           ((lookup('vars', item.tag_var,
+                    default=((lookup('file', role_path ~ '/../' ~ item.tag_role ~ '/defaults/main.yml') | from_yaml)[item.tag_var]))
+             if (item.tag_role | default('') | length > 0) else lookup('vars', item.tag_var))
+            if ((item.enabled_var | default('') | length == 0) or (lookup('vars', item.enabled_var) | bool))
+            else 'absent')}) }}
+  loop: "{{ rollback_served }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: rollback-ledger | derive prior ref + compare key
+  ansible.builtin.set_fact:
+    _rbl_prior_ref: "{{ _rbl_prev.ref | default(_rbl_prev.image | default('')) }}"
+    _rbl_changed: >-
+      {{
+        (_rbl_prev.ref | default(_rbl_prev.image | default(''))) != rollback_ref
+        or (_rbl_prev.artifact_type | default('')) != rollback_artifact_type
+        or (_rbl_prev.reversible | default(true) | bool) != (rollback_reversible | bool)
+        or ((rollback_served | length > 0) and (_rbl_prev.served | default({})) != _rbl_served_declared)
+      }}
+
+- name: rollback-ledger | build the ledger row
+  ansible.builtin.set_fact:
+    _rbl_row:
+      # date_time is only present when the play gathered facts. rollback-ledger
+      # is a universal meta-dependency, so it must also work on gather_facts:false
+      # plays (e.g. SSM plays like goat-coredns.yml) — fall back to a controller
+      # timestamp rather than hard-failing. Fallback triggers only when absent;
+      # fact-gathering plays are unchanged.
+      ts: "{{ ansible_facts.date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ'), true) }}"
+      component: "{{ rollback_component }}"
+      artifact_type: "{{ rollback_artifact_type }}"
+      ref: "{{ rollback_ref }}"
+      prior_ref: "{{ _rbl_prior_ref }}"
+      reversible: "{{ rollback_reversible | bool }}"
+      restore_pointer: "{{ rollback_restore_pointer }}"
+      operator: "{{ lookup('env', 'USER') | default(ansible_user_id, true) }}@{{ inventory_hostname }}"
+      # PENDING, not "deploy". This role is a meta-dependency, so it runs
+      # BEFORE the role that can refuse the deploy. The handler promotes this
+      # to "deploy" at end of play, and only for hosts that did not fail —
+      # a refused deploy leaves the row reading `pending`, which is the truth;
+      # a row must never assert a deploy that did not happen.
+      action: "pending"
+      via: "ansible-role-rollback-ledger"
+      # image is the 0859 back-compat alias of ref for the image type; the
+      # old jsonl shape carried {ts,action,image,operator,via}.
+      image: "{{ rollback_ref if rollback_artifact_type == 'image' else '' }}"
+
+# What this play intends to serve; the promote handler adds `served`, what the
+# host serves when the play ends (read back from the files, not from vars).
+- name: rollback-ledger | a serving role's row names the payloads it declares
+  ansible.builtin.set_fact:
+    _rbl_row: "{{ _rbl_row | combine({'served_declared': _rbl_served_declared}) }}"
+  when: rollback_served | length > 0
+
+# A run from an islanded site could not show its checkout current with the trunk
+# (contract C3; ops/scripts/fresh-source.sh --offline). The row says so, so a
+# reader of the ledger knows this deploy was judged against a cached trunk.
+- name: rollback-ledger | an offline run says so in its row
+  ansible.builtin.set_fact:
+    _rbl_row: "{{ _rbl_row | combine({'source': 'offline'}) }}"
+  when: lookup('env', 'GOAT_DEPLOY_OFFLINE') == '1'
+
+# The rollout preflight's accepted risk (ADR 1211): when a deploy of a `none`
+# or `restore-required` rollout proceeded with --ack, the deploy driver passed
+# rollback_preflight_accept, and the row records what was knowingly accepted and
+# by whom. Empty by default, so every other deploy's row is unchanged.
+- name: rollback-ledger | a preflight-acknowledged rollout records the accepted risk
+  ansible.builtin.set_fact:
+    _rbl_row: "{{ _rbl_row | combine({'accepted': rollback_preflight_accept}) }}"
+  when: rollback_preflight_accept | default({}) | length > 0
+
+# Queue this instance's row for the promote handler. Handlers are deduplicated
+# by name per play, so when two roles in one play both pull in rollback-ledger
+# (id-admin-console + oauth2-proxy-id-console) the single handler run sees only
+# the LAST instance's vars and the other component's row would stay `pending`.
+# The handler promotes every queued entry
+# instead, so it does not matter which instance's vars it ran with.
+#
+# NOT in `explicit` mode (rollback_promote_mode). A role that flushes handlers
+# mid-role must keep its row out of the queue, or the mid-role flush promotes it
+# before its own health/smoke — an explicit role promotes itself
+# from the end of its deploy path via `tasks_from: promote`, after the gate.
+- name: rollback-ledger | queue this row for the end-of-play promote
+  ansible.builtin.set_fact:
+    _rbl_promote_queue: >-
+      {{ (_rbl_promote_queue | default([])) + [{'path': rollback_ledger_path, 'ref': rollback_ref,
+           'served': dict(rollback_served | map(attribute='name')
+                          | zip(rollback_served | map(attribute='file') | map('regex_replace', '^', rollback_served_root ~ '/')))}] }}
+  when:
+    - rollback_promote_mode == 'handler'
+    - (_rbl_changed | bool) or ((_rbl_prev.action | default('')) == 'pending')
+
+- name: rollback-ledger | append the row (only on change)
+  ansible.builtin.lineinfile:
+    path: "{{ rollback_ledger_path }}"
+    create: true
+    mode: "0644"
+    owner: "{{ rollback_ledger_owner }}"
+    group: "{{ rollback_ledger_group }}"
+    line: "{{ _rbl_row | to_json }}"
+    insertafter: EOF
+  become: true
+  # changed_when must reflect the write: a handler that is never notified never
+  # promotes, and the row would stay `pending` forever on a successful deploy.
+  changed_when: _rbl_changed | bool
+  notify: rollback-ledger promote
+  when: _rbl_changed | bool
+
+# The dedup above compares only the REF. So a re-run after a refused deploy
+# finds its own `pending` row already naming this ref, skips the append, and
+# notifies nothing -- leaving the row reading `pending` on a host that then
+# deployed successfully. A ledger that hides a deploy that happened is as wrong
+# as one that claims a deploy that did not.
+#
+# Appending a second row would be noise. The promote handler already does the
+# right thing and is idempotent (it promotes the LAST pending row matching this
+# ref, and is a no-op when there is none), so this task exists only to carry
+# the notification that the skipped append could not.
+- name: rollback-ledger | a stale pending row for this ref must still promote
+  ansible.builtin.command: /usr/bin/true
+  changed_when: true
+  notify: rollback-ledger promote
+  check_mode: false
+  when:
+    - rollback_promote_mode == 'handler'
+    - not (_rbl_changed | bool)
+    - (_rbl_prev.action | default('')) == 'pending'
+
+# ---------------------------------------------------------------------------
+# The applied-intent stamp (CF-3, consistency-foundation.md §5.2)
+# ---------------------------------------------------------------------------
+# The second of the two inputs the per-node consistency publisher reads. Written
+# here, not in a new role, so it inherits this role's universal coverage.
+#
+# Everything below is guarded on `consistency_goatnet` being set: an ungoverned
+# goatnet writes nothing and a reader grades it `indeterminate`. The stamp body
+# is computed ONCE per host per play (the `is not defined` guard) even though
+# this role runs at the entry of every deploying role — otherwise a 60-role play
+# would shell out sixty times to the control node for an identical answer.
+
+# The stamp runs under the Python that runs Ansible (ansible_playbook_python),
+# not whatever `python3` is first on the operator's PATH: Ansible itself
+# depends on PyYAML, which goat_consistency imports, so a deploy needs no
+# separate `pip install pyyaml` on the control node.
+- name: rollback-ledger | compute the applied-intent stamp on the deploying checkout
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python }} {{ playbook_dir }}/../consistency/stamp.py
+      --goatnet {{ consistency_goatnet | quote }}
+      --member-group {{ consistency_member_group | quote }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: _rbl_stamp_raw
+  when:
+    - consistency_stamp_enabled | bool
+    - consistency_goatnet | length > 0
+    - _rbl_intent_stamp is not defined
+
+- name: rollback-ledger | cache the stamp body for the rest of the play
+  ansible.builtin.set_fact:
+    _rbl_intent_stamp: "{{ _rbl_stamp_raw.stdout | from_json }}"
+  when:
+    - _rbl_stamp_raw is defined
+    - _rbl_stamp_raw.stdout is defined
+    - (_rbl_stamp_raw.stdout | default('') | trim | length) > 0
+
+- name: rollback-ledger | ensure the intent stamp dir
+  ansible.builtin.file:
+    path: "{{ consistency_stamp_dir }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ rollback_ledger_owner }}"
+    group: "{{ rollback_ledger_group }}"
+  become: true
+  when: _rbl_intent_stamp is defined
+
+# The stamp body carries NO timestamp of its own, and that is deliberate.
+#
+# `applied_at` — when this node converged to this generation — is read by the
+# collector from THIS FILE'S MTIME. Two reasons, both load-bearing:
+#
+#   1. It makes the write byte-stable. A recorded timestamp would rewrite the
+#      file on every play, so `changed` would stop meaning "the node moved
+#      generations" — which is the one thing this stamp exists to report. It is
+#      the same change-only rule the intent artifact itself follows (§3.3), and
+#      the same reason parity-report.md refuses to carry a render timestamp.
+#   2. An mtime is an OBSERVED fact. A recorded `applied_at` is a claim written
+#      by the run that intended to converge, which is precisely the optimistic
+#      shape §5.2's ordering caveat warns about.
+- name: rollback-ledger | write the applied-intent stamp
+  ansible.builtin.copy:
+    dest: "{{ consistency_stamp_path }}"
+    # Sorted keys + a trailing newline: an unchanged generation is a byte no-op.
+    content: "{{ _rbl_intent_stamp | to_nice_json(sort_keys=True) }}\n"
+    mode: "0644"
+    owner: "{{ rollback_ledger_owner }}"
+    group: "{{ rollback_ledger_group }}"
+  become: true
+  when: _rbl_intent_stamp is defined

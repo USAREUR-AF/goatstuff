@@ -1,0 +1,12 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# `--force-recreate` rather than restart: a restart reuses the container, and
+# a container created against an old inode keeps serving the old file however
+# many times it is restarted.
+- name: gym | recreate container
+  community.docker.docker_compose_v2:
+    project_src: "{{ gym_compose_dir }}"
+    state: present
+    recreate: always
+  become: true

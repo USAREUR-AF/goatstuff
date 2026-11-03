@@ -1,0 +1,421 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# panoscope role — deploys the panoscope container behind the existing
+# Traefik (Let's Encrypt cert resolver `le`) with Ory OIDC headers on a
+# goatnet mgmt host. Matches the demogame pattern:
+# file-provider Traefik config, container joined to `mgmt` (Traefik
+# network) + `zenoh_default` (so it can reach the Zenoh router by
+# container name).
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. DNS record for `panoscope.<site_dns_zone>` must already point
+#      at the host's public relay path so Traefik's Let's Encrypt DNS-01
+#      challenge can succeed on first request.
+#   2. If panoscope_zenoh_mtls_enabled, pre-mint
+#      operator-class Zenoh client leaf + key per the site's cert issuance
+#      runbook and drop them at the
+#      `panoscope_zenoh_client_*` paths (plus the site CA root at
+#      `panoscope_nova_ca_root`). The role pre-flights with `stat`
+#      and fails fast if any of the three files are missing.
+#   3. Confirm Hydra admin endpoint reachable at `panoscope_hydra_admin_url`
+#      (loopback only).
+#
+# This role is idempotent — re-running on a healthy host is a no-op
+# beyond a `docker compose pull` if the image tag changed.
+
+- name: panoscope | pre-flight assert mTLS cert files present (when enabled)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ panoscope_zenoh_client_cert }}"
+    - "{{ panoscope_zenoh_client_key }}"
+    - "{{ panoscope_nova_ca_root }}"
+  register: panoscope_cert_stats
+  when: panoscope_zenoh_mtls_enabled | bool
+
+- name: panoscope | pre-flight fail if any mTLS cert is missing
+  ansible.builtin.fail:
+    msg: >-
+      panoscope: required cert file missing at {{ item.item }}.
+      Mint it per docs/operations/nova-cert-issuance.md before
+      running this role, or set panoscope_zenoh_mtls_enabled: false
+      (only valid for a plain-TCP Zenoh router; nova's router is
+      mTLS-required, so disabling produces a broken deploy).
+  loop: "{{ panoscope_cert_stats.results | default([]) }}"
+  when:
+    - panoscope_zenoh_mtls_enabled | bool
+    - item is not skipped
+    - not (item.stat.exists | default(false))
+  loop_control:
+    label: "{{ item.item | default('?') }}"
+
+# Normalize mode + ownership on the cert files so the non-root container
+# user (Chainguard distroless = uid 65532, panoscope image uses User:
+# nonroot) can read them. Without this, an operator scp + `install -m 600`
+# leaves the key file readable only by root, and Zenoh's TLS layer
+# silently fails the load with "Invalid TLS private key file: Permission
+# denied" → no wire connection → no samples flowing → looks identical to
+# every other "no flow" symptom.
+# The snapshot is written by the CONTAINER, which runs as `nonroot` (uid 65532
+# in the Chainguard base — the same uid already owning the files these
+# containers write on the host). A root-owned bind mount therefore fails every
+# write with EACCES.
+#
+# That failure is quiet by design on the panoscope side: a failed snapshot write
+# is logged and the process carries on, because a broken optimisation must never
+# wedge a boot. The cost of getting this wrong is not a crash — it is a snapshot
+# that silently never persists and a cold start that quietly stays slow, which
+# is precisely the kind of thing this track exists to stop shipping.
+# --- portal service key (self-provisioning; the microscope pattern) --------
+# F-559. No manual mint, no per-goatnet variable, no portal redeploy: the
+# portal re-reads this directory on PORTAL_OPERATOR_API_KEYS_RELOAD (30s), so
+# the grant lands within one interval. Deliberately NOT restarting the portal —
+# it is the identity and registry service, and a 30s wait is cheaper than
+# bouncing it.
+- name: panoscope | portal key — key dir
+  ansible.builtin.file:
+    path: "{{ panoscope_portal_key_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: panoscope | portal key — check for a persisted key
+  ansible.builtin.stat:
+    path: "{{ panoscope_portal_key_file }}"
+  register: panoscope_keyfile_stat
+  become: true
+
+- name: panoscope | portal key — generate one (first deploy only, when no seed given)
+  ansible.builtin.command: openssl rand -base64 24
+  register: panoscope_genkey
+  changed_when: true
+  when:
+    - not panoscope_keyfile_stat.stat.exists
+    - panoscope_portal_key_seed | length == 0
+  become: true
+
+- name: panoscope | portal key — persist it (the seed if supplied, else the fresh one)
+  ansible.builtin.copy:
+    content: "{{ (panoscope_portal_key_seed if (panoscope_portal_key_seed | length > 0) else panoscope_genkey.stdout) | trim }}"
+    dest: "{{ panoscope_portal_key_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not panoscope_keyfile_stat.stat.exists
+  no_log: true
+  become: true
+
+- name: panoscope | portal key — read it back
+  ansible.builtin.slurp:
+    src: "{{ panoscope_portal_key_file }}"
+  register: panoscope_keyfile
+  no_log: true
+  become: true
+
+- name: panoscope | portal key — set the fact the template renders
+  ansible.builtin.set_fact:
+    panoscope_portal_api_key: "{{ panoscope_keyfile.content | b64decode | trim }}"
+  no_log: true
+
+- name: panoscope | portal key — register it in the portal service-key store
+  # Owned by the portal container uid and living under its persistent data dir,
+  # so a portal redeploy from any laptop keeps it. Skipped where this host does
+  # not hold the store (panoscope and the portal are not always co-located).
+  ansible.builtin.copy:
+    content: "{{ panoscope_portal_key_id }}:{{ panoscope_portal_api_key }}\n"
+    dest: "{{ panoscope_portal_keystore_dir }}/{{ panoscope_portal_key_id }}.key"
+    owner: "65532"
+    group: "65532"
+    mode: "0640"
+  register: panoscope_keystore_write
+  no_log: true
+  become: true
+  failed_when: false
+  when: panoscope_portal_keystore_dir | length > 0
+
+
+# F-559: prove the credential before calling the deploy a success. A surface
+# that cannot read the portal starts anyway, looks healthy, and serves nothing
+# useful, and it can stay unnoticed for weeks.
+# Skipped where no portal URL is configured (that adapter is then
+# deliberately off, not broken).
+- name: panoscope | portal key — prove the portal accepts it
+  ansible.builtin.include_tasks: tasks/assert-portal-key-accepted.yml
+  vars:
+    portal_key_assert_service: panoscope
+    portal_key_assert_url: "{{ panoscope_portal_url }}"
+    portal_key_assert_key: "{{ panoscope_portal_api_key }}"
+  when: panoscope_portal_api_key | default('') | length > 0
+- name: panoscope | state dir for the derived-state snapshot
+  ansible.builtin.file:
+    path: "{{ panoscope_state_dir }}"
+    state: directory
+    owner: "65532"
+    group: "65532"
+    mode: "0755"
+  when: panoscope_state_snapshot_enabled | default(true) | bool
+  become: true
+
+- name: panoscope | normalize mTLS cert + key + CA mode so container nonroot user can read
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ panoscope_zenoh_client_cert }}"
+    - "{{ panoscope_zenoh_client_key }}"
+    - "{{ panoscope_nova_ca_root }}"
+  when: panoscope_zenoh_mtls_enabled | bool
+  become: true
+  notify: panoscope | recreate container
+
+# ---------------------------------------------------------------------------
+# Cloudflare DNS — publish OR ensure-absent. Two modes:
+#
+#   panoscope_publish_cloudflare_dns: true  → POST missing A records (legacy
+#                                             public-DNS-per-service posture)
+#   panoscope_publish_cloudflare_dns: false → DELETE any existing A records
+#                                             (mesh-only posture)
+#
+# delegate_to: localhost so the API call leaves the operator workstation.
+# Auth via CLOUDFLARE_API_TOKEN env var resolved through the
+# `cloudflare_api_token` play-level var (see panoscope.yml).
+# ---------------------------------------------------------------------------
+
+- name: panoscope | Cloudflare — look up zone id
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones?name={{ panoscope_cloudflare_zone }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token | default('') }}"
+    return_content: true
+  register: panoscope_cf_zone_lookup
+  when: panoscope_cloudflare_zone | length > 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: panoscope | Cloudflare — record zone id fact
+  ansible.builtin.set_fact:
+    panoscope_cf_zone_id: "{{ panoscope_cf_zone_lookup.json.result[0].id }}"
+  when: panoscope_cloudflare_zone | length > 0
+  run_once: true
+
+- name: panoscope | Cloudflare — list existing A records for the hostname
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ panoscope_cf_zone_id }}/dns_records?type=A&name={{ panoscope_hostname }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token | default('') }}"
+    return_content: true
+  register: panoscope_cf_existing
+  when: panoscope_cloudflare_zone | length > 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: panoscope | Cloudflare — capture existing A-record content set
+  ansible.builtin.set_fact:
+    panoscope_cf_existing_ips: "{{ panoscope_cf_existing.json.result | map(attribute='content') | list }}"
+  when: panoscope_cloudflare_zone | length > 0
+  run_once: true
+
+- name: panoscope | Cloudflare — create missing A records (publish mode)
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ panoscope_cf_zone_id }}/dns_records"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token | default('') }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      type: A
+      name: "{{ panoscope_hostname }}"
+      content: "{{ item }}"
+      ttl: 60
+      proxied: false
+    status_code: [200, 201]
+  loop: "{{ panoscope_cloudflare_a_record_ips }}"
+  when:
+    - panoscope_publish_cloudflare_dns | bool
+    - item not in (panoscope_cf_existing_ips | default([]))
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: panoscope | Cloudflare — delete public A records (mesh-only mode)
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ panoscope_cf_zone_id }}/dns_records/{{ item.id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token | default('') }}"
+    status_code: [200]
+  loop: "{{ panoscope_cf_existing.json.result | default([]) }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.content }})"
+  when:
+    - not (panoscope_publish_cloudflare_dns | bool)
+    - panoscope_cloudflare_zone | length > 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+# ---------------------------------------------------------------------------
+
+- name: panoscope | create compose dir
+  ansible.builtin.file:
+    path: "{{ panoscope_compose_dir }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: panoscope | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ panoscope_compose_dir }}/docker-compose.yml"
+    mode: "0644"
+  become: true
+  notify: panoscope | recreate container
+
+- name: panoscope | render .env for compose
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ panoscope_compose_dir }}/.env"
+    mode: "0600"
+  become: true
+  notify: panoscope | recreate container
+
+- name: panoscope | refuse enforce mode without the identity sidecar (ADR 1073)
+  ansible.builtin.assert:
+    that:
+      - panoscope_rbac_mode != 'enforce' or (panoscope_oauth2_proxy_enabled | bool)
+    fail_msg: |
+      panoscope_rbac_mode: enforce requires panoscope_oauth2_proxy_enabled: true.
+      Without the sidecar, Traefik routes straight to the app and any mesh
+      client could supply its own X-Auth-Request-Groups header — enforce
+      mode would be forgeable instead of fail-closed. Enable the sidecar
+      (which owns those headers) in the same change.
+
+- name: panoscope | require sidecar secrets when oauth2-proxy is enabled (ADR 1073)
+  ansible.builtin.assert:
+    that:
+      - panoscope_oauth2_proxy_client_secret | length >= 32
+      # oauth2-proxy measures the cookie secret in CHARACTERS and refuses
+      # anything but 16/24/32, so `openssl rand -base64 32` (44 chars)
+      # crash-loops it at boot with an otherwise-green play recap.
+      # An exact-set check is the only one that catches it; a floor does not.
+      - panoscope_oauth2_proxy_cookie_secret is defined and ((panoscope_oauth2_proxy_cookie_secret | length) in [16, 24, 32])
+    fail_msg: |
+      panoscope_oauth2_proxy_enabled: true requires
+        - panoscope_oauth2_proxy_client_secret (32+ chars; env-sourced,
+          same value registered on the Hydra client)
+        - panoscope_oauth2_proxy_cookie_secret (16/24/32 random bytes,
+          base64-encoded; env-sourced)
+  when: panoscope_oauth2_proxy_enabled | bool
+
+- name: panoscope | render oauth2-proxy-panoscope.env (mode 0600)
+  ansible.builtin.template:
+    src: oauth2-proxy-panoscope.env.j2
+    dest: "{{ panoscope_compose_dir }}/oauth2-proxy-panoscope.env"
+    mode: "0600"
+  become: true
+  when: panoscope_oauth2_proxy_enabled | bool
+  notify: panoscope | recreate container
+
+- name: panoscope | render Traefik dynamic config (file provider)
+  ansible.builtin.template:
+    src: traefik-panoscope.yml.j2
+    dest: "{{ panoscope_traefik_dynamic_dir }}/{{ panoscope_traefik_dynamic_filename }}"
+    mode: "0644"
+  become: true
+  # Traefik picks up file-provider changes automatically — no SIGHUP needed.
+
+# The route filename changed (nova-panoscope.yml -> panoscope.yml). The file
+# provider reads the whole directory, so an orphaned old file is not inert:
+# it declares a second router on the same Host() rule and Traefik resolves
+# the collision by priority, silently. Guarded on
+# the two names differing so this becomes a no-op once the rename is old.
+- name: panoscope | remove pre-rename Traefik route file
+  ansible.builtin.file:
+    path: "{{ panoscope_traefik_dynamic_dir }}/{{ panoscope_traefik_dynamic_filename_legacy }}"
+    state: absent
+  become: true
+  when:
+    - panoscope_traefik_dynamic_filename_legacy | default('') | length > 0
+    - panoscope_traefik_dynamic_filename_legacy != panoscope_traefik_dynamic_filename
+
+# Hydra creates OAuth2 clients via POST /admin/clients; PUT is only valid on
+# /admin/clients/{id} (replace an existing client) and 404s on the collection —
+# so `method: PUT` here would silently never create the panoscope client
+# (status not in [200,201], changed_when false, failed_when false → reported
+# "ok" while doing nothing), surfacing only when the sidecar is first enabled
+# as an invalid_client at the OIDC authorize. POST + 409-on-exists is the idempotent
+# create the other sidecars' oidc-client roles already use.
+- name: panoscope | provision Hydra OAuth2 client
+  ansible.builtin.uri:
+    url: "{{ panoscope_hydra_admin_url }}/admin/clients"
+    method: POST
+    body_format: json
+    body:
+      client_id: "{{ panoscope_oidc_client_id }}"
+      client_name: "panoscope"
+      # Registered secret — required once the ADR 1073 sidecar fronts the
+      # route (oauth2-proxy presents it at the token endpoint). Omitted
+      # while the sidecar is disabled (pre-1072 client shape unchanged).
+      client_secret: "{{ panoscope_oauth2_proxy_client_secret if (panoscope_oauth2_proxy_enabled | bool and panoscope_oauth2_proxy_client_secret | length > 0) else omit }}"
+      grant_types: ["authorization_code", "refresh_token"]
+      response_types: ["code"]
+      scope: "{{ panoscope_oidc_scope }}"
+      redirect_uris:
+        - "{{ panoscope_oidc_redirect_uri }}"
+      token_endpoint_auth_method: "client_secret_post"
+      skip_consent: true
+      access_token_strategy: "jwt"
+    status_code: [200, 201, 409]
+  register: panoscope_hydra_client
+  changed_when: panoscope_hydra_client.status in [200, 201]
+  failed_when: false
+  # The body carries client_secret; without no_log the uri module writes
+  # it into the host journal.
+  no_log: true
+
+- name: panoscope | pull image
+  community.docker.docker_image:
+    name: "{{ panoscope_image }}"
+    source: pull
+    force_source: true
+    # Explicit platform so an arm64 host pulls the arm64 member of the
+    # multi-arch LIST-digest pin instead of the amd64 default.
+    # community.docker 5.x takes platform under the `pull` dict.
+    pull:
+      platform: "{{ panoscope_image_platform }}"
+  become: true
+
+- name: panoscope | bring up via docker compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ panoscope_compose_dir }}"
+    state: present
+    pull: missing
+  become: true
+
+# End-to-end /healthz check belongs in the operator runbook — the
+# panoscope image is glibc-dynamic distroless so it has no shell /
+# wget / curl inside. We only verify the container is Running here.
+- name: panoscope | wait for container to be Running
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{" }}.State.Running{{ "}}" }}' panoscope
+  register: panoscope_running
+  retries: 30
+  delay: 2
+  until: panoscope_running.stdout | trim == 'true'
+  changed_when: false
+  become: true
+
+# Deploy ledger (/var/lib/goat/panoscope/deploy-history.jsonl) is now
+# written by the shared `rollback-ledger` meta-dependency (meta/main.yml)
+# per ADR 1060 — no per-role ledger task here. The in-repo deploy-history.yml
+# + ops/scripts/rollback.sh are unchanged.

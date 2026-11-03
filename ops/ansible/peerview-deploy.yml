@@ -1,0 +1,23 @@
+---
+# Deploy the peerview reading surfaces — Peers & People, Demand & Contention
+# (ADR 1135, docs/design/peer-demand-surface.md).
+#
+# The token comes from the environment on THIS machine, so run it where
+# .envrc.local.d is loaded. Each goatnet goes over its own env door:
+#
+#   ops/scripts/env-door.sh <goatnet> &
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ../scripts/ansible-preflight.sh \
+#     -i inventory/mgmt-hosts.ini -i inventory/doors-groupvars.ini \
+#     peerview-deploy.yml -e target=<goatnet>_hosts
+#
+# On an A/B goatnet add `--limit <host-A>`: isitup runs on host A and nowhere
+# else in that goatnet, so a page installed on host B would be served by
+# nothing.
+- name: peerview — peer and demand reading surfaces
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: peerview
+      when: peerview_enabled | default(false) | bool

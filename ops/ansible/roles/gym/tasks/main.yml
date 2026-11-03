@@ -1,0 +1,472 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# gym — render ops/gym into a static site on the control node, copy it to the
+# host, and serve it mesh-internally at gym.<site>.<zone> via nginx + Traefik.
+# docs/design/goat-gym.md.
+
+# ---------------------------------------------------------------------------
+# Build on the control node. The registry gate runs FIRST and is fatal.
+# ---------------------------------------------------------------------------
+# Refuse rather than skip. A silent skip on the wrong target looks identical to
+# a successful run, and the operator learns nothing; a refusal names the
+# decision and where it is written down.
+- name: gym | this goatnet must have opted in
+  ansible.builtin.assert:
+    that:
+      - gym_enabled | default(false) | bool
+    fail_msg: >-
+      goat gym is not enabled for {{ inventory_hostname }}. This is a DECLARED
+      DECISION, not an oversight — a goatnet hosts the training surface by
+      setting gym_enabled in its own group_vars. zagros-prod deliberately does
+      not host it (ADR 1132 A7, and the exclusion is recorded in
+      group_vars/.groupvars-parity.yaml). If a new goatnet should host it, add
+      its own gym.yml rather than overriding this on the command line.
+    success_msg: "gym enabled for {{ inventory_hostname }}"
+
+- name: gym | gate the registry (dead pointers must not ship)
+  ansible.builtin.command:
+    cmd: "python3 {{ gym_repo_dir }}/check.py"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  register: gym_gate
+  when: gym_gate_registry | bool
+
+- name: gym | show the coverage report the gate printed
+  ansible.builtin.debug:
+    msg: "{{ gym_gate.stdout_lines }}"
+  delegate_to: localhost
+  run_once: true
+  when: gym_gate_registry | bool
+
+# The site is rendered from the WORKING TREE, so HEAD alone is a claim the
+# artifact does not support: the site can serve a module that is not
+# in the commit `/gym.json` names. `--dirty` says so out loud rather than
+# letting a reader check the sha against main and conclude they match.
+- name: gym | foundations catalogue must be shaped correctly
+  ansible.builtin.command:
+    cmd: "python3 {{ gym_repo_dir }}/upstream_check.py"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  when: gym_gate_registry | bool
+
+# `-dirty` means "the site you are reading is not the commit it names", so it
+# must be keyed on content that can REACH the site. It was keyed on the whole
+# tree, and `docs/project/active-work/` is live multi-session coordination yaml
+# that is essentially never clean — 35 track files with several sessions
+# writing. So every deploy shipped `-dirty` regardless, and a warning that is always on is one nobody
+# reads. Same rot as a probe that is permanently red.
+#
+# None of that yaml is rendered: the generator reads ops/gym/ plus the docs a
+# module cites. Excluding it keeps the marker meaning what it says. `/iso enter`
+# excludes the same directory for the same reason.
+#
+# BOTH pathspecs are anchored at the REPO ROOT, and that is load-bearing:
+# gym_repo_dir is ops/gym, so a plain `.` would scope the check to ops/gym and
+# stop noticing an uncommitted edit to a doc a module cites — which is exactly
+# the drift the marker exists for. `:/` is the whole tree; `:(exclude,top)` is
+# rooted rather than relative to the -C directory. A positive pathspec is
+# required — a lone `:(exclude)` matches nothing.
+#
+# The status call stays on ONE line. A folded scalar keeps a MORE-INDENTED
+# continuation literal rather than folding it to a space, so wrapping it put a
+# real newline inside the `$` and bash tried to run `:/` as a command — which
+# fails into a permanent `-dirty`, the very bug being fixed here, wearing a
+# different hat.
+- name: gym | record the tree the site is generated from
+  ansible.builtin.shell:
+    cmd: >-
+      printf '%s%s'
+      "$(git -C '{{ gym_repo_dir }}' rev-parse --short HEAD)"
+      "$([ -n "$(git -C '{{ gym_repo_dir }}' status --porcelain -- ':/' ':(exclude,top)docs/project/active-work')" ] && printf -- '-dirty')"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  register: gym_rev
+  failed_when: false
+
+- name: gym | say so when the deploy is from a dirty tree
+  ansible.builtin.debug:
+    msg: >-
+      Rendering from a DIRTY tree — /gym.json will read
+      {{ gym_rev.stdout }}. The served site is not any commit.
+  delegate_to: localhost
+  run_once: true
+  when: "'-dirty' in (gym_rev.stdout | default(''))"
+
+- name: gym | stage dir on the control node
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: gym-site
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: gym_stage
+
+# The gym links to the services THIS goatnet runs, so the site is built with
+# the goatnet's own service list rather than a copy. The status page itself is
+# added by hand: it carries no row for itself (it is the thing rendering the
+# rows), and a training surface that cannot link to it is missing the first
+# place a new person should look.
+- name: gym | hand the generator this goatnet's live services
+  ansible.builtin.copy:
+    dest: "{{ gym_stage.path }}.services.json"
+    mode: "0644"
+    content: |
+      {{ ((isitup_services | default([]))
+          | map('combine', {}) | list
+          + [{'id': 'isitup', 'name': 'Status page',
+              'desc': 'Every service this goatnet runs, and whether it is answering.',
+              'fqdn': isitup_fqdn | default('isitup.' ~ site_id ~ '.' ~ site_dns_zone),
+              'access': 'admins', 'kind': 'ui', 'category': 'admin'}])
+         | to_json }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+# Fetched on the CONTROL NODE and copied into the site, so the deploy needs
+# internet and the reader never does. Checksum-verified: a diagram renderer is
+# still third-party code we are serving to people.
+#
+# NON-FATAL BY DESIGN — a laptop with no internet should still be able to deploy
+# training — but the outcome is read from the FILE, not from the task's own
+# verdict. `failed_when: false` turns a real failure into a green `ok:`, which
+# is how the first version of this reported success while fetching nothing and
+# left every diagram as source text. The stat below is what decides, and both
+# the warning and the render flag read it.
+- name: gym | cache directory for the diagram renderer
+  ansible.builtin.file:
+    path: "{{ gym_mermaid_cache | dirname }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: gym | fetch the pinned diagram renderer
+  ansible.builtin.get_url:
+    url: "{{ gym_mermaid_url }}"
+    dest: "{{ gym_mermaid_cache }}"
+    checksum: "sha256:{{ gym_mermaid_sha256 }}"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  failed_when: false
+
+- name: gym | is the renderer actually on disk?
+  ansible.builtin.stat:
+    path: "{{ gym_mermaid_cache }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: gym_mermaid_file
+
+- name: gym | say so when diagrams will NOT render
+  ansible.builtin.debug:
+    msg: >-
+      No diagram renderer at {{ gym_mermaid_cache }} — diagrams in hosted
+      documents will render as their own source rather than as pictures. The
+      site is otherwise complete; re-run with internet to fix it.
+  delegate_to: localhost
+  run_once: true
+  when: not gym_mermaid_file.stat.exists
+
+- name: gym | render the site
+  ansible.builtin.command:
+    cmd: >-
+      python3 {{ gym_repo_dir }}/generate.py
+      --out {{ gym_stage.path }}
+      --services {{ gym_stage.path }}.services.json
+      --rev {{ gym_rev.stdout | default('unknown') }}
+      {% if gym_mermaid_file.stat.exists %}--mermaid {{ gym_mermaid_cache }}{% endif %}
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: true
+
+# Two gates on the built site, both fatal, both checking the thing the reader
+# actually meets rather than the source it came from.
+- name: gym | no rendered page may show a repository path
+  ansible.builtin.command:
+    cmd: "python3 {{ gym_repo_dir }}/check.py --site {{ gym_stage.path }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+
+- name: gym | publication gate — names, addresses, places
+  ansible.builtin.command:
+    cmd: "python3 {{ gym_repo_dir }}/scrub.py --dir {{ gym_stage.path }} --require-roster"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+
+# ---------------------------------------------------------------------------
+# Ship it.
+# ---------------------------------------------------------------------------
+- name: gym | create compose + www dirs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ gym_compose_dir }}"
+    - "{{ gym_www_dir }}"
+  become: true
+
+# ONE ARCHIVE OVER THE WIRE, THEN A LOCAL SWAP — see F-454.
+#
+# Never `find -delete` followed by `copy:` of the rendered directory:
+#
+#   1. `copy:` of a directory transfers FILE BY FILE. The site is ~176 files, and
+#      over the mesh that takes many minutes.
+#   2. With the delete FIRST, the site serves a partial tree for those minutes —
+#      `/` and `/gym.json` answering 200 while `/modules/*` and `/library/*` answer
+#      404 — with no marker anywhere saying a deploy is in flight.
+#
+# The archive is built on the control node, crosses the wire ONCE, and unpacks
+# into a staging dir NEXT TO the webroot on the target. Only then are the old
+# contents cleared and the new ones moved in — one shell task, same filesystem,
+# so the swap is a rename per entry and the window is sub-second.
+#
+# The directory INODE is still never replaced. The nginx container bind-mounts
+# this exact dir; removing and recreating it hands the mount an inode the
+# running container cannot see and nginx serves 403 until recreated. That is why
+# this clears CONTENTS and moves INTO the existing dir rather than the obvious
+# `mv new www`. (Learned on the goat-docs v0.4.1 deploy; same shape as F-330.)
+- name: gym | pack the rendered site into one archive
+  ansible.builtin.archive:
+    path: "{{ gym_stage.path }}/"
+    dest: "{{ gym_stage.path }}.tar.gz"
+    format: gz
+  delegate_to: localhost
+  become: false
+  changed_when: true
+
+- name: gym | staging dir beside the webroot (same filesystem — the swap must be a rename)
+  ansible.builtin.file:
+    path: "{{ gym_www_dir }}.next"
+    state: directory
+    mode: "0755"
+  become: true
+
+# NO `mode:` HERE — F-455. `unarchive`'s mode applies to DIRECTORIES as well as
+# files, so `mode: "0644"` strips the execute bit off every directory it
+# unpacks. nginx can then read the files at the root but cannot TRAVERSE into
+# `modules/` or `library/`, and serves 404 for everything below the top level
+# while `/` and `/gym.json` answer 200. The play still reports ok, and the
+# role's own health gate still passes, because both only look at the root.
+#
+# Modes are normalised explicitly in the swap task instead, where files and
+# directories can be told apart.
+- name: gym | ship the archive and unpack it into staging (ONE transfer)
+  ansible.builtin.unarchive:
+    src: "{{ gym_stage.path }}.tar.gz"
+    dest: "{{ gym_www_dir }}.next"
+    remote_src: false
+  become: true
+
+- name: gym | refuse the swap unless staging actually holds a site
+  ansible.builtin.stat:
+    path: "{{ gym_www_dir }}.next/index.html"
+  register: gym_next_index
+  become: true
+
+- name: gym | staging has an index.html before anything is deleted
+  ansible.builtin.assert:
+    that:
+      - gym_next_index.stat.exists
+    fail_msg: >-
+      {{ gym_www_dir }}.next has no index.html — the archive did not unpack.
+      REFUSING to clear the live webroot; the site currently being served is
+      left exactly as it was.
+
+# Normalise ownership and modes BEFORE the swap, so the site the swap moves in
+# is already correct and the live webroot is never briefly unreadable.
+# Directories need 0755 (nginx must traverse them); files need 0644. The
+# archive carries the control node's uid, which is meaningless on the target.
+- name: gym | normalise ownership and modes in staging (dirs 0755, files 0644)
+  ansible.builtin.shell:
+    cmd: >-
+      set -e;
+      chown -R root:root "{{ gym_www_dir }}.next";
+      find "{{ gym_www_dir }}.next" -type d -exec chmod 0755 {} +;
+      find "{{ gym_www_dir }}.next" -type f -exec chmod 0644 {} +
+  changed_when: true
+  become: true
+
+- name: gym | swap the contents in (sub-second window, dir inode preserved)
+  ansible.builtin.shell:
+    cmd: >-
+      set -e;
+      find "{{ gym_www_dir }}" -mindepth 1 -delete;
+      mv "{{ gym_www_dir }}.next"/* "{{ gym_www_dir }}"/;
+      rmdir "{{ gym_www_dir }}.next"
+  changed_when: true
+  become: true
+
+
+- name: gym | drop the shipped archive from the control node
+  ansible.builtin.file:
+    path: "{{ gym_stage.path }}.tar.gz"
+    state: absent
+  delegate_to: localhost
+  become: false
+
+- name: gym | sanity — index.html landed
+  ansible.builtin.stat:
+    path: "{{ gym_www_dir }}/index.html"
+  register: gym_index
+  become: true
+
+- name: gym | the rendered site has an index.html
+  ansible.builtin.assert:
+    that:
+      - gym_index.stat.exists
+    fail_msg: "No index.html in {{ gym_www_dir }} — generate.py produced nothing usable."
+
+# ---------------------------------------------------------------------------
+# Serve + route.
+# ---------------------------------------------------------------------------
+- name: gym | render nginx server block
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ gym_compose_dir }}/nginx.conf"
+    mode: "0644"
+  become: true
+  notify: gym | recreate container
+
+- name: gym | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gym_compose_dir }}/docker-compose.yml"
+    mode: "0644"
+  become: true
+  notify: gym | recreate container
+
+- name: gym | render Traefik dynamic config (file provider)
+  ansible.builtin.template:
+    src: traefik-gym.yml.j2
+    dest: "{{ gym_traefik_dynamic_dir }}/{{ gym_traefik_dynamic_filename }}"
+    mode: "0644"
+  become: true
+  # Traefik picks up file-provider changes automatically — no SIGHUP.
+
+- name: gym | pull nginx image
+  community.docker.docker_image:
+    name: "{{ gym_image }}"
+    source: pull
+  become: true
+
+- name: gym | bring up via docker compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ gym_compose_dir }}"
+    state: present
+    pull: missing
+  become: true
+
+# F-330: a single-file bind mount pins its inode at container-create time, so
+# an interrupted run can leave nginx.conf correct ON THE HOST and stale INSIDE
+# the container — and the next run reports changed=0 because the host file is
+# already right. Compare what the container is actually executing.
+- name: gym | checksum nginx.conf on the host
+  ansible.builtin.stat:
+    path: "{{ gym_compose_dir }}/nginx.conf"
+    checksum_algorithm: md5
+  register: gym_conf_host
+  become: true
+
+- name: gym | checksum nginx.conf inside the running container
+  ansible.builtin.command:
+    cmd: "docker exec {{ gym_container_name }} md5sum /etc/nginx/conf.d/default.conf"
+  register: gym_conf_running
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: gym | recreate if the container is running a stale nginx.conf
+  ansible.builtin.debug:
+    msg: >-
+      nginx.conf differs: host {{ gym_conf_host.stat.checksum }},
+      running {{ gym_conf_running.stdout.split()[0] | default('unreadable') }}.
+      Recreating — see F-330.
+  when:
+    - gym_conf_running.rc == 0
+    - gym_conf_running.stdout.split()[0] != gym_conf_host.stat.checksum
+  changed_when: true
+  notify: gym | recreate container
+
+- name: gym | flush handlers before the health gate
+  ansible.builtin.meta: flush_handlers
+
+- name: gym | wait for container to be Running
+  ansible.builtin.command:
+    cmd: "docker inspect -f '{{ '{{' }}.State.Running{{ '}}' }}' {{ gym_container_name }}"
+  register: gym_running
+  retries: 30
+  delay: 2
+  until: gym_running.stdout | trim == 'true'
+  changed_when: false
+  become: true
+
+# A health gate that CAN fail. Probing 127.0.0.1:<port> on the HOST
+# would be meaningless — this container publishes no host port — and
+# `failed_when: false` on a check makes it decoration. Probe from inside the
+# container and let the play fail.
+- name: gym | health — the site actually serves
+  ansible.builtin.command:
+    cmd: "docker exec {{ gym_container_name }} wget -q -O /dev/null http://127.0.0.1:{{ gym_internal_port }}/index.html"
+  register: gym_health
+  retries: 5
+  delay: 2
+  until: gym_health.rc == 0
+  changed_when: false
+  become: true
+
+# The gate above fetches the ROOT, and the root stays 200 even when
+# `mode: "0644"` on the unarchive strips the execute bit off every directory:
+# nginx serves index.html and gym.json while everything under modules/ and
+# library/ 404s, and the play reports clean.
+#
+# A gate that only proves the top level serves cannot see an untraversable
+# webroot. This fetches a page BELOW the top level, and picks it off the
+# filesystem rather than hardcoding a module id that would rot the first time a
+# module is renamed.
+- name: gym | health — a page BELOW the top level serves, not just the root
+  # Every command on ONE line. A `>-` folded scalar keeps the newline before a
+  # MORE-INDENTED continuation line, so wrapping `docker exec <container>` and
+  # its `wget` across two lines sent docker a single argument and the gate
+  # failed on its own syntax rather than on the site:
+  #   docker: 'docker exec' requires at least 2 arguments
+  ansible.builtin.shell:
+    cmd: >-
+      set -e;
+      deep=$(cd "{{ gym_www_dir }}" && ls modules/*.html | head -1);
+      test -n "$deep";
+      docker exec {{ gym_container_name }} wget -q -O /dev/null "http://127.0.0.1:{{ gym_internal_port }}/$deep"
+  register: gym_deep_health
+  retries: 5
+  delay: 2
+  until: gym_deep_health.rc == 0
+  changed_when: false
+  become: true
+# Deploy ledger written by the shared `rollback-ledger` meta-dependency
+# (meta/main.yml) per ADR 1060 — no per-role task here.
+
+# F-530 fix 2: this role runs `meta: flush_handlers` before its own health/smoke,
+# so it is rollback_promote_mode: explicit (meta/main.yml) — the pending ledger row
+# is promoted here, as the LAST deploy step, only once the gates above have passed.
+- name: gym | record deploy convergence in the ledger after health/smoke
+  ansible.builtin.include_role:
+    name: rollback-ledger
+    tasks_from: promote
+  vars:
+    rollback_component: "gym"
+    rollback_ref: "{{ gym_image }}"

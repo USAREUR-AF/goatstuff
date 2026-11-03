@@ -1,0 +1,47 @@
+---
+- name: "ensure feeds-shim system user exists"
+  ansible.builtin.user:
+    name: "{{ feeds_shim_user }}"
+    system: yes
+    create_home: no
+    shell: /usr/sbin/nologin
+
+- name: "deploy feeds-shim binary"
+  ansible.builtin.copy:
+    src: "{{ feeds_shim_binary_source }}"
+    dest: "{{ feeds_shim_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart feeds-shim
+
+- name: "publish schemas (one-shot, idempotent — Block 23 data-dictionary)"
+  ansible.builtin.command:
+    cmd: |
+      {{ feeds_shim_binary_path }}
+      --site {{ feeds_shim_site }}
+      --mediamtx-url {{ feeds_shim_mediamtx_url }}
+      {% if feeds_shim_zenoh_config_path %}--zenoh-config {{ feeds_shim_zenoh_config_path }}{% endif %}
+      --publish-schemas-and-exit
+  when: feeds_shim_publish_schemas | bool
+  changed_when: false
+  register: feeds_shim_schema_publish
+  failed_when: feeds_shim_schema_publish.rc != 0
+
+- name: "render systemd unit"
+  ansible.builtin.template:
+    src: feeds-shim.service.j2
+    dest: "{{ feeds_shim_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart feeds-shim
+
+- name: "enable + start feeds-shim"
+  ansible.builtin.systemd:
+    name: feeds-shim
+    enabled: yes
+    state: started
+    daemon_reload: yes

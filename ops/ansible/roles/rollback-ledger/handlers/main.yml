@@ -1,0 +1,30 @@
+---
+# Promote the row this play wrote from `pending` to `deploy`.
+#
+# WHY A HANDLER. rollback-ledger is a meta-dependency: ansible runs a role's
+# dependencies BEFORE that role's own tasks, so the row is written before the
+# dependent role has had any chance to refuse. Handlers are the opposite — they
+# run at the END of the play and ONLY for hosts that did not fail. That is
+# precisely the signal the ledger was missing.
+#
+# A host whose deploy is refused never reaches this handler, so its row stays
+# `pending` and reads as what it is: started, never finished.
+#
+# ONE handler per play, MANY components: ansible deduplicates handlers by name,
+# so it runs once with whichever instance's vars it last saw. It therefore
+# promotes every row queued by tasks/main.yml (_rbl_promote_queue), never just
+# its own rollback_ref.
+- name: rollback-ledger | promote the pending row to deploy
+  ansible.builtin.script:
+    cmd: >-
+      promote-pending.py
+      {{ item.path | quote }}
+      {{ item.ref | quote }}
+      {{ ('--served ' ~ (item.served | to_json | quote)) if (item.served | default({}) | length > 0) else '' }}
+    executable: /usr/bin/python3
+  become: true
+  changed_when: false
+  loop: "{{ _rbl_promote_queue | default([]) | unique }}"
+  loop_control:
+    label: "{{ item.path }}"
+  listen: rollback-ledger promote

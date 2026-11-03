@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: herd
+  description: >-
+    Bearer-gear console (ADR 1131). Deploys the herd web console behind the
+    goat oauth2-proxy fence on a mgmt host. The SSH egress does NOT live here —
+    it belongs to a separate NETWORK-JUMP peer, which is the entire reason this
+    role deploys a console and not a jump host.
+dependencies:
+  - role: rollback-ledger
+    vars:
+      rollback_component: herd
+      rollback_artifact_type: image
+      rollback_ref: "{{ herd_image }}"

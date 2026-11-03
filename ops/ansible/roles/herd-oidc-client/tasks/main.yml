@@ -1,0 +1,80 @@
+---
+# Provisions the OAuth2 client `herd` at the site Hydra at the site Hydra. Idempotent
+# upsert by client_id. Mirrors the forgejo-oidc-client + grafana-oidc-client
+# pattern.
+
+- name: Require herd OIDC client secret
+  ansible.builtin.assert:
+    that:
+      - herd_oidc_client_secret is defined
+      - (herd_oidc_client_secret | length) >= 32
+      - site_id is defined and (site_id | length) > 0
+      - site_dns_zone is defined and (site_dns_zone | length) > 0
+    fail_msg: |
+      Missing herd_oidc_client_secret (32+ chars) or site_id/site_dns_zone.
+      Generate fresh: openssl rand -hex 32
+
+- name: Pre-flight Hydra admin reachability
+  ansible.builtin.uri:
+    url: "{{ herd_oidc_hydra_admin }}/health/ready"
+    status_code: 200
+  retries: 5
+  delay: 2
+
+- name: Check whether herd OAuth2 client exists at Hydra
+  ansible.builtin.uri:
+    url: "{{ herd_oidc_hydra_admin }}/admin/clients/{{ herd_oidc_client_id }}"
+    status_code: [200, 404]
+    return_content: true
+  register: herd_client_get
+
+- name: Construct desired herd OAuth2 client config
+  ansible.builtin.set_fact:
+    herd_client_config:
+      client_id: "{{ herd_oidc_client_id }}"
+      client_name: "{{ herd_oidc_client_name }}"
+      client_secret: "{{ herd_oidc_client_secret }}"
+      grant_types: [authorization_code, refresh_token]
+      response_types: [code]
+      scope: "{{ herd_oidc_scopes | join(' ') }}"
+      redirect_uris: ["{{ herd_oidc_redirect_uri }}"]
+      token_endpoint_auth_method: client_secret_post
+      skip_consent: true
+      access_token_strategy: jwt
+      audience: ["{{ herd_oidc_client_id }}"]
+
+- name: Create herd OAuth2 client at Hydra (POST when not present)
+  ansible.builtin.uri:
+    url: "{{ herd_oidc_hydra_admin }}/admin/clients"
+    method: POST
+    body_format: json
+    body: "{{ herd_client_config }}"
+    status_code: 201
+  when: herd_client_get.status == 404
+  no_log: true
+
+- name: Detect drift on existing herd OAuth2 client at Hydra
+  # Hydra v2.x omits `client_secret` from GET responses (verified
+  # against the nova-a site Hydra). The `| default('')` makes
+  # the comparison "missing == we don't know == treat as drifted" which
+  # forces the PUT below to re-sync the secret. PUT is idempotent on
+  # server state and the no_log on the PUT keeps the secret out of logs.
+  ansible.builtin.set_fact:
+    herd_client_drift: >-
+      {{ (herd_client_get.json.client_secret | default('')) != herd_oidc_client_secret
+         or (herd_client_get.json.redirect_uris | sort) != ([herd_oidc_redirect_uri] | sort)
+         or (herd_client_get.json.skip_consent | default(false)) != true
+         or (herd_client_get.json.access_token_strategy | default('')) != 'jwt' }}
+  when: herd_client_get.status == 200
+
+- name: Update herd OAuth2 client at Hydra (PUT on drift)
+  ansible.builtin.uri:
+    url: "{{ herd_oidc_hydra_admin }}/admin/clients/{{ herd_oidc_client_id }}"
+    method: PUT
+    body_format: json
+    body: "{{ herd_client_config }}"
+    status_code: 200
+  when:
+    - herd_client_get.status == 200
+    - herd_client_drift | default(false) | bool
+  no_log: true

@@ -1,0 +1,148 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy N synth-vendor containers on a goat host. One
+# docker-compose project, one service per `synth_vendors` entry. Each
+# container joins the shared `zenoh_default` network so it can reach
+# the zenoh-router by container name.
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. zenoh-router container must already be Healthy on the same docker
+#      network (deployed via zenoh-deploy.yml).
+#   2. If any synth_vendors entry's endpoint is `tls/...`, the vendor's
+#      cert + key + ca-root must exist under {{ synth_vendor_cert_dir }}/
+#      {{ entry.vendor }}/. Mint them via the portal:
+#         ops/zenoh-trial-peers/bootstrap-portal-vendors.sh
+#   3. Each vendor's portal allowlist entry must be in place so writes
+#      under <vendor>/** are admitted. The bootstrap script handles that.
+
+- name: synth-vendors | sanity-check that each personality is recognized
+  ansible.builtin.assert:
+    that:
+      - item.personality in ['tracks-demo', 'power-demo', 'beacon-demo',
+                             'garage-temp', 'garage-door', 'yard-soil',
+                             'observer']
+    fail_msg: >-
+      synth_vendors[{{ item.id | default('?') }}].personality
+      = {{ item.personality | default('<unset>') }} is not one of
+      tracks-demo / power-demo / beacon-demo / garage-temp /
+      garage-door / yard-soil / observer.
+  loop: "{{ synth_vendors | default([]) }}"
+  loop_control:
+    label: "{{ item.id | default('?') }}"
+
+# Guard: a per-uuid-slot-pool goatnet (ADR 1025) requires each synth peer to
+# publish under its allocated slot anchor (a 32-hex slot_id), NOT a flat
+# `notional/…` prefix. If the FLAT path (zenoh-synth-vendors-deploy.yml
+# / bootstrap-notional-*.sh) is pointed at a slot-pool goatnet, the topics here
+# are still `notional/<animal>/…`, the ACL drops them, the portal has no vendor
+# row, and panoscope can't decode the fleet. Fail loud with the fix.
+- name: synth-vendors | guard — slot-pool goatnets must use the onboard path
+  ansible.builtin.assert:
+    that:
+      - item.topic.split('/')[0] is match('^[0-9a-f]{32}$')
+    fail_msg: >-
+      portal_identity_model is per-uuid-slot-pool but synth topic
+      '{{ item.topic }}' ({{ item.id }}) is not anchored to a slot_id.
+      This goatnet needs the per-peer slot-onboard path —
+      run zagros-zenoh-synth-vendors-deploy.yml (it onboards each peer and
+      rewrites topics to <anchor>/…), NOT the flat nova/notional path.
+  loop: "{{ synth_vendors | default([]) }}"
+  loop_control:
+    label: "{{ item.id | default('?') }}"
+  when: (portal_identity_model | default('per-vendor')) == 'per-uuid-slot-pool'
+
+- name: synth-vendors | normalize cert dir ownership so non-root container uid 65532 (Chainguard default) can read
+  ansible.builtin.file:
+    path: "{{ synth_vendor_cert_dir }}/{{ item.vendor }}"
+    owner: "65532"
+    group: "65532"
+    recurse: true
+  loop: "{{ synth_vendors | default([]) }}"
+  when: synth_vendor_zenoh_endpoint is match('^tls/')
+  loop_control:
+    label: "{{ item.id | default('?') }} / {{ item.vendor | default('?') }}"
+
+- name: synth-vendors | pre-flight per-vendor leaf cert exists (when tls/ endpoint)
+  ansible.builtin.stat:
+    path: "{{ synth_vendor_cert_dir }}/{{ item.vendor }}/{{ item.vendor }}-cert.pem"
+  loop: "{{ synth_vendors | default([]) }}"
+  register: synth_vendor_cert_stats
+  when: synth_vendor_zenoh_endpoint is match('^tls/')
+  loop_control:
+    label: "{{ item.id | default('?') }} / {{ item.vendor | default('?') }}"
+
+- name: synth-vendors | fail on missing per-vendor leaf cert
+  ansible.builtin.fail:
+    msg: >-
+      synth-vendors: vendor leaf cert missing at
+      {{ synth_vendor_cert_dir }}/{{ item.item.vendor }}/{{ item.item.vendor }}-cert.pem.
+      Run ops/zenoh-trial-peers/bootstrap-portal-vendors.sh on the
+      operator workstation, then re-run this playbook.
+  loop: "{{ synth_vendor_cert_stats.results | default([]) }}"
+  when:
+    - synth_vendor_zenoh_endpoint is match('^tls/')
+    - item is not skipped
+    - not (item.stat.exists | default(false))
+  loop_control:
+    label: "{{ item.item.id | default('?') }}"
+
+- name: synth-vendors | pre-flight CA root exists (when tls/ endpoint)
+  ansible.builtin.stat:
+    path: "{{ synth_vendor_ca_root_src }}"
+  register: synth_vendor_ca_root_stat
+  when: synth_vendor_zenoh_endpoint is match('^tls/')
+
+- name: synth-vendors | fail on missing CA root
+  ansible.builtin.fail:
+    msg: >-
+      synth-vendors: nova CA root cert missing at
+      {{ synth_vendor_ca_root_src }} — this is the same file the
+      goat-zenoh router uses, so its absence means the router
+      itself isn't deployed. Re-run zenoh-deploy.yml first.
+  when:
+    - synth_vendor_zenoh_endpoint is match('^tls/')
+    - synth_vendor_ca_root_stat is not skipped
+    - not (synth_vendor_ca_root_stat.stat.exists | default(false))
+
+- name: synth-vendors | ensure compose project dir
+  ansible.builtin.file:
+    path: "{{ synth_vendor_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: synth-vendors | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ synth_vendor_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: synth_vendor_compose_render
+
+- name: synth-vendors | pull image
+  ansible.builtin.command:
+    cmd: "docker compose pull"
+    chdir: "{{ synth_vendor_compose_dir }}"
+  changed_when: true
+
+- name: synth-vendors | bring up (or refresh) the project
+  ansible.builtin.command:
+    cmd: "docker compose up -d --remove-orphans"
+    chdir: "{{ synth_vendor_compose_dir }}"
+  register: synth_vendor_up
+  changed_when:
+    - "'Started' in synth_vendor_up.stderr or 'Created' in synth_vendor_up.stderr or 'Recreated' in synth_vendor_up.stderr"
+
+- name: synth-vendors | print running container summary
+  ansible.builtin.command:
+    cmd: "docker compose ps --format json"
+    chdir: "{{ synth_vendor_compose_dir }}"
+  register: synth_vendor_ps
+  changed_when: false
+
+- name: synth-vendors | show
+  ansible.builtin.debug:
+    msg: "{{ synth_vendor_ps.stdout_lines }}"

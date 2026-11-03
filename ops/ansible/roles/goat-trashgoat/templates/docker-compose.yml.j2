@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+#
+# goat-trashgoat — operator-controlled chaos publisher per
+# docs/design/trashgoat.md (Block 92). Rendered by
+# ops/ansible/roles/goat-trashgoat/. One container, mTLS Zenoh client
+# peer of the router, subscribes to the control topic and publishes
+# generated chaos under trashgoat/<slug>/...
+
+services:
+  goat-trashgoat:
+    image: {{ goat_trashgoat_image }}
+    container_name: goat-trashgoat
+    restart: unless-stopped
+    networks:
+      # `zenoh` reaches the router for both control-topic subscribe and
+      # data-topic publish traffic.
+      - zenoh
+    environment:
+      TRASHGOAT_ENDPOINT: "{{ goat_trashgoat_zenoh_endpoint }}"
+      TRASHGOAT_CONTROL_KEY: "{{ goat_trashgoat_control_key }}"
+      TRASHGOAT_MAX_HZ: "{{ goat_trashgoat_max_hz }}"
+      TRASHGOAT_MAX_KEYS_PER_SPEC: "{{ goat_trashgoat_max_keys_per_spec }}"
+      RUST_LOG: "{{ goat_trashgoat_rust_log }}"
+{% if goat_trashgoat_zenoh_endpoint.startswith('tls/') %}
+      TRASHGOAT_CERT: "/certs/trashgoat-cert.pem"
+      TRASHGOAT_KEY: "/certs/trashgoat-key.pem"
+      TRASHGOAT_ROOT_CA: "/ca/ca-root.pem"
+{% endif %}
+{% if goat_trashgoat_zenoh_endpoint.startswith('tls/') %}
+    volumes:
+      - "{{ goat_trashgoat_cert_dir }}:/certs:ro"
+      - "{{ goat_trashgoat_ca_root_src }}:/ca/ca-root.pem:ro"
+{% endif %}
+
+networks:
+  zenoh:
+    name: {{ goat_trashgoat_zenoh_network }}
+    external: true

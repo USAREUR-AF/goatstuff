@@ -1,0 +1,40 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy the microscope per-entity behavior lens (ADR 1090 Phase C) to a
+# mgmt host. Target group is passed per-goatnet:
+#
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES aws-vault exec <profile> --no-session -- \
+#     ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts-mesh.ini \
+#     microscope.yml -e target=<site>_hosts
+#
+# Pre-flight is listed in roles/microscope/tasks/main.yml (image pin +
+# ledger row, mesh-DNS row, Hydra OIDC client, secrets in group_vars).
+
+- name: microscope
+  hosts: "{{ target | mandatory }}"
+  become: true
+
+  vars:
+    admin_write_surface: "microscope (per-entity behavior lens + its Hydra OAuth2 client)"
+
+  pre_tasks:
+    # WHY. A group-wide `-e target=<group>` can hold two hosts. A host with no Hydra
+    # fails `microscope-oidc-client`'s admin pre-flight, and a half-red recap on the
+    # correct deploy command teaches operators to read past red.
+    #
+    # The shared guard already existed (id-admin-console has used it since
+    # ADR 1084 §D3 was enforced) and microscope simply never included it. It
+    # ends the play cleanly on any host that is not the declared writer, so
+    # targeting the group does the right thing: host A deploys, host B says why
+    # it is being skipped. microscope mutates nothing, but it is single-homed
+    # for the same reason its ledger lists one host per goatnet — the fence, the
+    # DNS row and the view-audit all point at one place.
+    - name: "Guard — admin surfaces are single-homed (ADR 1084 §D3)"
+      ansible.builtin.include_tasks: tasks/assert-admin-write-host.yml
+
+  roles:
+    # The OAuth2 client MUST be registered before the fence that presents it.
+    # Otherwise a healthy container sits behind a fence Hydra rejects as `invalid_client`.
+    - microscope-oidc-client
+    - microscope

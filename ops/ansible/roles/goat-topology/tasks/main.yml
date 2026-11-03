@@ -1,0 +1,200 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy goat-topology (ADR 1160, docs/design/zenoh-topology-surface.md).
+#
+# Pre-flight this role CHECKS rather than assumes:
+#   1. The zenoh router is up on this host, and its declared config is readable
+#      (publish mode reads the `gateway` block out of it).
+#   2. A leaf cert with CN=goat-topology-trial-peer exists. That CN is what the
+#      Zenoh ACL matches (subject `infra-topology`, rule `infra-w-topology`).
+#      A wrong or empty CN means every publish is SILENTLY denied — Zenoh
+#      denial is silent — so this would fail as "no data on the
+#      surface" rather than as an error anyone could see. Hence a hard check.
+#   3. The CA root the router itself uses is present.
+#
+# Persists nothing, holds no secrets, and has no write path to any router.
+
+- name: goat-topology | require a pinned image
+  ansible.builtin.assert:
+    that: goat_topology_image is defined and 'sha256:' in goat_topology_image
+    fail_msg: >-
+      goat_topology_image is unset or unpinned. It is set from
+      ops/pins/fleet-pins.yaml, and must be a multi-arch INDEX digest —
+      a mutable tag would make "what is deployed" unanswerable.
+
+# A host that runs no goatnet router has nothing for this role to do. The
+# pair may be asymmetric by design: host A runs the goatnet's zenoh router, host B
+# has no config.json5 at all. Without this the role fails that host on every run —
+# a permanently red host that is behaving exactly as intended, which is how a
+# red stops being read.
+#
+# Gated `true` by default and declared false on the host that opts out, NOT
+# the reverse: a missing flag then leaves the router host deploying, rather
+# than silently skipping the node that actually needed the publisher.
+- name: goat-topology | skip a host that runs no goatnet router
+  ansible.builtin.meta: end_host
+  when: not (goat_topology_host_runs_router | default(true) | bool)
+
+- name: goat-topology | validate mode selection
+  ansible.builtin.assert:
+    that:
+      - goat_topology_modes | length > 0
+      - goat_topology_modes | difference(['publish', 'serve']) | length == 0
+    fail_msg: >-
+      goat_topology_modes must be a non-empty subset of ['publish','serve'];
+      got {{ goat_topology_modes }}.
+
+- name: goat-topology | pre-flight leaf cert exists
+  ansible.builtin.stat:
+    path: "{{ goat_topology_cert_dir }}/goat-topology-cert.pem"
+  register: gt_cert
+
+- name: goat-topology | fail on missing leaf cert
+  ansible.builtin.fail:
+    msg: >-
+      goat-topology: leaf cert missing at
+      {{ goat_topology_cert_dir }}/goat-topology-cert.pem.
+      Mint it from the site manifest —
+      ops/scripts/mint-site-certs.sh {{ site_id | default('<site>') }} --only goat-topology
+      — and note the CN must be goat-topology-trial-peer or the ACL denies
+      every publish, silently.
+  when: not (gt_cert.stat.exists | default(false))
+
+- name: goat-topology | verify the leaf carries the CN the ACL matches
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509 -noout -subject
+      -in {{ goat_topology_cert_dir }}/goat-topology-cert.pem
+  register: gt_subject
+  changed_when: false
+
+- name: goat-topology | fail on a CN the ACL will not admit
+  ansible.builtin.assert:
+    that: "'goat-topology-trial-peer' in gt_subject.stdout"
+    fail_msg: >-
+      goat-topology: leaf CN is {{ gt_subject.stdout | trim }}, but the Zenoh
+      ACL subject `infra-topology` matches CN=goat-topology-trial-peer.
+      Publishing would be denied silently. Re-mint the leaf.
+
+- name: goat-topology | pre-flight CA root exists
+  ansible.builtin.stat:
+    path: "{{ goat_topology_ca_root_src }}"
+  register: gt_ca
+
+- name: goat-topology | fail on missing CA root
+  ansible.builtin.fail:
+    msg: >-
+      goat-topology: CA root missing at {{ goat_topology_ca_root_src }} — the
+      same file the router uses, so its absence means the router is not
+      deployed on this host.
+  when: not (gt_ca.stat.exists | default(false))
+
+- name: goat-topology | pre-flight the router config is readable (publish mode)
+  ansible.builtin.stat:
+    path: "{{ goat_topology_config_path }}"
+  register: gt_cfg
+  when: "'publish' in goat_topology_modes"
+
+- name: goat-topology | fail on unreadable router config
+  ansible.builtin.fail:
+    msg: >-
+      goat-topology: router config missing at {{ goat_topology_config_path }}.
+      Publish mode reads its `gateway` block to report the DECLARED posture;
+      without it every router would report `unreadable`, which is honest but
+      useless.
+  when:
+    - "'publish' in goat_topology_modes"
+    - gt_cfg is not skipped
+    - not (gt_cfg.stat.exists | default(false))
+
+- name: goat-topology | compose dir
+  ansible.builtin.file:
+    path: "{{ goat_topology_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The container runs as the distroless nonroot uid; the cert dir has to be
+# traversable and the key readable by it.
+- name: goat-topology | normalize cert dir ownership for the nonroot container uid
+  ansible.builtin.file:
+    path: "{{ goat_topology_cert_dir }}"
+    state: directory
+    owner: "65532"
+    group: "65532"
+    mode: "0750"
+
+- name: goat-topology | render compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ goat_topology_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: gt_compose
+
+# Traefik front door. Rendered BEFORE the container comes up so the route and
+# the upstream appear together — Traefik's file provider reloads on its own, and
+# a route pointing at a not-yet-running container is a 502 for a few seconds
+# rather than a 000 for the length of the deploy.
+- name: goat-topology | render Traefik dynamic config (serve mode)
+  ansible.builtin.template:
+    src: traefik-topology.yml.j2
+    dest: "{{ goat_topology_traefik_dynamic_dir }}/{{ goat_topology_traefik_dynamic_filename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: "'serve' in goat_topology_modes"
+
+- name: goat-topology | pull image
+  community.docker.docker_image:
+    name: "{{ goat_topology_image }}"
+    source: pull
+    force_source: false
+
+- name: goat-topology | up
+  community.docker.docker_compose_v2:
+    project_src: "{{ goat_topology_compose_dir }}"
+    state: present
+    recreate: "{{ 'always' if gt_compose.changed else 'auto' }}"
+
+- name: goat-topology | settle before asserting
+  ansible.builtin.wait_for:
+    timeout: 8
+  when: gt_compose.changed
+
+# Assert the thing actually works rather than that the container is running:
+# a publisher whose ACL grant is wrong runs perfectly and publishes nothing.
+- name: goat-topology | verify the surface answers (serve mode)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ goat_topology_container_port }}/health"
+    return_content: true
+  register: gt_health
+  retries: 6
+  delay: 5
+  until: gt_health.status | default(0) == 200
+  when: "'serve' in goat_topology_modes"
+
+# The loopback probe above passing while this one fails is exactly the shape the
+# Traefik route was added for: the surface is healthy, the front door is not.
+- name: goat-topology | verify the surface answers at its FQDN (serve mode)
+  ansible.builtin.uri:
+    url: "https://{{ goat_topology_hostname }}/health"
+    return_content: true
+  register: gt_fqdn
+  retries: 12
+  delay: 10
+  until: gt_fqdn.status | default(0) == 200
+  when: "'serve' in goat_topology_modes"
+
+- name: goat-topology | report
+  ansible.builtin.debug:
+    msg: >-
+      goat-topology up on {{ inventory_hostname }}
+      modes={{ goat_topology_modes | join(',') }}
+      site={{ goat_topology_site }} node={{ goat_topology_node }}
+      {{ ('surface routers_known=' ~ (gt_health.json.routers_known | default('?')))
+         if 'serve' in goat_topology_modes else '' }}

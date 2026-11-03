@@ -1,0 +1,28 @@
+---
+# ops/ansible/herd-deploy.yml — the herd bearer-gear CONSOLE (ADR 1131).
+#
+# Runs on the goatnet's mgmt host, beside the other hosted consoles. This
+# playbook deliberately does NOT deploy the connector: that lives on a
+# NETWORK-JUMP peer and has its own playbook, because a mgmt host is INFRA and
+# co-tenanting the SSH egress there would silently undo the containment the
+# whole design exists for. See herd-connector-deploy.yml.
+#
+#   aws-vault exec usareur-af --no-session -- \
+#     ops/scripts/env-door.sh zagros -- \
+#     ops/scripts/ansible-preflight.sh -i inventory/mgmt-hosts-mesh.ini herd-deploy.yml
+#
+# Runbook: docs/operations/herd-gear-console-bringup.md
+- name: Deploy the herd gear console
+  # default([]) not `| mandatory`: site-services.yml imports this play, so an
+  # unconfigured goatnet must SKIP herd (no hosts matched) rather than fail the
+  # whole services run. A standalone herd run still passes -e herd_target_hosts.
+  hosts: "{{ herd_target_hosts | default([]) }}"
+  become: true
+  gather_facts: true
+  roles:
+    # Registers herd's OAuth2 client at the site Hydra BEFORE the console comes
+    # up — the oauth2-proxy fence cannot start against a client that does not
+    # exist, and the resulting failure looks like an Ory problem rather than a
+    # missing registration. Same ordering isitup-deploy.yml uses.
+    - role: herd-oidc-client
+    - role: herd

@@ -1,0 +1,83 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the dataflows role.
+# Sibling-of-brief — same mesh-only static-presentation shape, different
+# content. Override in group_vars or by passing -e via the playbook.
+
+# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps to this value
+# require an append to deploy-history.yml (CI checks via
+# .github/workflows/deploy-history-check.yml). Built by
+# .github/workflows/dataflows-image.yml.
+dataflows_image: "ghcr.io/{{ ghcr_org }}/dataflows:sha-06060e3"
+
+# Public hostname for browser-facing access. Site convention is
+# `dataflows.<site_id>.<site_dns_zone>`; override per site.
+dataflows_hostname: "dataflows.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# Container name + listener port.
+dataflows_container_name: "dataflows"
+dataflows_internal_port: 80
+
+# Compose state.
+dataflows_compose_dir: "/opt/dataflows"
+
+# Traefik wiring — matches the brief / panoscope / demogame
+# pattern: file-provider config in /etc/traefik/dynamic/,
+# container joined to the `mgmt` Docker network so Traefik resolves
+# the upstream by container alias. `le` is the static-config cert
+# resolver (Let's Encrypt via Cloudflare DNS-01).
+dataflows_traefik_network: "mgmt"
+dataflows_traefik_dynamic_dir: "/etc/traefik/dynamic"
+dataflows_traefik_dynamic_filename: "dataflows.yml"
+
+# The pre-rename filename, removed from the host on deploy. Leaving it
+# behind would give Traefik two routers on the same Host() rule.
+dataflows_traefik_dynamic_filename_legacy: "nova-dataflows.yml"
+dataflows_traefik_cert_resolver: "le"
+dataflows_traefik_router_name: "dataflows"
+
+# Mesh-only gating — dataflows is a mesh-internal surface; restrict
+# to the netbird mesh CIDR via the `mesh-only-allowlist` middleware
+# defined in mgmt-dynamic.yml.j2. The static presentation has no
+# application-layer auth, so this middleware is the WHOLE auth surface
+# — DO NOT disable without a substitute gate.
+dataflows_traefik_mesh_only_middleware: "mesh-only-allowlist@file"
+
+# Cloudflare DNS publish — mirrors the panoscope / brief pattern. When
+# `dataflows_publish_cloudflare_dns: true`, the role looks up the
+# zone id, lists existing A records, and POSTs any missing ones from
+# `dataflows_cloudflare_a_record_ips`. Service hostnames live in mesh
+# CoreDNS, NOT Cloudflare — so this defaults to false.
+dataflows_publish_cloudflare_dns: false
+dataflows_cloudflare_zone: ""
+dataflows_cloudflare_a_record_ips: []
+
+# Private-registry pull auth. The dataflows image lives at
+# ghcr.io/{{ ghcr_org }}/dataflows. If the package is published private,
+# set `dataflows_pull_auth_enabled: true` and provide
+# `dataflows_pull_username` + `dataflows_pull_password` (typically
+# sourced from `GHCR_READ_TOKEN` in .envrc.local.d/). Mirrors
+# docs/design/ghcr-private-pull.md.
+dataflows_pull_auth_enabled: false
+dataflows_pull_registry: "ghcr.io"
+dataflows_pull_username: "goat-maintainer"
+dataflows_pull_password: ""
+
+# ----- Authenticated door (ADR 1073) ---------------------------
+# Without a door the Traefik IP allowlist is the ONLY gate: any caller that
+# reaches the mesh is served, and no identity is ever recorded. The door here
+# refuses nobody — its job is attribution.
+# Hydra records one consent grant per (person, client), and that grant is what
+# microscope's hydra-consents adapter reads to answer who reached this surface.
+#
+# EMPTY allowed-groups IS the authenticated door. The default is OFF; a
+# goatnet turns it on in its group_vars. The matrix
+# row says what RUNS: `door: authenticated` is valid only while the door is on
+# somewhere, and `door: mesh-only` only while it is off everywhere —
+# ops/ci/check-group-permissions-parity.sh fails the build either way round.
+dataflows_oauth2_proxy_enabled: false
+dataflows_oauth2_proxy_allowed_groups: ""
+# Env-sourced; see docs/operations/local-secrets-pattern.md.
+dataflows_oauth2_proxy_client_secret: ""
+dataflows_oauth2_proxy_cookie_secret: ""

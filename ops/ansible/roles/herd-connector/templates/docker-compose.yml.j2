@@ -1,0 +1,18 @@
+# Rendered by ops/ansible/roles/herd-connector/ — DO NOT EDIT ON HOST.
+#
+# No ports are published and none are needed: this process DIALS OUT and nothing
+# on the mesh initiates toward it (ADR 1131). A published port here would be the
+# first inbound path to a box whose whole purpose is not having one.
+services:
+  herd-connector:
+    image: "{{ herd_connector_image }}"
+    container_name: herd-connector
+    restart: unless-stopped
+    env_file:
+      - "{{ herd_connector_dir }}/connector.env"
+    volumes:
+      - "{{ herd_connector_cert }}:{{ herd_connector_cert }}:ro"
+      - "{{ herd_connector_key }}:{{ herd_connector_key }}:ro"
+      - "{{ herd_connector_ca }}:{{ herd_connector_ca }}:ro"
+    labels:
+      - "traefik.enable=false"

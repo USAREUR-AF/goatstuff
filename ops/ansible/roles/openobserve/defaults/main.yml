@@ -1,0 +1,67 @@
+---
+# defaults for ops/ansible/roles/openobserve
+#
+# Anchor: ADR 0822 — wide-event observability via OTLP + OpenObserve
+# on top of the existing per-site MinIO substrate. Telemetry-otlp
+# bucket is created by the `minio` role; this role only consumes it.
+#
+# Posture: ADR 0822 stays Proposed until 27E earns it; this role +
+# the spike validate the substrate is workable. Producer instrumentation
+# (Block 27C / Block 50B) is out of scope for this role.
+
+# -- Storage layout ----------------------------------------------------------
+# Hot tier (local NVMe). Warm tier (Parquet) lives in MinIO; OpenObserve
+# rotates from local → S3 on a configurable interval (default = idle file
+# threshold).
+openobserve_data_root: "/opt/docker-data/openobserve"
+openobserve_compose_dir: "/opt/openobserve"
+
+# Container UID. The published openobserve/openobserve image has historically
+# run as root; the upstream Helm chart sets `securityContext.runAsUser: 10000`
+# for hardened deployments. We pin to 10000:10000 on the host side and
+# assume the container can drop or already runs at that UID. If the
+# container starts as root and refuses to chown, the role will fail with
+# a permission-denied — that's the obs-host UID-mapping crash-loop class
+# of bug, surfaced loud rather than silent.
+openobserve_uid: 10000
+openobserve_gid: 10000
+
+# -- Image pin ---------------------------------------------------------------
+# Upstream openobserve/openobserve. Pin to a digest in group_vars when
+# promoting to production-shape. No Chainguard image exists for OpenObserve
+# at time of writing — this is one of ADR 0822's named
+# trade-offs (smaller community than ClickHouse / Grafana).
+openobserve_image: "openobserve/openobserve:v0.80.2"
+
+# -- Listen ports ------------------------------------------------------------
+# OpenObserve listens on 5080 (HTTP API + UI) and 5081 (gRPC OTLP) by
+# default. Both bind on host so the OTel Collector (separate compose
+# project) can reach via host.docker.internal:5080.
+openobserve_http_port: 5080
+openobserve_grpc_port: 5081
+
+# -- Root credentials --------------------------------------------------------
+# .envrc.local convention:
+#   VEGA_C_OPENOBSERVE_ROOT_EMAIL    → openobserve_root_email
+#   VEGA_C_OPENOBSERVE_ROOT_PASSWORD → openobserve_root_password
+openobserve_root_email: "{{ lookup('env', 'VEGA_C_OPENOBSERVE_ROOT_EMAIL') | default('', true) }}"
+openobserve_root_password: "{{ lookup('env', 'VEGA_C_OPENOBSERVE_ROOT_PASSWORD') | default('', true) }}"
+
+# -- S3 (MinIO) backend ------------------------------------------------------
+# Cross-service comms: OpenObserve in its own compose project reaches
+# MinIO via host.docker.internal:<minio_api_port>. Bucket already exists
+# (created by the `minio` role's mc-init).
+#
+# v1 simplification: OpenObserve uses the MinIO ROOT credentials. This
+# is NOT good steady-state — Block 27D (per-site OpenObserve deployment)
+# is the natural place to introduce a dedicated IAM service-account.
+# Tracked as a TODO on this role, not a blocker for the 27A.3 spike.
+openobserve_s3_endpoint: "http://host.docker.internal:9000"
+openobserve_s3_region: "us-east-1"
+openobserve_s3_bucket: "telemetry-otlp"
+openobserve_s3_access_key: "{{ lookup('env', 'VEGA_C_MINIO_ROOT_USER') | default('', true) }}"
+openobserve_s3_secret_key: "{{ lookup('env', 'VEGA_C_MINIO_ROOT_PASSWORD') | default('', true) }}"
+
+# -- Healthcheck timing ------------------------------------------------------
+openobserve_health_retries: 60
+openobserve_health_delay_seconds: 2

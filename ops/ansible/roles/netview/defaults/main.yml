@@ -1,0 +1,37 @@
+---
+# netview — the two operator reading surfaces (ADR 1128).
+#
+# NOT a new service. The relay-health nginx already serves hand-built pages on a
+# mesh host behind oauth2-proxy (index.html, node-net-health.html); these are two
+# more files in that same www dir. That is the cheap, precedented path: no new
+# vhost, no new Traefik route, no new DNS record, no new Ory client.
+#
+# The browser never queries Prometheus. A host timer writes ONE json and every
+# viewer reads the same bytes (ADR 1123: client demand must not amplify).
+netview_enabled: false
+# THE ISITUP data/ DIRECTORY, not the relay-health www dir.
+#
+# Two corrections learned the hard way, both worth keeping written down:
+#   1. /opt/relay-health/www on the THOR is a staging area, not a docroot —
+#      fabric-crawler and the node-net-health rollup write there, but the page
+#      at the relay-health hostname is served by a separate CLOUD vm
+#      (reached over SSM). Same path, different machine.
+#      Files dropped on the Thor there are gated, real, and served by nothing.
+#   2. isitup IS on the Thor, on the mesh zone, already Ory-gated — but its
+#      nginx bind-mounts INDIVIDUAL FILES for the docroot (index.html,
+#      nginx.conf, check.sh). A new file beside them never appears inside the
+#      container: the inode is pinned at create time (the F-330 shape).
+#      `data/` and `icons/` are the only DIRECTORY mounts, so `data/` is the
+#      seam that works with no container recreate and no role change.
+netview_www_dir: /opt/mgmt-host/isitup/data
+netview_bin_dir: /opt/netview
+netview_prom_url: "http://127.0.0.1:9192"       # goat-obs; obs-host sites differ
+netview_host_filter: ".*"
+netview_interval_s: 60
+# Services whose Traefik duration is a STREAM lifetime, not a response time.
+# Excluded from every percentile. See docs/design/mesh-bandwidth-attribution.md.
+# Names are POST-RELABEL. prometheus.yml strips the `nova-` prefix from the
+# `service` label at ingest (the nova- naming leak), so this regex must match
+# the stripped names or it silently stops excluding and the signal server
+# reads as the slowest thing on the goatnet again.
+netview_stream_services: "signal@file|portal@file"

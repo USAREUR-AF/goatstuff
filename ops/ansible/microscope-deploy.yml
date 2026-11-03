@@ -1,0 +1,23 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy microscope — the per-entity behavior lens (ADR 1090) — to a mgmt host.
+#
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+#     ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts-mesh.ini \
+#     microscope-deploy.yml -e target=zagros_hosts
+#
+# WHY THIS FILE EXISTS AND WHY IT IS ONE LINE. Every fleet tool that deploys a
+# governed component resolves its playbook as `ops/ansible/<component>-deploy.yml`
+# — `fastlane.sh` refuses outright with "no deploy playbook … fastlane will not
+# invent a deploy path", which is the correct refusal and was the only thing
+# standing between microscope and a fleet-wide delivery .
+# microscope predates that convention and its play is `microscope.yml`.
+#
+# So this is an ALIAS, not a second path: it imports the existing play verbatim
+# and adds nothing. Copying the role list here instead would fork the deploy
+# path in exactly the way the deployment doctrine refuses — two files that agree
+# today and drift the first time one of them gains a role.
+- name: microscope (alias for the fleet-standard <component>-deploy.yml name)
+  ansible.builtin.import_playbook: microscope.yml

@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: feeds-shim
+  author: goat
+  description: |
+    feeds-shim deployment — MediaMTX → Zenoh catalog bridge for Block 35E.
+    See docs/design/video-fabric.md and ops/zenoh-shims/feeds-shim/README.md.
+  license: Apache-2.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions: ["22.04", "24.04"]
+  galaxy_tags: [video, zenoh, feeds, mediamtx, goat]
+dependencies:
+  - role: mediamtx   # depends on the MediaMTX it bridges from

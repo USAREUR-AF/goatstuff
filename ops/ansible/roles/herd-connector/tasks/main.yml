@@ -1,0 +1,81 @@
+---
+- name: herd-connector | skip when disabled
+  ansible.builtin.meta: end_host
+  when: not (herd_connector_enabled | bool)
+
+- name: herd-connector | refuse the PENDING image sentinel
+  ansible.builtin.assert:
+    that:
+      - herd_connector_image != "PENDING"
+    fail_msg: "herd_connector_image is still PENDING. Pin a multi-arch INDEX digest first."
+
+# A connector with no site registers for "" and is never selected — it looks
+# healthy in every check and can carry nothing. Refuse rather than deploy that.
+- name: herd-connector | refuse an unsited connector
+  ansible.builtin.assert:
+    that:
+      - herd_connector_site | length > 0
+    fail_msg: >-
+      herd_connector_site is empty. The console routes sessions on site; an
+      unsited connector would register and never be chosen.
+
+# The identity is the certificate. Without it the console refuses the connection
+# outright (no verified client cert), so deploying is pointless and the failure
+# would surface as a silent reconnect loop rather than a clear error.
+- name: herd-connector | require the SPIFFE material
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: herd_connector_spiffe
+  failed_when: not herd_connector_spiffe.stat.exists
+  loop:
+    - "{{ herd_connector_cert }}"
+    - "{{ herd_connector_key }}"
+    - "{{ herd_connector_ca }}"
+
+- name: herd-connector | create deploy dir
+  ansible.builtin.file:
+    path: "{{ herd_connector_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: herd-connector | render env
+  ansible.builtin.template:
+    src: connector.env.j2
+    dest: "{{ herd_connector_dir }}/connector.env"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart herd connector
+
+- name: herd-connector | render compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ herd_connector_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart herd connector
+
+- name: herd-connector | pull image
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ herd_connector_dir }}/docker-compose.yml pull"
+  changed_when: false
+
+- name: herd-connector | bring it up
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ herd_connector_dir }}/docker-compose.yml up -d"
+  register: herd_connector_up
+  changed_when: "'Started' in herd_connector_up.stderr or 'Created' in herd_connector_up.stderr"
+
+# There is no health endpoint to probe — this process has no listener by design.
+# Liveness is "did it register with the console", which only the console can
+# answer, so the honest local check is that the container is running and has not
+# immediately exited into a reconnect loop.
+- name: herd-connector | confirm it stayed up
+  ansible.builtin.command:
+    cmd: "docker inspect -f '{{ '{{' }}.State.Running{{ '}}' }}' herd-connector"
+  register: herd_connector_state
+  changed_when: false
+  failed_when: "'true' not in herd_connector_state.stdout"

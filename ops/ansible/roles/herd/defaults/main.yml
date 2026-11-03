@@ -1,0 +1,177 @@
+---
+# ops/ansible/roles/herd/defaults/main.yml
+#
+# Bearer-gear console (ADR 1131 · docs/design/herd-adoption.md).
+#
+# SHAPE: modelled on roles/netvis — one web surface behind an oauth2-proxy
+# sidecar, Traefik-fronted with the existing LE DNS-01 cert resolver, on the
+# mgmt host. Herd adds Postgres and guacd, which netvis does not have.
+#
+# WHAT THIS ROLE DELIBERATELY DOES NOT DEPLOY: the SSH egress. Herd's connector
+# belongs to a separate NETWORK-JUMP peer, because a mgmt host IS INFRA and
+# `infra -> network (any port)` already exists — so a console hosted here can
+# already reach every switch on every port, and NetBird groups only ever UNION
+# reach, meaning no group assignment can narrow it. Co-tenanting the egress here
+# would silently hand herd the whole substrate's reach. See ADR 1131.
+
+# Default OFF. Turning it on is a per-goatnet decision, and the console is
+# useless until a NETWORK-JUMP peer exists to carry sessions.
+herd_enabled: false
+
+herd_dir: "/opt/herd"
+herd_hostname: "herd.{{ site_id }}.{{ site_dns_zone }}"
+
+# Multi-arch INDEX digest, never a per-arch leaf (hosts differ in arch — a leaf
+# digest deploys on one and not the other).
+#   docker buildx imagetools inspect ghcr.io/{{ ghcr_org }}/herd:sha-<short> --format '{{.Manifest.Digest}}'
+# PENDING is a deliberate fail-closed sentinel: the role refuses to deploy until
+# a real digest is pinned, so a half-configured env cannot start a stale image.
+# Superseded by the generated pins.yml; kept in step so it is not a trap.
+# The index is mirrored into BOTH ghcr namespaces at the same digest, so
+# {{ ghcr_org }} resolves on any goatnet (see ops/pins/fleet-pins.yaml).
+herd_image: "ghcr.io/{{ ghcr_org }}/herd:v0.2.1@sha256:f73a621e1905b4a35ca5071c48f85ff4c5dee2daedb87b48b8ea5cbbd06865ee"
+herd_postgres_image: "postgres:16-alpine@sha256:6efd0df010dc3cb40d5e33e3ef84acecc5e73161bd3df06029ee8698e5e12c60"
+# 1.6.0, DIGEST-PINNED, and the bump is not cosmetic: guacamole/guacd:1.5.5 is a
+# SINGLE-PLATFORM amd64 manifest, so on an arm64 host it starts and dies with
+# "exec /bin/sh: exec format error" — a container that exists, restarts forever,
+# and never serves. 1.6.0 is an OCI index carrying linux/amd64 AND linux/arm64
+# (verified against the registry, F-245). A bare tag hid this; the digest states
+# which bytes were checked.
+herd_guacd_image: "guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f"
+herd_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.6.0@sha256:dcb6ff8dd21bf3058f6a22c6fa385fa5b897a9cd3914c88a2cc2bb0a85f8065d"
+
+# --- identity -----------------------------------------------------------
+herd_identity_provider: "goat"
+herd_trust_proxy: true
+
+# --- ADR 1131 gates -----------------------------------------------------
+# The entitlement gate. NEVER set false on a real goatnet: it is the check that
+# makes a person's console access and their network-admin entitlement the same
+# record, which is what lets one revoke cut both.
+herd_entitlement_required: true
+herd_portal_url: "https://portal.{{ site_id }}.{{ site_dns_zone }}"
+# Herd's OWN portal service key — a MACHINE credential, not a person's operator
+# key. Same shape as the onboard-runner: dropped into the portal's hot-reloaded
+# key dir, so granting and revoking it needs no portal redeploy.
+herd_portal_key_file: "/var/lib/herd/portal.key"
+herd_portal_key: "{{ lookup('env', 'HERD_PORTAL_KEY') }}"
+
+# The application REFUSES TO BOOT without this — its own startup validation
+# rejects missing, short (<32 chars) or example values. The role never passed it,
+# so the container came up, failed its own check and restart-looped while every
+# other setting was correct. Asserted below rather than left to fail at runtime.
+herd_admin_override_secret: "{{ lookup('env', 'HERD_ADMIN_OVERRIDE_SECRET') }}"
+
+# The node-class projection. Refusing anything that is not fresh NETWORK-class
+# bearer gear is the scoping ADR 1131 rests on.
+herd_enforce_node_class: true
+herd_registry_sync_interval_ms: 300000
+herd_registry_max_age_ms: 3600000
+
+# --- SSH posture --------------------------------------------------------
+# tofu on a sandbox, strict on anything production. There is no password
+# option: the first-hop password was removed from the schema, the environment
+# and the vault overlay (ADR 1131).
+herd_ssh_hostkey_policy: "tofu"
+herd_credential_resolver: "kms"
+
+# --- fabric coupling: OFF, explicitly ------------------------------------
+# The application carries a Zenoh integration whose defaults are hostile:
+#
+#   restUrl:       str("ZENOH_REST_URL", "http://100.127.1.17:8000")
+#   tracksKey:     str("ZENOH_TRACKS_KEY", "**")
+#   tracksEnabled: onUnlessFalse("ZENOH_TRACKS_ENABLED")
+#
+# `onUnlessFalse` means ENABLED unless the variable is explicitly "false", and
+# the key defaults to "**" — the entire key space — from a browser-facing
+# surface. ADR 1123 forbids exactly that: client demand must never amplify into
+# fabric load, and panoscope is the only surface permitted to query on request.
+#
+# All three are passed explicitly: left unset, the effective config is "enabled,
+# whole key space, against a hard-coded address", and relying on a wrong address
+# to hold a fabric subscription shut is not a control.
+#
+# The address itself is the second problem: 100.127.1.17 is in the operator-
+# laptop range, compiled into a published image. Passing an empty string means
+# no baked-in address is ever contacted, whatever the image ships.
+herd_zenoh_tracks_enabled: false
+herd_zenoh_rest_url: ""
+herd_zenoh_tracks_key: ""
+herd_kms_secret_prefix: "herd/node"
+
+# --- fence --------------------------------------------------------------
+herd_oauth2_proxy_enabled: true
+herd_oauth2_proxy_client_id: "herd"
+herd_oauth2_proxy_client_secret: "{{ lookup('env', 'HERD_OAUTH2_CLIENT_SECRET') }}"
+herd_oauth2_proxy_cookie_secret: "{{ lookup('env', 'HERD_OAUTH2_COOKIE_SECRET') }}"
+herd_oauth2_proxy_oidc_issuer_url: "https://oauth2.{{ site_id }}.{{ site_dns_zone }}/"
+# Matches the group-permissions.yml row: PLATFORM-ADMIN holds the console grant.
+# UNPREFIXED — Ory service-permission groups are never site-prefixed (that is
+# the mesh group axis, and conflating them is F-213). A literal rather than a
+# Jinja expression so the parity ratchet can read it.
+#
+# The ENTITLEMENT, not this list, is what authorises a session: this opens the
+# console, the site-scoped network_admin grant opens a switch.
+herd_oauth2_proxy_allowed_groups: "PLATFORM-ADMIN"
+
+# --- routing ------------------------------------------------------------
+# `mgmt`, which netvis and the consistency console both attach to and which
+# actually exists on these hosts. The old default guessed compose's
+# project-suffix convention, but the mgmt stack names its network explicitly, so
+# the deploy failed with "declared as external, but could not be found" AFTER
+# creating herd_default — a half-applied state.
+herd_traefik_network: mgmt
+# /etc/traefik/dynamic — the path netvis and the consistency console both use
+# and the one Traefik actually bind-mounts on these hosts. The old default
+# (/opt/mgmt-host/traefik/dynamic) exists nowhere, so the first deploy failed on
+# a missing destination directory.
+herd_traefik_dynamic_dir: /etc/traefik/dynamic
+herd_traefik_dynamic_filename: "herd.yml"
+herd_traefik_router_name: "herd"
+# Both of these named things that do not exist on these hosts, so Traefik
+# discarded the ENTIRE router: the site 404'd and TLS fell back to Traefik's
+# self-signed default. The fleet uses `le` (39 routers) and
+# `mesh-only-allowlist@file` (18 routers); herd was the only file naming
+# `cloudflare` and `mesh-only@file`, and neither is defined anywhere.
+# An invalid router is dropped SILENTLY apart from a log line — the container
+# is healthy, the config file is present and well-formed, and the service is
+# simply absent from the routing table.
+# Terminate /api/shepherd/* and /api/network-sweep/run at the proxy. The
+# deployed image ships remote-exec and config-apply routes that ADR 1131 says
+# must not exist ("declares nothing and drives nothing"). This restores the
+# ratified posture without waiting on an image rebuild. Set false to lift it.
+herd_block_unscoped_routes: true
+
+herd_traefik_cert_resolver: "le"
+herd_traefik_mesh_only_middleware: "mesh-only-allowlist@file"
+# Per-source browsing rate ceiling (goat-ratelimit, 50 r/s / burst 100),
+# attached per router — surface-overload-protection.md §3.1.
+# Set to "" to disable.
+herd_traefik_ratelimit_middleware: "goat-ratelimit@file"
+
+# --- audit forwarding (ADR 1131 §4b) ------------------------------------
+# Herd records operator actions in the OperatorActionV1 field shape; this timer
+# is what puts them on the bus, via `goat audit emit`. On the HOST, not in the
+# container: the emit needs an age identity from the operator roster, and roster
+# key material must not sit inside a browser-facing process that also brokers
+# shells.
+#
+# Default ON when herd is: a console whose audit rows never leave the box is
+# worse than no console, because it looks accountable and is not.
+herd_audit_forward_enabled: true
+herd_audit_forward_interval: "5min"
+# The goat-cli context used to emit. `goat admin`-family commands need the
+# <env>-op context; a plain context 403s.
+herd_audit_goat_context: "{{ site_id }}-op"
+
+# --- database -----------------------------------------------------------
+herd_db_name: "herd"
+herd_db_user: "herd"
+herd_db_password: "{{ lookup('env', 'HERD_POSTGRES_PASSWORD') }}"
+
+# Issuer mesh-DNS pin for the herd oauth2-proxy. Same shape as
+# consistency-console / microscope / netvis: the proxy resolves the Hydra issuer
+# through Docker's embedded resolver, which holds no mesh-zone records, so the
+# name is pinned to the host's mesh IP. Wrong or missing, oauth2-proxy-herd
+# restart-loops on "no such host" while herd itself is up.
+herd_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ public_mgmt_fqdn | default(site_dns_zone | mandatory) }}:{{ mesh_ip_a }}"

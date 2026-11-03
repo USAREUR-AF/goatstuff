@@ -1,0 +1,77 @@
+# {{ ansible_managed }}
+#
+# ADR 1136 dormancy + never-enrolled sweep. REPORT ONLY — this unit never
+# mutates anything on the goatnet. If you are chasing a membership change, a
+# revoked key or an archived record, this unit did not make it.
+#
+# WHY IT LIVES IN THE PEERVIEW ROLE: it writes its roster into
+# {{ peerview_state_dir }}, which this role owns and creates. Placing it
+# anywhere else would mean two roles owning one directory.
+#
+# WHY IT IS DEPLOYED AT ALL: it was not. The script and both units
+# were placed on the ZAGROS mgmt host BY HAND and no ansible role, playbook or CI
+# job owned them. The host copy therefore drifted from the repo and was still
+# running a broken age clock for hours after the fix merged — it had to
+# be reinstalled by hand to apply anything. A guard on a timer with no converge
+# path quietly ages out of date while its output still looks authoritative,
+# which is worse than having no guard.
+[Unit]
+Description=ADR 1136 dormancy + never-enrolled sweep (REPORT ONLY — never mutates)
+Documentation=https://github.com/usareur-af/goatcore/blob/main/docs/design/live-state-guard-scheduling.md
+Documentation=https://github.com/usareur-af/goatcore/blob/main/docs/adr/1136-dormancy-lifecycle-quarantine-and-revoke.md
+# Reads the NetBird management API over the network. Deliberately NOT ordered
+# behind docker.service: the token arrives in an EnvironmentFile, so no container
+# on this host is on the read path, and ordering behind docker would make a
+# docker restart look like a sweep failure.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec={{ lifecycle_sweep_timeout_sec }}
+{% if onboard_runner_enabled | default(false) | bool %}
+# Root still owns the scheduled sweep, while its primary group and umask make
+# any newly-created append/lock files writable by the uid-65532 runner.
+Group={{ onboard_runner_uid }}
+UMask=0007
+{% endif %}
+# The token is a file, not a container scrape. See the credentials row of the
+# guard-scheduling contract: a dedicated identity per guard per goatnet, and
+# refuse to install unconfigured rather than ship a unit that fails hourly.
+EnvironmentFile=/etc/goat/lifecycle-sweep.env
+ExecStart={{ peerview_bin_dir }}/lifecycle-sweep-guard.sh
+
+# NO --apply AND NO --lane, deliberately, and the wrapper adds neither. The lanes
+# differ in reversibility and which one to run is an operator's decision; this
+# unit exists so the roster is never stale when they come to make it. A timer
+# that could revoke is a timer nobody dares leave enabled.
+
+# Confinement. This unit holds an admin-scoped mesh token, so the host-side blast
+# radius is pinned as small as the job allows: it writes its roster, its report
+# and its metrics file, and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths={{ peerview_state_dir }} {{ lifecycle_sweep_report_dir }}{% if lifecycle_sweep_textfile_dir | length > 0 %} {{ lifecycle_sweep_textfile_dir }}{% endif %}
+
+
+# Politeness on a host that also carries the mesh control plane.
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

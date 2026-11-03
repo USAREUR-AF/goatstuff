@@ -1,0 +1,104 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy the goat-trashgoat operator-controlled chaos publisher on a
+# mgmt-host per docs/design/trashgoat.md (Block 92, PR #3).
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. zenoh-router container Healthy on the same docker network
+#      (deployed via zenoh-deploy.yml for nova-a).
+#   2. goat-zenoh-portal Healthy + the `trashgoat` vendor minted via
+#      `bootstrap-portal-vendors.sh trashgoat` (one-time cert mint;
+#      writes the per-vendor ACL allow stanza on the router + drops a
+#      tarball with cert.pem + key.pem under /opt/goat-trashgoat/certs/).
+#   3. Per-vendor leaf cert + key placed at
+#      {{ goat_trashgoat_cert_dir }}/trashgoat-{cert,key}.pem.
+#   4. CA root cert present at {{ goat_trashgoat_ca_root_src }}.
+
+- name: goat-trashgoat | pre-flight leaf cert exists (when tls/ endpoint)
+  ansible.builtin.stat:
+    path: "{{ goat_trashgoat_cert_dir }}/trashgoat-cert.pem"
+  register: goat_trashgoat_cert_stat
+  when: goat_trashgoat_zenoh_endpoint is match('^tls/')
+
+- name: goat-trashgoat | fail on missing leaf cert
+  ansible.builtin.fail:
+    msg: >-
+      goat-trashgoat: leaf cert missing at
+      {{ goat_trashgoat_cert_dir }}/trashgoat-cert.pem.
+      Mint the trashgoat vendor via:
+      ops/zenoh-trial-peers/bootstrap-portal-vendors.sh trashgoat
+      then drop the resulting cert/key under
+      {{ goat_trashgoat_cert_dir }}/ before re-running.
+  when:
+    - goat_trashgoat_zenoh_endpoint is match('^tls/')
+    - goat_trashgoat_cert_stat is not skipped
+    - not (goat_trashgoat_cert_stat.stat.exists | default(false))
+
+- name: goat-trashgoat | pre-flight CA root exists (when tls/ endpoint)
+  ansible.builtin.stat:
+    path: "{{ goat_trashgoat_ca_root_src }}"
+  register: goat_trashgoat_ca_root_stat
+  when: goat_trashgoat_zenoh_endpoint is match('^tls/')
+
+- name: goat-trashgoat | fail on missing CA root
+  ansible.builtin.fail:
+    msg: >-
+      goat-trashgoat: CA root cert missing at
+      {{ goat_trashgoat_ca_root_src }} — same file zenoh-router uses,
+      so its absence means the router itself isn't deployed.
+  when:
+    - goat_trashgoat_zenoh_endpoint is match('^tls/')
+    - goat_trashgoat_ca_root_stat is not skipped
+    - not (goat_trashgoat_ca_root_stat.stat.exists | default(false))
+
+- name: goat-trashgoat | normalize cert dir ownership for non-root container uid 65532 (Chainguard default)
+  ansible.builtin.file:
+    path: "{{ goat_trashgoat_cert_dir }}"
+    owner: "65532"
+    group: "65532"
+    recurse: true
+  when: goat_trashgoat_zenoh_endpoint is match('^tls/')
+
+- name: goat-trashgoat | ensure compose project dir
+  ansible.builtin.file:
+    path: "{{ goat_trashgoat_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: goat-trashgoat | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ goat_trashgoat_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: goat-trashgoat | pull image
+  ansible.builtin.command:
+    cmd: "docker compose pull"
+    chdir: "{{ goat_trashgoat_compose_dir }}"
+  changed_when: true
+
+- name: goat-trashgoat | bring up (or refresh) the project
+  ansible.builtin.command:
+    cmd: "docker compose up -d --remove-orphans"
+    chdir: "{{ goat_trashgoat_compose_dir }}"
+  register: goat_trashgoat_up
+  changed_when:
+    - "'Started' in goat_trashgoat_up.stderr or 'Created' in goat_trashgoat_up.stderr or 'Recreated' in goat_trashgoat_up.stderr"
+
+- name: goat-trashgoat | print running container summary
+  ansible.builtin.command:
+    cmd: "docker compose ps --format json"
+    chdir: "{{ goat_trashgoat_compose_dir }}"
+  register: goat_trashgoat_ps
+  changed_when: false
+
+- name: goat-trashgoat | show
+  ansible.builtin.debug:
+    msg: "{{ goat_trashgoat_ps.stdout_lines }}"
+# Deploy ledger now written by the shared `rollback-ledger`
+# meta-dependency (meta/main.yml) per ADR 1060 — no per-role task here.

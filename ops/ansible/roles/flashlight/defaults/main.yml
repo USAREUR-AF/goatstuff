@@ -1,0 +1,99 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the flashlight role. Override in group_vars or via -e.
+
+# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps require an
+# append to deploy-history.yml (CI guard at
+# .github/workflows/deploy-history-check.yml). The :latest tag is
+# never used here because it erases the rollback target.
+flashlight_image: "ghcr.io/{{ ghcr_org }}/flashlight@sha256:db5c827c09b975cc975a9db04b12a3cc8962d12d84353771a322f33f441e33d9"
+
+# Public hostname for browser-facing access. Pattern is
+# `<surface>.<site_id>.<site_dns_zone>`. Omitting the <site_id> segment makes
+# Traefik's router rule miss browsers hitting the real hostname, and fall-through
+# serves the default cert + 404.
+flashlight_hostname: "flashlight.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# Zenoh router endpoint. Defaults to plain TCP for environments without
+# an mTLS-required router; a goatnet with one overrides to
+# `tls/goat-zenoh-router:7447` + flips mTLS on.
+flashlight_zenoh_endpoint: "tcp/zenoh-router:7447"
+
+# Optional panoscope deeplink — empty value suppresses the
+# "open in panoscope ↗" header link. Same DNS-pattern fix as
+# flashlight_hostname above (`<surface>.<site_id>.<site_dns_zone>`).
+flashlight_panoscope_origin: "https://panoscope.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# Block 94 cross-surface deep-link contract — stethoscope sibling origin.
+# Rendered in the header as `is this healthy? ↗` next to the existing
+# panoscope link, preserving the current focus QS on the hop. Empty
+# string suppresses the button. Hostname pattern is
+# `<surface>.<site_id>.<site_dns_zone>`. See
+# docs/design/zenoh-surface-deep-links.md.
+flashlight_sibling_stethoscope_url: "https://stethoscope.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# Portal registry — backs GET /api/directory (the navigate-anywhere
+# catalog: vendors → topics). Same threading pattern stethoscope uses.
+# `flashlight_portal_api_key` stays empty here (no secret in defaults);
+# group_vars resolve it from the PORTAL_OPERATOR_API_KEY env at apply
+# time. Empty key → directory reports `enabled: false` (the jump box
+# still works for raw keys; role-based browse still renders from the
+# live topology). The host-entry lets the container resolve the portal
+# hostname to the portal host's mesh IP (mirrors stethoscope_portal_host_entry).
+flashlight_portal_url: "https://portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+# Self-provisioning portal key (the microscope / panoscope pattern).
+#
+# A per-goatnet env var naming a key the portal never accepted produces
+# `directory: list_vendors failed - portal returned 401 Unauthorized` indefinitely
+# and an empty vendor directory. So the role owns the credential: generated on
+# first deploy, persisted outside the portal's control so a portal redeploy cannot
+# drop it, and registered in the portal's service-key store, which the portal
+# re-reads on an interval.
+flashlight_portal_api_key: ""            # set in tasks from the persisted file
+flashlight_portal_key_file: /etc/goat/flashlight-portal.key
+flashlight_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
+flashlight_portal_key_id: flashlight
+flashlight_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_FLASHLIGHT_PORTAL_KEY') | default('', true) }}"
+flashlight_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+
+# Logging.
+flashlight_rust_log: "flashlight=info,axum=info,tower_http=info"
+
+# Zenoh-client mTLS. Disabled by default; a goatnet with an mTLS router flips
+# it to true and supplies the cert paths. Pre-mint per the cert-issuance runbook
+# and drop at the paths below. Same shape panoscope's role uses (mode-0644
+# normalize applies here too).
+flashlight_zenoh_mtls_enabled: false
+flashlight_cert_dir: "/etc/flashlight"
+flashlight_zenoh_client_cert: "{{ flashlight_cert_dir }}/zenoh-client-cert.pem"
+flashlight_zenoh_client_key: "{{ flashlight_cert_dir }}/zenoh-client-key.pem"
+flashlight_nova_ca_root: "{{ flashlight_cert_dir }}/{{ site_id }}-ca-root.pem"   # a shared role must not name a goatnet
+
+# Compose state.
+flashlight_compose_dir: "/opt/flashlight"
+
+# Traefik wiring — file-provider, mesh-only middleware, `le` cert
+# resolver. Matches the panoscope shape exactly.
+flashlight_traefik_provider: file
+flashlight_traefik_network: "mgmt"
+flashlight_traefik_dynamic_dir: "/etc/traefik/dynamic"
+flashlight_traefik_dynamic_filename: "flashlight.yml"
+
+# The pre-rename filename, removed from the host on deploy. Leaving it
+# behind would give Traefik two routers on the same Host() rule.
+flashlight_traefik_dynamic_filename_legacy: "nova-flashlight.yml"
+flashlight_traefik_cert_resolver: "le"
+flashlight_traefik_router_name: "flashlight"
+
+# Mesh-only gating — middleware defined in mgmt-dynamic.yml.j2.
+# Flashlight is mesh-internal only; no enrollment surface.
+flashlight_traefik_mesh_only_middleware: "mesh-only-allowlist@file"
+# Per-source browsing rate ceiling (goat-ratelimit, 50 r/s / burst 100),
+# attached per router — surface-overload-protection.md §3.1.
+# Set to "" to disable.
+flashlight_traefik_ratelimit_middleware: "goat-ratelimit@file"
+
+# Zenoh router Docker network — flashlight joins this so it can reach
+# `zenoh-router` by container name on the plain-TCP listener.
+flashlight_zenoh_network: "zenoh_default"

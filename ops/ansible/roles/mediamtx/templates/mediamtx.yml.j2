@@ -1,0 +1,109 @@
+{# MediaMTX config template — Block 35E v1.
+   See defaults/main.yml for variables and docs/design/video-fabric.md for design.
+#}
+logLevel: info
+logDestinations: [stdout]
+
+###########################################
+# API (Prometheus + admin)
+###########################################
+api: yes
+apiAddress: ":{{ mediamtx_port_api }}"
+
+metrics: yes
+metricsAddress: ":{{ mediamtx_port_metrics }}"
+
+pprof: no  # gated by per-site debugging override
+
+###########################################
+# Auth
+#
+# F-018: explicit auth users + paths config required since v1.18.0.
+# Production uses JWT-via-Block-21-Ory. Internal users path is for
+# bootstrap / local dev only and should remain disabled in production.
+###########################################
+authMethod: {{ mediamtx_auth_method }}
+{% if mediamtx_auth_method == 'jwt' %}
+authJWTJWKS: "{{ mediamtx_auth_jwt_jwks_url }}"
+authJWTClaimKey: "{{ mediamtx_auth_jwt_claim_key }}"
+{% endif %}
+{% if mediamtx_auth_method == 'internal' %}
+authInternalUsers: {{ mediamtx_auth_internal_users | default([]) | to_nice_yaml(indent=2) | indent(2) }}
+{% endif %}
+
+###########################################
+# RTSP — F-019: protocol pin to TCP on paths-we-control
+###########################################
+rtsp: yes
+rtspAddress: ":{{ mediamtx_port_rtsp }}"
+rtspsAddress: ":{{ mediamtx_port_rtsps }}"
+rtspTransports: {{ mediamtx_rtsp_transports | to_json }}
+
+###########################################
+# HLS — same shape as Spike B / §1.2 verified-good
+###########################################
+hls: yes
+hlsAddress: ":{{ mediamtx_port_hls }}"
+hlsVariant: {{ mediamtx_hls_variant }}
+hlsAlwaysRemux: {{ mediamtx_hls_always_remux | bool | ternary('yes', 'no') }}
+hlsSegmentCount: {{ mediamtx_hls_segment_count }}
+hlsSegmentDuration: {{ mediamtx_hls_segment_duration }}
+
+###########################################
+# WebRTC — D1=MediaMTX-only after Spike B PASS at 150 viewers × 5 streams
+###########################################
+webrtc: yes
+webrtcAddress: ":{{ mediamtx_port_webrtc }}"
+webrtcLocalUDPAddress: ":{{ mediamtx_port_webrtc_ice }}"
+webrtcAdditionalHosts: ["{{ mediamtx_bind_address }}"]
+
+###########################################
+# SRT — for upstream feeds that prefer SRT over RTSP (e.g., Satlink backhaul
+# from cameras we may eventually own). Per-path opt-in via the paths block.
+###########################################
+srt: yes
+srtAddress: ":{{ mediamtx_port_srt }}"
+
+###########################################
+# Recording — fMP4 segments to local NVMe, hot 7d, then offload to MinIO
+# `video-archive` bucket. Per-path opt-in.
+###########################################
+{% if mediamtx_recording_enabled %}
+record: yes
+recordPath: "{{ mediamtx_recording_path }}"
+recordFormat: {{ mediamtx_recording_format }}
+recordSegmentDuration: {{ mediamtx_recording_segment_duration }}
+recordPartDuration: {{ mediamtx_recording_part_duration }}
+recordMaxPartSize: {{ mediamtx_recording_max_part_size }}
+recordDeleteAfter: {{ mediamtx_recording_delete_after }}
+{% endif %}
+
+###########################################
+# Hooks — Block 17D integrity-ledger ingestion + Block 27 wide events
+###########################################
+{% if mediamtx_run_on_record_segment_complete %}
+runOnRecordSegmentComplete: "{{ mediamtx_run_on_record_segment_complete }}"
+{% endif %}
+{% if mediamtx_run_on_connect %}
+runOnConnect: "{{ mediamtx_run_on_connect }}"
+{% endif %}
+{% if mediamtx_run_on_disconnect %}
+runOnDisconnect: "{{ mediamtx_run_on_disconnect }}"
+{% endif %}
+
+###########################################
+# Paths — per-source-class + per-feed configs.
+# See defaults/main.yml for the inventory schema.
+###########################################
+paths:
+{% if mediamtx_paths %}
+{% for path_name, path_config in mediamtx_paths.items() %}
+  {{ path_name }}:
+{% for k, v in path_config.items() %}
+    {{ k }}: {{ v | to_json }}
+{% endfor %}
+{% endfor %}
+{% else %}
+  # No paths configured. Until per-site inventory adds entries, MediaMTX
+  # will reject all pushes (paths must be explicitly named).
+{% endif %}

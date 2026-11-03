@@ -1,0 +1,36 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Operator-fired playbook to bring up the browser-based Zenoh sandbox
+# (`sandbox.<site>.netbird.<zone>`) on a goatnet host.
+# Deploys an ISOLATED zenohd + remote_api WebSocket plugin (peers with
+# nothing) plus the zenoh-ts demo SPA. This is NOT the trial fabric — no
+# auth, no audit, no peering, disposable. Design: docs/design/zenoh-sandbox.md.
+#
+# Usage:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+#     ../scripts/ansible-preflight.sh -i inventory/hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#     -l <mgmt-host> zenoh-sandbox-deploy.yml
+#
+# Pre-flight (operator-side):
+#   1. Image present at ghcr.io/{{ ghcr_org }}/zenoh-sandbox (CI workflow
+#      .github/workflows/zenoh-sandbox-image.yml ran on main).
+#   2. Mesh DNS — `<mesh-ip>  sandbox.<site>.netbird.<zone>`
+#      is in the site's mesh-hosts; re-run mesh-coredns.yml.
+#   3. sandbox.<site>.<zone> in the master LE SAN list — `zenoh_sandbox_enabled:
+#      true` in group_vars/<site>_hosts/ then re-run traefik-acme.yml BEFORE
+#      this playbook so the cert is minted and Traefik can serve it.
+#
+# Cross-refs:
+# - docs/design/zenoh-sandbox.md
+# - docs/design/zenoh-trial-fabric.md (what this is NOT)
+# - ops/serve/zenoh-sandbox/ (web image source-of-truth)
+
+- name: zenoh-sandbox | deploy
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: zenoh-sandbox
+      when: zenoh_sandbox_enabled | default(false) | bool

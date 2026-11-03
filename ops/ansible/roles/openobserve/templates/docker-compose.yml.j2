@@ -1,0 +1,88 @@
+# Rendered by ops/ansible/roles/openobserve on {{ ansible_date_time.iso8601 }}
+# Source: ops/ansible/roles/openobserve/templates/docker-compose.yml.j2
+# Anchor: ADR 0822 — wide-event observability via OTLP + OpenObserve.
+
+services:
+  openobserve:
+    image: {{ openobserve_image }}
+    container_name: openobserve
+    restart: unless-stopped
+    user: "{{ openobserve_uid }}:{{ openobserve_gid }}"
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2G }
+        reservations: { memory: 512M }
+    environment:
+      ZO_ROOT_USER_EMAIL: "${ZO_ROOT_USER_EMAIL}"
+      ZO_ROOT_USER_PASSWORD: "${ZO_ROOT_USER_PASSWORD}"
+      ZO_DATA_DIR: "/data"
+      # Local single-node deployment. Multi-node clustering is reserved
+      # for Block 27D's per-site active-passive shape; v1 is single
+      # OpenObserve on host C.
+      ZO_LOCAL_MODE: "true"
+      # ZO_LOCAL_MODE_STORAGE selects the warm-tier backend in single-node
+      # mode. Default is `disk` — load-bearing footgun: when `disk`, every
+      # ZO_S3_* env var below is silently ignored and Parquet stays on
+      # local NVMe forever. Setting `s3` is what makes the MinIO backend
+      # actually engage. See the OpenObserve config.rs comment:
+      #   "ZO_LOCAL_MODE_STORAGE is ignored when ZO_LOCAL_MODE is set to
+      #    false" — i.e. MUST be set to s3 here. Block-27 surfaced this.
+      ZO_LOCAL_MODE_STORAGE: "s3"
+      ZO_HTTP_PORT: "{{ openobserve_http_port }}"
+      ZO_GRPC_PORT: "{{ openobserve_grpc_port }}"
+      # S3 (MinIO) backend for warm-tier Parquet rotation. Endpoint
+      # resolves via host.docker.internal because MinIO is in a separate
+      # compose project on a separate bridge network. MinIO requires
+      # path-style URLs (default in OpenObserve is path-style; the real
+      # env var to flip if needed is ZO_S3_FEATURE_FORCE_HOSTED_STYLE,
+      # not the documented-but-fictional ZO_S3_FORCE_PATH_STYLE).
+      ZO_S3_PROVIDER: "s3"
+      ZO_S3_SERVER_URL: "${ZO_S3_SERVER_URL}"
+      ZO_S3_REGION_NAME: "${ZO_S3_REGION_NAME}"
+      ZO_S3_BUCKET_NAME: "${ZO_S3_BUCKET_NAME}"
+      ZO_S3_ACCESS_KEY: "${ZO_S3_ACCESS_KEY}"
+      ZO_S3_SECRET_KEY: "${ZO_S3_SECRET_KEY}"
+      # Telemetry — OpenObserve self-instrumentation. Useful for the
+      # spike to verify the service is healthy under load.
+      ZO_TELEMETRY: "false"
+{% if operator_idp_enabled | default(false) | bool %}
+      # ============================================================
+      # Block 21H.3b — operator-IdP OIDC. ADR 0842.
+      # WARNING — UPSTREAM UNCERTAINTY: OpenObserve env-var naming for
+      # external OIDC has changed across minor versions. Names below
+      # match v0.10+ docs at time of authoring; if first bringup smoke
+      # fails with "OIDC not configured" or login redirect 404s,
+      # surface as F-NNN finding + reconcile this block AND the
+      # openobserve-oidc-client role's redirect URI together.
+      # The local-root path (ZO_ROOT_USER_*) above stays as break-glass.
+      # ============================================================
+      ZO_OPENID_FEATURE_ENABLED: "true"
+      ZO_OPENID_BASE_URL: "https://oauth2.ops.{{ site_id }}.{{ site_dns_zone }}/.well-known/openid-configuration"
+      ZO_OPENID_CLIENT_ID: "openobserve"
+      ZO_OPENID_CLIENT_SECRET: "{{ operator_idp_openobserve_client_secret }}"
+      ZO_BASE_URI: "https://openobserve.{{ site_id }}.{{ site_dns_zone }}"
+      ZO_DEFAULT_USER_ROLE: "viewer"
+{% endif %}
+    volumes:
+      - {{ openobserve_data_root }}:/data
+    ports:
+      - "{{ openobserve_http_port }}:{{ openobserve_http_port }}"
+      - "{{ openobserve_grpc_port }}:{{ openobserve_grpc_port }}"
+    # No docker-level healthcheck (F-097-class — distroless image lacks
+    # wget/curl/sh, so the wget-based healthcheck always reports
+    # "unhealthy" even when the binary is responding correctly to
+    # /healthz on its HTTP port). Prometheus does the actual health
+    # observation by scraping http://openobserve:{{ openobserve_http_port }}/metrics
+    # — see the role's alert rules for OpenObserveDown. Adding a docker-
+    # level healthcheck back would require either bind-mounting a probe
+    # binary into the container, or building a custom image with a probe
+    # baked in; neither is worth the complexity given the external probe
+    # is sufficient.
+    networks:
+      - openobserve-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  openobserve-net:
+    name: openobserve-net

@@ -1,0 +1,5 @@
+---
+- name: Restart herd connector
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ herd_connector_dir }}/docker-compose.yml up -d --force-recreate herd-connector"
+  changed_when: true

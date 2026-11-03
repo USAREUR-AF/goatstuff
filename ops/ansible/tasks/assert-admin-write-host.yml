@@ -1,0 +1,84 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# assert-admin-write-host.yml — the single-homed admin-surface guard
+# (ADR 1084 §D3).
+#
+# WHY THIS EXISTS. ADR 1084 §D3 decides that every admin-mutation surface
+# (portal, id-admin-console, netbird-dashboard, the onboarding engine) stays
+# single-homed on ONE node per goatnet: "concurrent-write safety comes from
+# topology, not middleware", so every policy/group/key/identity mutation
+# originates on one writer. That rule was written down in an ADR and echoed in
+# each role's deploy-history ledger — and enforced nowhere.
+#
+# `zagros_prod_hosts` holds TWO Orins. `portal-deploy.yml -e target=zagros_prod_hosts`
+# over a transport that reaches both would have installed a SECOND portal on
+# Orin-B with its own `registry.db` — a second slot pool, a second custody
+# registry, two writers to a store whose whole safety argument is that there is
+# one. Nothing stopped it; the intent lived only in a ledger comment. Same shape
+# for `hosts: all` plays run without `-l`.
+#
+# It is the pattern that bit this repo three times in two days: a rule written
+# in one place while the thing that enforces it lives somewhere else. This file
+# is the enforcement, and it lives in the deploy path where the mistake is made.
+#
+# WHAT IT DOES, and why each branch is that way:
+#
+#   router_role == admin_write_role  -> proceed (the declared writer).
+#   router_role != admin_write_role  -> end_host, loudly. NOT a failure: the
+#       operator's natural act is to target the group, and the correct outcome
+#       of that act is "Orin-A gets it, Orin-B does not". Failing the run for
+#       doing the normal thing is how a guard gets bypassed.
+#   router_role undefined, >1 host   -> FAIL. This is the actual hazard: an
+#       admin surface about to land on several hosts with nothing declaring
+#       which one is the writer. Fail-closed — the alternative is guessing.
+#   router_role undefined, 1 host    -> proceed. One host cannot be forked.
+#
+# PROMOTION IS RE-POINTING, NOT BYPASSING. §D3 makes promotion of the admin
+# surfaces to the second node an operator action. That is `-e admin_write_role=B`,
+# which moves the single home; there is deliberately no flag that disables the
+# guard, because "install everywhere" is never the intent this protects.
+#
+# `router_role` is an existing per-HOST inventory fact (A/B/C on every mgmt
+# host, "never in group_vars" — inventory/mgmt-hosts.ini). Reused rather than
+# duplicated into a new variable: a second spelling of "which node is the
+# writer" is the same one-fact-two-homes defect in a new place.
+#
+# USAGE — first pre_task of every admin-mutation play:
+#   pre_tasks:
+#     - name: Guard — admin surfaces are single-homed (ADR 1084 §D3)
+#       ansible.builtin.include_tasks: tasks/assert-admin-write-host.yml
+
+- name: "admin-write guard | refuse a multi-host admin deploy with no declared writer"
+  ansible.builtin.fail:
+    msg: >-
+      REFUSING: this play installs an admin-mutation surface
+      ({{ admin_write_surface | default(ansible_play_name | default('an admin surface')) }})
+      on {{ ansible_play_hosts_all | length }} hosts
+      ({{ ansible_play_hosts_all | join(', ') }}), and none of them declares
+      `router_role`, so nothing here knows which one is the single admin
+      writer. ADR 1084 §D3 requires exactly one. Set `router_role` per host in
+      the inventory (A/B/C, as inventory/mgmt-hosts.ini does for every other
+      mgmt host), or limit the run to the writer with `-l <host>`.
+  when:
+    - router_role is not defined
+    - ansible_play_hosts_all | length > 1
+
+- name: "admin-write guard | skip every host that is not the admin writer"
+  when:
+    - router_role is defined
+    - router_role != (admin_write_role | default('A'))
+  block:
+    - name: "admin-write guard | say which host is being skipped and why"
+      ansible.builtin.debug:
+        msg: >-
+          SKIPPING {{ inventory_hostname }} (router_role={{ router_role }}):
+          admin-mutation surfaces are single-homed on router_role={{ admin_write_role | default('A') }}
+          per ADR 1084 §D3. Installing this surface here would give it its own
+          state — a second registry/store beside the one the goatnet already
+          treats as authoritative. To MOVE the single home rather than duplicate
+          it, re-run with `-e admin_write_role={{ router_role }}` and re-point
+          the surface's DNS/ledger in the same change.
+
+    - name: "admin-write guard | end play for this host"
+      ansible.builtin.meta: end_host

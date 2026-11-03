@@ -1,0 +1,13 @@
+---
+# Deploy the netview reading surfaces (ADR 1128).
+#
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES ../scripts/ansible-preflight.sh \
+#     -i inventory/hosts.ini -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#     --limit zagros_hosts -e target=zagros_hosts netview-deploy.yml
+- name: netview — operator reading surfaces
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: netview
+      when: netview_enabled | default(false) | bool

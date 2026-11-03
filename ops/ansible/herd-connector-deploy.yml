@@ -1,0 +1,39 @@
+---
+# ops/ansible/herd-connector-deploy.yml — the herd gear CONNECTOR (ADR 1131).
+#
+# Runs on a peer whose node-class is NETWORK-JUMP — outbound-only, tcp 22 to
+# NETWORK plus its own management plane, never a destination of any rule.
+#
+# TARGETING IS EXPLICIT AND HAS NO DEFAULT, on purpose. Every other deploy
+# playbook here defaults its host group; this one refuses to, because the one
+# way to get this wrong is to run it against the mgmt-host group. A mgmt host is
+# INFRA and already reaches every switch on every port, so a connector there
+# would have the whole substrate's reach and the ACL would bound nothing. An
+# accidental default is exactly how that happens at 2am.
+#
+#   aws-vault exec usareur-af --no-session -- \
+#     ops/scripts/env-door.sh zagros -- \
+#     ops/scripts/ansible-preflight.sh -i inventory/mgmt-hosts-mesh.ini \
+#       -e herd_connector_target_hosts=zagros_gear_jump herd-connector-deploy.yml
+#
+# Runbook: docs/operations/herd-gear-console-bringup.md
+- name: Deploy the herd gear connector
+  hosts: "{{ herd_connector_target_hosts }}"
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: refuse to deploy the connector onto a substrate host
+      ansible.builtin.assert:
+        that:
+          - "'mgmt' not in inventory_hostname"
+          - "'thor' not in inventory_hostname"
+          - "'orin' not in inventory_hostname"
+        fail_msg: >-
+          {{ inventory_hostname }} looks like a substrate host. The connector must
+          run on a NETWORK-JUMP peer, never beside the console: a mgmt host is
+          INFRA and already reaches every switch on every port, so putting the
+          SSH egress there gives it the whole substrate's reach and no group
+          assignment can narrow it (ADR 1131). Override only if this host really
+          is the dedicated jump peer and its name misleads.
+  roles:
+    - role: herd-connector

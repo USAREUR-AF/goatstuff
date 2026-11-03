@@ -1,0 +1,349 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the panoscope role.
+# Override in group_vars or by passing -e via the playbook.
+
+# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps to this value
+# require an append to deploy-history.yml (CI checks this via
+# .github/workflows/deploy-history-check.yml). The :latest tag is no
+# longer used because it erases the rollback target.
+panoscope_image: "ghcr.io/{{ ghcr_org }}/panoscope:sha-c97091a@sha256:283664e8803f573e70af7158da67ce902b8b29455e876ec8ba7432961b47b012"  # Design-system foundation (PR #571): the shared two-tier shell and generated design canon adopted fleet-wide, the goat emblem as the brand mark on the masthead and home hero, a hamburger that collapses the masthead below 1200px, and panoscope Top/Who/Access on the full-page layout with the live COP wording preserved. Presentation-only for panoscope: no route, API, or fabric-probe change, so the ADR 1123 client-probe budget from the previous pin is unchanged. ROLLBACK: sha-426789c@sha256:051ed048ec756c4f07ec5807e0df68eac99efc33572160d3818bd87858c1d47b, the ONBOARDING-column pin this replaces (#2486). multi-arch INDEX digest.
+
+# Platform selector for the multi-arch LIST-digest pin above. Docker
+# selecting a manifest-list digest does NOT reliably pick the host arch
+# when the reference is digest-pinned — on arm64 hosts both `docker_image`
+# and `docker compose up` can resolve the list to
+# the amd64 member and crash-loop (exec format error). Passing an
+# explicit --platform to the pull AND `platform:` on the compose service
+# forces the correct member while keeping the committed pin the multi-arch
+# LIST digest (policy). Derived from gathered facts: aarch64→arm64,
+# everything else→amd64. Override only for cross-arch pulls. F-245.
+panoscope_image_platform: "linux/{{ 'arm64' if ansible_facts['architecture'] | default('x86_64') == 'aarch64' else 'amd64' }}"
+
+# --- memory backstop --------------------------------------------------------
+# A BACKSTOP, NOT A TUNED LIMIT — and sized against the PEAK, not a spot reading.
+#
+# Size the cap from the peak, not a single spot reading. Measured from cadvisor on a
+# busy mgmt host:
+#
+#   steady-state RSS ...... 19.03 GiB  (flat to 2 d.p. across 10 samples/10 min)
+#   peak usage, this ctr ... 24.58 GiB  (container_memory_max_usage_bytes,
+#                                        reached within 2h of a cold start)
+#
+# A 32g cap leaves only ~30% over a peak this container reached in its first two
+# hours of ORDINARY operation — no incident, no unusual load. That is not enough
+# margin for a memory limit: a normal spike OOM-kills it, and the resulting
+# restart loop reads as a panoscope bug rather than as a too-tight cap. 48g
+# leaves ~95% headroom over that peak and is still only ~39% of the host's
+# 122 GiB, leaving ~74 GiB for everything else.
+#
+# WHY THE FOOTPRINT IS THIS BIG, so the next person tunes the cause not the cap:
+# it is a working set, not a leak. On start panoscope replays the audit log from
+# MinIO — a fast 24h seed (panoscope_minio_window_hours) then a lazy 7-day deep
+# pass (panoscope_minio_deep_window_hours: 168) — and holds an upsert-only peer
+# table trimmed only by panoscope_peer_retention_hours (168). It reaches ~19 GiB
+# within two hours of a cold start and then oscillates. The real levers are those
+# two retention windows; both trade directly against the lens horizons operators
+# can select, so shortening them is a product decision, not a tuning knob.
+#
+# If this cap is ever reached, restart: unless-stopped recovers panoscope, which
+# beats an OOM-killer lottery across every container on a management host. Treat
+# reaching it as the signal to go and look at the retention windows.
+#
+# Empty string disables the limit (the earlier behaviour). Do not do that
+# to silence a restart loop.
+panoscope_mem_limit: "48g"
+
+# --- derived-state snapshot -----------------------------------------
+# Re-deriving the registry from a hundred thousand MinIO objects on every cold
+# start takes minutes to reconstruct a result measured in hundreds
+# of kilobytes, so panoscope writes that derived state here hourly and reloads it on
+# boot, which also narrows the deep replay to the snapshot's age.
+#
+# HOST PATH ON PURPOSE. The point is to survive a container recreate, so this
+# is a bind mount rather than a volume the recreate would discard.
+panoscope_state_dir: /var/lib/panoscope
+panoscope_state_snapshot_enabled: true
+
+# Public hostname for browser-facing access. Pattern is
+# `<surface>.<site_id>.<site_dns_zone>`, the canonical naming. The
+# role default has to carry <site_id> or it is wrong for every site
+# without an explicit override.
+panoscope_hostname: "panoscope.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# Zenoh router endpoint. Defaults to plain TCP for environments without
+# an mTLS-required router; a site with one overrides to
+# `tls/goat-zenoh-router:7447` and flips
+# `panoscope_zenoh_mtls_enabled: true` to match the router posture.
+panoscope_zenoh_endpoint: "tcp/zenoh-router:7447"
+
+# Vendor portal /api/schemas URL. Where the portal is not deployed,
+# panoscope's CompositeResolver falls through to the EmbeddedFallback-
+# Resolver (tak/cot, community, notional and the rest of its compiled floor)
+# when this 404s / refuses connection. Flip to the live portal URL
+# once goat-zenoh-portal lands.
+panoscope_portal_schemas_url: "https://portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}/api/schemas"
+
+# On-host DNS override. panoscope runs as a Docker container on
+# the mgmt-host; Docker's embedded resolver can't see mesh CoreDNS on
+# :5353, so the public portal hostname is statically pinned to the
+# mgmt-host's mesh IP. The pinned IP is mesh_ip_a by default (single-
+# host sites); override per-site for multi-host sites where VRRP
+# floats a virtual IP.
+panoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+
+# Resolver refresh + sampling tuning.
+panoscope_portal_refresh_secs: 60
+panoscope_sampling_per_topic_eps: 50
+panoscope_ws_coalesce_ms: 100
+
+# Portal API key for the decoded-stream view's protobuf-descriptor
+# fetch. Empty disables the Decoded toggle in the side panel (every
+# topic surfaces NO SCHEMA / DECODER OFF — frontend tooltip points at
+# this env var). The operator pulls the key from
+# `NOVA_PORTAL_OPERATOR_API_KEY` in their site-services envrc; per-site
+# group_vars (nova_hosts/panoscope.yml) wires it through. See
+# docs/design/panoscope.md §"Decoded stream view".
+# Self-provisioning portal key (the microscope / onboard-runner pattern).
+#
+# Wiring this per goatnet to whatever env var the site file names invites a
+# mismatch: panoscope presenting PORTAL_OPERATOR_API_KEY while the portal's set
+# renders from PORTAL_OPERATOR_API_KEYS makes every alias and envelope read
+# return 401, and the map draws raw anchors instead of names. It fails
+# silently: the refresh logs a warning and keeps the prior registry, and after a
+# restart the prior registry is empty.
+#
+# The role now owns the credential end to end. It generates one on first
+# deploy, persists it OUTSIDE the portal's control so a portal redeploy from any
+# laptop cannot drop it, and registers it in the portal's service-key store,
+# which the portal re-reads on an interval. Nothing to mint by hand, nothing to
+# remember, and no per-goatnet variable to get wrong.
+# The portal BASE url. panoscope only had panoscope_portal_schemas_url, which
+# ends in /api/schemas and cannot be used to call anything else — the F-559
+# deploy assertion silently skipped its own check because it asked for a
+# variable that did not exist. A guard that can quietly not run is the same
+# class of defect as the 401 it was written to catch.
+panoscope_portal_url: "https://portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+panoscope_portal_api_key: ""            # set in tasks from the persisted file
+panoscope_portal_key_file: /etc/goat/panoscope-portal.key
+panoscope_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
+panoscope_portal_key_id: panoscope
+# ONE-TIME seed: adopt an existing published value if there is one and no key
+# file yet, so an environment that already had a working key keeps it.
+panoscope_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_PANOSCOPE_PORTAL_KEY') | default('', true) }}"
+
+# Logging.
+panoscope_rust_log: "panoscope=info,axum=info,tower_http=info"
+
+# Zenoh-client mTLS. Disabled by default for deployments that haven't lit a
+# mTLS-required router. A site with one overrides this to true, pre-mints the
+# operator-class leaf and drops the three files below at the paths the env.j2
+# template references.
+panoscope_zenoh_mtls_enabled: false
+panoscope_cert_dir: "/etc/panoscope"
+panoscope_zenoh_client_cert: "{{ panoscope_cert_dir }}/zenoh-client-cert.pem"
+panoscope_zenoh_client_key: "{{ panoscope_cert_dir }}/zenoh-client-key.pem"
+panoscope_nova_ca_root: "{{ panoscope_cert_dir }}/{{ site_id }}-ca-root.pem"   # REQUIRED per goatnet; a shared role must not default to one
+
+# Compose state.
+panoscope_compose_dir: "/opt/panoscope"
+
+# Traefik wiring — matches the live demogame pattern:
+# file-provider config in /etc/traefik/dynamic/, container joined to
+# the `mgmt` Docker network so Traefik resolves `panoscope` by alias.
+# `le` is the Traefik static-config cert resolver (Let's Encrypt via
+# Cloudflare DNS-01); same resolver demogame / auth / dashboard /
+# oauth2 already use.
+panoscope_traefik_provider: file
+panoscope_traefik_network: "mgmt"
+panoscope_traefik_dynamic_dir: "/etc/traefik/dynamic"
+panoscope_traefik_dynamic_filename: "panoscope.yml"
+
+# The pre-rename filename, removed from the host on deploy. Leaving it
+# behind would give Traefik two routers on the same Host() rule.
+panoscope_traefik_dynamic_filename_legacy: "nova-panoscope.yml"
+panoscope_traefik_cert_resolver: "le"
+panoscope_traefik_router_name: "panoscope"
+
+# Mesh-only gating — panoscope is not part of the enrollment surface;
+# restrict to the netbird mesh CIDR via the `mesh-only-allowlist`
+# middleware defined in the mgmt route file.
+# Set to "" to disable (e.g. if the role is ever lifted to a context
+# without that middleware).
+panoscope_traefik_mesh_only_middleware: "mesh-only-allowlist@file"
+# Per-source browsing rate ceiling (goat-ratelimit, 50 r/s / burst 100),
+# attached per router — surface-overload-protection.md §3.1.
+# Set to "" to disable.
+panoscope_traefik_ratelimit_middleware: "goat-ratelimit@file"
+
+# Zenoh router Docker network — panoscope joins this so it can reach
+# `zenoh-router` by container name on the plain-TCP listener.
+panoscope_zenoh_network: "zenoh_default"
+
+# Ory OIDC client provisioning.
+panoscope_oidc_client_id: "panoscope"
+panoscope_oidc_redirect_uri: "https://{{ panoscope_hostname }}/oauth2/callback"
+# `groups` is load-bearing for ADR 1073 viewer scoping (the JWT must
+# carry the claim oauth2-proxy forwards as X-Auth-Request-Groups);
+# `offline_access` lets the sidecar silently refresh at the cookie
+# boundary (same rationale as oauth2-proxy-dashboard).
+panoscope_oidc_scope: "openid profile email groups offline_access"
+
+# Hydra admin endpoint — internal to the host. Site-Hydra pattern (port
+# 4445 loopback); not exposed via Traefik. The role provisions the
+# panoscope OAuth2 client by hitting this URL from within the host.
+panoscope_hydra_admin_url: "http://127.0.0.1:4445"
+
+# Cloudflare DNS publish — mirrors the demogame.yml pattern. When
+# `panoscope_publish_cloudflare_dns: true`, the role looks up the zone
+# id, lists existing A records, and POSTs any missing ones from
+# `panoscope_cloudflare_a_record_ips`. Auth comes from the
+# `CLOUDFLARE_API_TOKEN` env var on the operator workstation
+# (delegate_to: localhost; never on the target host).
+panoscope_publish_cloudflare_dns: false
+panoscope_cloudflare_zone: ""
+panoscope_cloudflare_a_record_ips: []
+
+# MinIO replay-on-boot ([crate::minio_replay]) — re-hydrates the in-RAM
+# peer registry from the audit-subscriber's NDJSON history at container
+# start so a `docker compose up -d` no longer wipes the prior session's
+# view. Disabled by default; per-site group_vars (e.g.
+# group_vars/nova_hosts/panoscope.yml) override to true + supply the
+# endpoint + credentials. See docs/design/panoscope.md §"MinIO replay
+# on boot".
+panoscope_minio_replay_enabled: false
+panoscope_minio_endpoint: ""
+panoscope_minio_region: "us-east-1"
+panoscope_minio_bucket: "audit-integrity"
+# Per-site key prefix in the audit-integrity bucket. MUST match the
+# audit-subscriber's --audit-subscriber-id (it writes
+# audit-integrity/<id>/<YYYY>/<MM>/<DD>/<HH>/...ndjson). Derived from the
+# per-site audit_subscriber_id SoT so a forked goatnet can't read another's
+# prefix and see nothing; the fallback is legacy back-compat.
+panoscope_minio_key_prefix: "{{ audit_subscriber_id | default('nova-a') }}/"
+panoscope_minio_access_key: ""
+panoscope_minio_secret_key: ""
+# Replay window. Retention is commonly 7d (168h); default 24h to keep boot
+# time short — operators bump for first-restart-after-onboarding-storm.
+panoscope_minio_window_hours: 24
+# Hard ceiling on object fetches per replay (defends against runaway
+# boot time). audit-subscriber writes ~12 objs/min so 20K covers ~24h.
+panoscope_minio_max_objects: 20000
+# Deep last-seen backfill window. A SECOND replay pass runs lazily after the
+# fast boot seed (panoscope_minio_window_hours) so the deeper lens horizons
+# (3d/7d) fill in soon after a cold start without delaying load-up. Only runs
+# when deeper than the boot window. 7d = the widest selectable lens window.
+panoscope_minio_deep_window_hours: 168
+# In-RAM peer evictor retention (hours). The peer table never shrinks on its
+# own (upsert-only), so a periodic task drops peers unseen this long. 7d
+# default; keep >= panoscope_minio_deep_window_hours so eviction never races
+# the lens. Independent of MinIO replay.
+panoscope_peer_retention_hours: 168
+# Vendor prefixes to skip during replay. Audit retention is Object-Lock
+# COMPLIANCE-protected (ADR 0811) so events can't be deleted from MinIO,
+# but vendors retired from the portal still have events rolling in the
+# 7d audit window — without this filter they resurface as ghost peers
+# on the COP after every panoscope restart. List vendor names exactly
+# as they appear in the audit event `vendor` field (the first key_expr
+# segment); strict equality match, not a wildcard.
+panoscope_minio_vendor_blocklist: []
+
+# Topic-prefix blocklist — panoscope drops any sample whose key_expr
+# starts with one of these strings before it reaches the topology /
+# flow / sample ring. Filters BOTH the live data_tail subscriber AND
+# the minio_replay audit walker (single env var, both paths). Use this
+# to hide a noisy publisher from the Data-COP without revoking its
+# Zenoh write ACL: the publisher keeps publishing to the router, the
+# audit-subscriber still records it, other subscribers still receive
+# its samples — panoscope just silences it in its own view. Prefix
+# match (no wildcards). See docs/design/panoscope.md §"Topic blocklist".
+panoscope_topic_blocklist: []
+
+# Block 94 cross-surface deep-link contract — sibling-surface base URLs.
+# Each is rendered into a per-target outbound button in panoscope's side
+# panel (`diagnose ↗` → stethoscope, `tail ↗` → flashlight, `schema ↗`
+# → portal). Empty string = no sibling at this site = no button.
+# Hostname pattern is `<surface>.<site_id>.<site_dns_zone>`, the canonical
+# naming. `<surface>.<site_dns_zone>` without the site segment doesn't resolve.
+# See docs/design/zenoh-surface-deep-links.md.
+panoscope_sibling_stethoscope_url: "https://stethoscope.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+panoscope_sibling_flashlight_url: "https://flashlight.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+# Microscope deep-link (ADR 1090) — renders `examine in microscope ↗` on the
+# /who roster detail (admin surface). Empty by default: microscope is an
+# admin-gated service that not every goatnet runs; set it per-goatnet where
+# microscope is deployed. See docs/design/microscope.md.
+panoscope_sibling_microscope_url: ""
+# Portal URL — leave empty by default to inherit the value derived
+# from `panoscope_portal_schemas_url` (stripping `/api/schemas`).
+# Override only when the portal origin differs from the schemas origin.
+panoscope_sibling_portal_url: ""
+
+# ---------------------------------------------------------------------------
+# Per-viewer RBAC (ADR 1073, docs/design/rbac-adherence.md §3.3).
+#
+# Two default-off switches, flipped together per goatnet:
+#   1. panoscope_oauth2_proxy_enabled — deploys the oauth2-proxy-panoscope
+#      sidecar (any-authenticated at the door; injects
+#      X-Auth-Request-Email/-Groups) and points the Traefik route at it.
+#      Finally wires the Hydra OIDC client this role has always
+#      provisioned.
+#   2. panoscope_rbac_mode: enforce — the app derives a viewer scope from
+#      X-Auth-Request-Groups and filters everything it serves. Fail-closed:
+#      missing/unknown groups ⇒ Observer floor (infra + ops health only).
+#
+# Flip (2) only with (1) live — enforce mode without the sidecar means no
+# headers, so every viewer lands on the Observer floor (fail-closed, not
+# broken, but probably not what you meant).
+panoscope_rbac_mode: "off"
+# ADR 1074 data-access evaluation (SoT: ops/permissions/data-access-roles.yaml).
+# full_groups = the platform groups whose declared cross-axis implication
+# is data.view.all at Full strength — must equal the matrix's panoscope
+# `read` grants (CI parity-checked; change the SoT/matrix first).
+# ADMINS only: the ADR 1074 second pass narrowed IAM-ADMIN to matrix
+# `scoped` (identity administration ≠ standing all-mission-data view).
+# All other rights ride the `data.*` grammar values in the claim itself —
+# no per-tier group lists to drift.
+panoscope_rbac_full_groups: "PLATFORM-ADMIN"
+# Default-grant data.view.notional to every authenticated viewer (the
+# SoT's default implication). Per-goatnet; off ⇒ notional requires an
+# explicit data.view.notional grant.
+panoscope_rbac_notional_default: true
+# Platform groups admitted to the /who identity roster (the web-native
+# goat-who page). Identity-ADMINISTRATION axis, independent of the
+# data-access grammar: a data.view.all holder does NOT see the roster.
+# Default = the matrix's identity-administration grantors (id-admin-console
+# admin row: ADMINS + IAM-ADMIN); override per-goatnet only alongside the
+# matrix.
+panoscope_rbac_who_groups: "PLATFORM-ADMIN,IAM-ADMIN"
+
+# ADR 1074 B1 — participant→org resolver enrichment. When true, a Scoped
+# participant's viewer scope is widened by the registry-derived data-roles
+# fetched live from the portal (GET /api/access/data-roles), so a data-plane
+# participant sees their own org/producer namespaces without those grants
+# having to ride the Ory groups claim. OFF by default (claim-only scoping).
+# Precondition to enable: panoscope_portal_api_key must be lookup-authorized
+# (operator token in PORTAL_OPERATOR_API_KEYS, or the console lookup secret);
+# only meaningful under panoscope_rbac_mode: enforce.
+panoscope_participant_resolver: false
+
+# oauth2-proxy sidecar (authN + identity headers). Same upstream image
+# discipline as oauth2-proxy-dashboard (digest-pinned, ADR 0859).
+panoscope_oauth2_proxy_enabled: false
+panoscope_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.6.0@sha256:dcb6ff8dd21bf3058f6a22c6fa385fa5b897a9cd3914c88a2cc2bb0a85f8065d"
+# Secrets are env-sourced per site (30-site-services.envrc analogs);
+# asserted non-empty when the sidecar is enabled.
+panoscope_oauth2_proxy_client_secret: ""
+panoscope_oauth2_proxy_cookie_secret: ""
+# Issuer trailing slash NOT optional (Hydra emits it; string-exact compare).
+panoscope_oauth2_proxy_oidc_issuer_url: "https://oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}/"
+# On-host DNS override for the OIDC issuer.
+panoscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+
+# Door policy, declared rather than implied. "" = any authenticated identity
+# may reach the surface; authorization lives INSIDE the app. Stated as a
+# variable so ops/ci/check-fence-parity.py can hold it against the canonical
+# matrix (ops/permissions/group-permissions.yml, ADR 1073). A knob that is
+# simply absent reads as "nobody decided", and a surface can then reach
+# production serving HTTP 200 to any caller.
+panoscope_oauth2_proxy_allowed_groups: ""

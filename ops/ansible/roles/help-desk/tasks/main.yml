@@ -1,0 +1,33 @@
+---
+# help-desk role — render the Traefik route for the help desk's mesh name.
+# One file, picked up by Traefik's file provider without a restart. The
+# oauth2-proxy door itself is deployed by authenticated-doors.yml (first play).
+
+- name: help-desk | refuse to render a route with no upstream
+  ansible.builtin.assert:
+    that:
+      - help_desk_upstream_host | length > 0
+    fail_msg: >-
+      help_desk_upstream_host is empty for {{ site_id }} — state the help desk
+      peer's mesh IP in this goatnet's group_vars (ADR 1176) before rendering.
+
+- name: help-desk | render Traefik dynamic config (mesh name -> door or upstream)
+  ansible.builtin.template:
+    src: traefik-help-desk.yml.j2
+    dest: "{{ help_desk_traefik_dynamic_dir }}/{{ help_desk_traefik_dynamic_filename }}"
+    mode: "0644"
+  become: true
+
+- name: help-desk | confirm the route file is present
+  ansible.builtin.stat:
+    path: "{{ help_desk_traefik_dynamic_dir }}/{{ help_desk_traefik_dynamic_filename }}"
+  register: help_desk_route_stat
+  become: true
+
+- name: help-desk | assert route rendered
+  ansible.builtin.assert:
+    that: help_desk_route_stat.stat.exists
+    success_msg: >-
+      help desk route rendered: {{ help_desk_hostname }} ->
+      {{ 'oauth2-proxy-help (authenticated door)' if (help_oauth2_proxy_enabled | default(false) | bool) else help_desk_upstream_host ~ ':' ~ help_desk_upstream_port ~ ' (mesh-only, no door)' }}
+    fail_msg: "help desk route file missing after render"

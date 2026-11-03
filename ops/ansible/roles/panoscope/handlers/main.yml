@@ -1,0 +1,8 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+- name: panoscope | recreate container
+  community.docker.docker_compose_v2:
+    project_src: "{{ panoscope_compose_dir }}"
+    state: restarted
+  # Traefik picks up new docker-label routes automatically via the
+  # docker provider — no SIGHUP needed.

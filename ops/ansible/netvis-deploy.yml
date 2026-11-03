@@ -1,0 +1,34 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy netvis — mesh reachability at five levels (site → class → group →
+# machines → one pair) — to a mgmt host. Target group is passed per-goatnet:
+#
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES aws-vault exec <profile> --no-session -- \
+#     ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts.ini \
+#     -i inventory/mgmt-hosts-mesh.ini netvis-deploy.yml -e target=<site>_hosts
+#
+# Its own service, its own compose project, its own fence. See
+# docs/design/netvis.md for why it is not a page inside microscope.
+- name: netvis
+  hosts: "{{ target | mandatory }}"
+  become: true
+  pre_tasks:
+    # netvis was the only single-homed inspection surface with NO guard at all.
+    # Eight plays (portal, id-admin-console, microscope, fabric-crawler,
+    # audit-subscriber, dashboard, onboard-runner, onboard-intake) include this
+    # task; panoscope enforces the same rule its own way via
+    # `panoscope_active_router_only`. netvis had neither, so
+    # `netvis-deploy.yml -e target=<group>` over a transport reaching
+    # two hosts would install a second netvis on the standby — its own
+    # fence, its own DNS row, its own OIDC client, beside the authoritative one.
+    - name: "Guard — admin surfaces are single-homed (ADR 1084 §D3)"
+      ansible.builtin.include_tasks: tasks/assert-admin-write-host.yml
+  roles:
+    # The OAuth2 client MUST be registered before the fence that presents it.
+    # microscope learned this the hard way: it deployed for three weeks with a
+    # client_id nothing in the tree ever created, working on one goatnet only
+    # because someone had made it by hand. netvis ships with the registration.
+    - netvis-oidc-client
+    - netvis

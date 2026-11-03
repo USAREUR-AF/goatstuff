@@ -1,0 +1,21 @@
+{# Docker Compose for MediaMTX — Block 35E v1
+   Pinned to image digest verified-good across §1 substrate + Spike A entry-subset
+   + Spike B 150-viewer PASS.
+#}
+services:
+  mediamtx:
+    image: "{{ mediamtx_image }}@{{ mediamtx_image_digest }}"
+    container_name: "{{ mediamtx_container_name }}"
+    restart: "{{ mediamtx_restart_policy }}"
+    network_mode: host    # bind directly to mediamtx_bind_address listed in mediamtx.yml
+    volumes:
+      - "{{ mediamtx_config_path }}:/mediamtx.yml:ro"
+      - "{{ mediamtx_recording_dir }}:/recordings"
+    environment:
+      MTX_WEBRTCADDITIONALHOSTS: "{{ mediamtx_bind_address }}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:{{ mediamtx_port_api }}/v3/paths/list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

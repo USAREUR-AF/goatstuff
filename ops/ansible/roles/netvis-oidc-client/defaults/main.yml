@@ -1,0 +1,49 @@
+---
+# Defaults for the `netvis-oidc-client` role.
+#
+# Provisions the OAuth2 client netvis's admin fence consumes, at the site
+# Hydra. Mirrors `microscope-oidc-client` exactly; see that role for the shape
+# rationale. Codifying this is non-optional: a fence whose client is registered
+# by hand on one goatnet stands up on another as a healthy container behind a
+# Hydra that has never heard of it, ending at `invalid_client` for every operator.
+#
+# netvis ships with the registration from its first deploy, so it never has
+# that per-memory window.
+#
+# Required at deploy time:
+#   - netvis_oauth2_proxy_client_secret  (32+ chars; per-goatnet,
+#     env-sourced — already declared in each goatnet's group_vars)
+#   - site_id, site_dns_zone                 (per-site identity)
+
+# The client_id is NOT independently configurable here. It must equal
+# `netvis_oauth2_proxy_client_id` from roles/netvis/defaults/main.yml,
+# which is what oauth2-proxy actually presents to Hydra; two knobs that must
+# agree is the drift this whole role exists to remove. Referencing the
+# netvis role's variable directly keeps one home for the fact.
+netvis_oidc_client_id: "{{ netvis_oauth2_proxy_client_id | default('netvis') }}"
+netvis_oidc_client_name: "netvis ({{ site_id }})"
+
+# Env-sourced secret, resolved from the same group_vars key the netvis
+# role templates into the oauth2-proxy env file. ONE value feeds both sides of
+# the handshake — the client Hydra stores and the secret the proxy presents.
+netvis_oidc_client_secret: "{{ netvis_oauth2_proxy_client_secret }}"
+
+# Issuer + redirect built from the site Hydra, never a literal prefix: a
+# hard-coded prefix produces a wrong FQDN on every other site.
+netvis_oidc_issuer_url: "https://oauth2.{{ site_id }}.{{ site_dns_zone }}"
+netvis_oidc_redirect_uri: "https://netvis.{{ site_id }}.{{ site_dns_zone }}/oauth2/callback"
+
+# Same scope baseline as isitup/grafana/forgejo. `groups` matters more here
+# than on those surfaces: netvis is authz-aware, and the group claim it
+# carries is what NETVIS_RBAC_WHO_GROUPS gates on (ADR 1090).
+# `offline_access` lets oauth2-proxy refresh silently at the cookie boundary.
+netvis_oidc_scopes:
+  - openid
+  - profile
+  - email
+  - groups
+  - offline_access
+
+# Hydra admin endpoint. Loopback — this role runs against the same mgmt host
+# that hosts Hydra.
+netvis_oidc_hydra_admin: "http://127.0.0.1:{{ hydra_admin_host_port | default(4445) }}"

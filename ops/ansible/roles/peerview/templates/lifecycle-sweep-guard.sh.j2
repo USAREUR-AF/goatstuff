@@ -1,0 +1,90 @@
+#!/bin/bash
+# {{ ansible_managed }}
+#
+# ADR 1136 dormancy roster refresh. REPORT ONLY — never passes --apply or --lane.
+#
+# Why a wrapper and not just the script in the unit: the guard-scheduling
+# contract (docs/design/live-state-guard-scheduling.md §4) asks for an atomic
+# roster write, a journal-readable report, and a metric stamped only after every
+# read succeeded. Those are concerns of the SCHEDULED job, not of the operator
+# tool — `lifecycle-sweep.py` is run by hand with lanes and must not grow them.
+set -uo pipefail
+
+SWEEP="{{ peerview_bin_dir }}/lifecycle-sweep.py"
+ROSTER="{{ peerview_state_dir }}/lifecycle-sweep.json"
+REPORT="{{ lifecycle_sweep_report_dir }}/last-run.txt"
+TEXTFILE_DIR="{{ lifecycle_sweep_textfile_dir }}"
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+
+# Exit 2 from the sweep means A SOURCE COULD NOT BE READ — no token, or the
+# management API did not answer. That says nothing about the world and must
+# never be recorded as clean, so the roster, the report and the metric are all
+# left exactly as the last good run wrote them.
+# Status captured directly, NOT via `if ! ...`: inside that form `$?` is the
+# negation's status — 0 when the sweep failed — which would report an unreadable
+# source as a clean run. That is the one thing exit 2 exists to prevent.
+"$SWEEP" --json >"$tmp" 2>/tmp/lifecycle-sweep.err
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "lifecycle-sweep FAILED (exit $rc) — roster and metrics left untouched." >&2
+  sed -n '1,20p' /tmp/lifecycle-sweep.err >&2 || true
+  exit "$rc"
+fi
+if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$tmp"; then
+  echo "lifecycle-sweep produced unparseable JSON — roster left untouched." >&2
+  exit 2
+fi
+
+install -m 0600 -o root -g root "$tmp" "$ROSTER"
+
+# Journal echo, so `journalctl -u lifecycle-sweep` is self-sufficient and an
+# operator does not have to go read a JSON file to learn whether it is worth it.
+python3 - "$ROSTER" <<'PY' | tee "$REPORT"
+import json, sys, time
+d = json.load(open(sys.argv[1]))
+lanes = [("quarantine", "dormant, eligible for PROBATION"),
+         ("revoke", "dormant past the revoke threshold"),
+         ("purge", "key issued, never redeemed, past grace"),
+         ("unageable", "key name carries no date — NEVER purged, decide by hand"),
+         ("refused", "refused by the group-choice rule, or INCONSISTENT (hold group + another group, connected or not) — read the roster for groups")]
+print("ADR 1136 lifecycle roster — generated %s" % d.get("generated", "?"))
+print("thresholds: %s" % json.dumps(d.get("thresholds", {})))
+for k, why in lanes:
+    rows = d.get(k) or []
+    live = len([r for r in rows if r.get("valid")]) if k in ("purge", "unageable") else None
+    tail = "" if live is None else "  (%d still valid)" % live
+    print("  %-11s %4d   %s%s" % (k.upper(), len(rows), why, tail))
+hr = d.get("hold_records")
+if hr and hr.get("error"):
+    print("  HOLD RECORDS  ?   UNREADABLE: %s" % hr["error"])
+elif hr:
+    print("  HOLD RECORDS %4d   on file; %d bad line(s) skipped; %d orphan(s); %d release(s) in progress"
+          % (hr.get("records") or 0, hr.get("bad_lines_skipped") or 0,
+             len(hr.get("orphans") or []), hr.get("releasing") or 0))
+print("REPORT ONLY — nothing above was acted on. Lanes are applied by an "
+      "operator with --lane, never by this timer.")
+PY
+
+# Metrics LAST, and only now that every read succeeded. Empty dir = publish
+# nothing, which is deliberate: a metric written where no scraper looks is the
+# F-335 fault. Fill this in when a scraper exists, not because the directory does.
+if [ -n "$TEXTFILE_DIR" ] && [ -d "$TEXTFILE_DIR" ]; then
+  m="$TEXTFILE_DIR/lifecycle_sweep.prom"
+  python3 - "$ROSTER" >"$m.tmp" <<'PY'
+import json, sys, time
+d = json.load(open(sys.argv[1]))
+def n(k): return len(d.get(k) or [])
+print("# HELP lifecycle_sweep_last_run_timestamp_seconds Unix time of the last successful ADR 1136 sweep.")
+print("# TYPE lifecycle_sweep_last_run_timestamp_seconds gauge")
+print("lifecycle_sweep_last_run_timestamp_seconds %d" % int(time.time()))
+print("# HELP lifecycle_sweep_candidates Peers/keys a lane WOULD act on. Standing debt, not an alarm.")
+print("# TYPE lifecycle_sweep_candidates gauge")
+for lane in ("quarantine", "revoke", "purge", "unageable", "refused"):
+    print('lifecycle_sweep_candidates{lane="%s"} %d' % (lane, n(lane)))
+print("# HELP lifecycle_sweep_unageable_valid_keys Unageable keys still valid — each is a hand decision.")
+print("# TYPE lifecycle_sweep_unageable_valid_keys gauge")
+print("lifecycle_sweep_unageable_valid_keys %d"
+      % len([r for r in (d.get("unageable") or []) if r.get("valid")]))
+PY
+  mv "$m.tmp" "$m"
+fi

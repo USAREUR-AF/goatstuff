@@ -1,0 +1,212 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# flashlight role — deploys the flashlight container behind the
+# existing Traefik (Let's Encrypt cert resolver `le`) on a
+# goatnet host. Matches the panoscope shape exactly:
+# file-provider Traefik config, container joined to `mgmt` (Traefik
+# network) + `zenoh_default` (so it can reach the Zenoh router by
+# container name). Mesh-only allowlist is the whole auth surface.
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. If flashlight_zenoh_mtls_enabled, pre-mint operator-class Zenoh client
+#      leaf + key per the cert-issuance runbook and drop them at the
+#      `flashlight_zenoh_client_*` paths (plus the site CA root
+#      at `flashlight_nova_ca_root`).
+#
+# Idempotent — re-running on a healthy host is a no-op beyond a
+# `docker compose pull` when the image tag changes.
+
+- name: flashlight | pre-flight assert mTLS cert files present (when enabled)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ flashlight_zenoh_client_cert }}"
+    - "{{ flashlight_zenoh_client_key }}"
+    - "{{ flashlight_nova_ca_root }}"
+  register: flashlight_cert_stats
+  when: flashlight_zenoh_mtls_enabled | bool
+
+- name: flashlight | pre-flight fail if any mTLS cert is missing
+  ansible.builtin.fail:
+    msg: >-
+      flashlight: required cert file missing at {{ item.item }}.
+      Mint it per docs/operations/nova-cert-issuance.md before
+      running this role, or set flashlight_zenoh_mtls_enabled: false
+      (only valid for a plain-TCP Zenoh router; nova's router is
+      mTLS-required, so disabling produces a broken deploy).
+  loop: "{{ flashlight_cert_stats.results | default([]) }}"
+  when:
+    - flashlight_zenoh_mtls_enabled | bool
+    - item is not skipped
+    - not (item.stat.exists | default(false))
+  loop_control:
+    label: "{{ item.item | default('?') }}"
+
+# Normalize mode on the cert files so the non-root container user
+# (Chainguard distroless `nonroot`, uid 65532) can read them.
+# Without this, Zenoh's TLS layer silently fails to load the key file
+# with permission-denied → no wire connection → SSE clients see
+# 503 "live subscription not running". Same fix panoscope uses.
+# --- portal service key (self-provisioning; the microscope pattern) --------
+# A group_var naming a variable the portal never accepted yields a 401 loop.
+# No portal restart — the store is re-read on an interval.
+- name: flashlight | portal key — key dir
+  ansible.builtin.file:
+    path: "{{ flashlight_portal_key_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: flashlight | portal key — check for a persisted key
+  ansible.builtin.stat:
+    path: "{{ flashlight_portal_key_file }}"
+  register: flashlight_keyfile_stat
+  become: true
+
+- name: flashlight | portal key — generate one (first deploy only, when no seed given)
+  ansible.builtin.command: openssl rand -base64 24
+  register: flashlight_genkey
+  changed_when: true
+  when:
+    - not flashlight_keyfile_stat.stat.exists
+    - flashlight_portal_key_seed | length == 0
+  become: true
+
+- name: flashlight | portal key — persist it
+  ansible.builtin.copy:
+    content: "{{ (flashlight_portal_key_seed if (flashlight_portal_key_seed | length > 0) else flashlight_genkey.stdout) | trim }}"
+    dest: "{{ flashlight_portal_key_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not flashlight_keyfile_stat.stat.exists
+  no_log: true
+  become: true
+
+- name: flashlight | portal key — read it back
+  ansible.builtin.slurp:
+    src: "{{ flashlight_portal_key_file }}"
+  register: flashlight_keyfile
+  no_log: true
+  become: true
+
+- name: flashlight | portal key — set the fact the template renders
+  ansible.builtin.set_fact:
+    flashlight_portal_api_key: "{{ flashlight_keyfile.content | b64decode | trim }}"
+  no_log: true
+
+- name: flashlight | portal key — register it in the portal service-key store
+  ansible.builtin.copy:
+    content: "{{ flashlight_portal_key_id }}:{{ flashlight_portal_api_key }}\n"
+    dest: "{{ flashlight_portal_keystore_dir }}/{{ flashlight_portal_key_id }}.key"
+    owner: "65532"
+    group: "65532"
+    mode: "0640"
+  register: flashlight_keystore_write
+  no_log: true
+  become: true
+  failed_when: false
+  when: flashlight_portal_keystore_dir | length > 0
+
+
+# F-559: prove the credential before calling the deploy a success. A surface
+# that cannot read the portal starts anyway, looks healthy, and serves nothing
+# useful — which is exactly how this went unnoticed for weeks on three
+# surfaces. Skipped where no portal URL is configured (that adapter is then
+# deliberately off, not broken).
+- name: flashlight | portal key — prove the portal accepts it
+  ansible.builtin.include_tasks: tasks/assert-portal-key-accepted.yml
+  vars:
+    portal_key_assert_service: flashlight
+    portal_key_assert_url: "{{ flashlight_portal_url }}"
+    portal_key_assert_key: "{{ flashlight_portal_api_key }}"
+  when: flashlight_portal_api_key | default('') | length > 0
+- name: flashlight | normalize mTLS cert + key + CA mode so container nonroot user can read
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - "{{ flashlight_zenoh_client_cert }}"
+    - "{{ flashlight_zenoh_client_key }}"
+    - "{{ flashlight_nova_ca_root }}"
+  when: flashlight_zenoh_mtls_enabled | bool
+  become: true
+  notify: flashlight | recreate container
+
+- name: flashlight | create compose dir
+  ansible.builtin.file:
+    path: "{{ flashlight_compose_dir }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: flashlight | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ flashlight_compose_dir }}/docker-compose.yml"
+    mode: "0644"
+  become: true
+  notify: flashlight | recreate container
+
+- name: flashlight | render .env for compose
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ flashlight_compose_dir }}/.env"
+    mode: "0600"
+  become: true
+  notify: flashlight | recreate container
+
+- name: flashlight | render Traefik dynamic config (file provider)
+  ansible.builtin.template:
+    src: traefik-flashlight.yml.j2
+    dest: "{{ flashlight_traefik_dynamic_dir }}/{{ flashlight_traefik_dynamic_filename }}"
+    mode: "0644"
+  become: true
+  # Traefik picks up file-provider changes automatically — no SIGHUP needed.
+
+# The route filename changed. Traefik's file provider reads
+# the whole directory, so an orphaned old file is not inert: it declares a
+# second router on the same Host() rule. Guarded on the two names differing so
+# this is a no-op once the rename is old.
+- name: flashlight | remove pre-rename Traefik route file
+  ansible.builtin.file:
+    path: "{{ flashlight_traefik_dynamic_dir }}/{{ flashlight_traefik_dynamic_filename_legacy }}"
+    state: absent
+  become: true
+  when:
+    - flashlight_traefik_dynamic_filename_legacy | default('') | length > 0
+    - flashlight_traefik_dynamic_filename_legacy != flashlight_traefik_dynamic_filename
+
+- name: flashlight | pull image
+  community.docker.docker_image:
+    name: "{{ flashlight_image }}"
+    source: pull
+    force_source: true
+  become: true
+
+- name: flashlight | bring up via docker compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ flashlight_compose_dir }}"
+    state: present
+    pull: missing
+  become: true
+
+# /healthz lives inside the binary. Chainguard glibc-dynamic has no
+# shell, so we only verify the container is Running here; the
+# operator runbook does the end-to-end curl.
+- name: flashlight | wait for container to be Running
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{" }}.State.Running{{ "}}" }}' flashlight
+  register: flashlight_running
+  retries: 30
+  delay: 2
+  until: flashlight_running.stdout | trim == 'true'
+  changed_when: false
+  become: true
+# Deploy ledger now written by the shared `rollback-ledger`
+# meta-dependency (meta/main.yml) per ADR 1060 — no per-role task here.

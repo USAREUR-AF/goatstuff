@@ -1,0 +1,98 @@
+# {{ ansible_managed }}
+#
+# Synthetic publishers for a Zenoh trial fabric. Rendered by
+# ops/ansible/roles/zenoh-synth-vendors/. One service per `synth_vendors`
+# entry; each container is a Zenoh client peer with its own ZID, holding
+# the per-vendor leaf cert (when mTLS) and publishing under the vendor's
+# allowlisted prefix.
+#
+# Network: joins {{ synth_vendor_zenoh_network }} (the zenoh-router's
+# docker network) so endpoint resolution against `zenoh-router` works.
+
+services:
+{% for v in synth_vendors %}
+  {{ v.id }}:
+    image: {{ synth_vendor_image }}
+    container_name: synth-{{ v.id }}
+    # Memory ceiling: 4x the 7-day peak working set, floor 512M. An unbounded
+    # leak on a shared host takes the identity plane down with it.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    restart: unless-stopped
+{% if synth_vendor_router_extra_host %}
+    # Map the router's cert-SAN name to a reachable address. Needed when the
+    # container name (<zenoh_stack>-router) is NOT in the router's serving-cert
+    # SAN, so tls verify_name_on_connect would reject it; dial the SAN name and
+    # resolve it here instead.
+    extra_hosts:
+      - "{{ synth_vendor_router_extra_host }}"
+{% endif %}
+    networks:
+      - zenoh
+    environment:
+      SYNTH_VENDOR_PERSONALITY: "{{ v.personality }}"
+      SYNTH_VENDOR_ENDPOINT: "{{ synth_vendor_zenoh_endpoint }}"
+{# Per-uuid slot-pool goatnets: rewrite the topic's leading
+   `notional/` (or whatever first segment the config carries) to the
+   vendor's slot anchor <uuid> = sha256(salt:slot_idx)[:32]. This is
+   the SAME formula the router ACL + storage use
+   (goat-zenoh/templates/config.json5.j2), so the published key
+   lands inside the slot's write rule. Makes the live uuid topics
+   reproducible from committed config + slot_idx (they were portal-
+   generated before, diverging from the notional/ committed config).
+   Per-vendor goatnets (no slot_idx) publish the topic verbatim.
+   NB: keep this comment opener at column 0 — an indented block comment
+   leaks its leading spaces (trim_blocks eats the trailing newline after
+   the comment), pushing SYNTH_VENDOR_TOPIC to a 12-space indent and
+   breaking docker-compose YAML parsing. And do not write the literal comment-close sequence inside
+   the comment body — it closes the comment early. #}
+{# `release_set` publishes this peer's feed into a RELEASE LANE
+   instead of its own single-owner root: release/<set>/<anchor>/<rest>. The
+   anchor stays IN the path on purpose — a lane is cross-org by definition, so a
+   subscriber must still be able to see which producer a sample came from, which
+   a bare release/<set>/<topic> would throw away. The router must also carry the
+   matching zenoh_release_writers grant for this anchor or the publish is denied
+   SILENTLY, which is why the two lists are documented as moving
+   together in group_vars/<site>_hosts/synth-vendors.yml. #}
+{% set _anchor = ((zenoh_slot_pool_salt ~ ':' ~ v.slot_idx) | hash('sha256'))[:32] if (v.slot_idx is defined and (zenoh_identity_model | default('')) == 'per-uuid-slot-pool') else '' %}
+      SYNTH_VENDOR_TOPIC: "{{ ('release/' ~ v.release_set ~ '/' ~ _anchor ~ '/' ~ (v.topic.split('/')[1:] | join('/'))) if (_anchor and v.release_set is defined) else ((_anchor ~ '/' ~ (v.topic.split('/')[1:] | join('/'))) if _anchor else v.topic) }}"
+      SYNTH_VENDOR_RATE_HZ: "{{ v.rate_hz }}"
+      SYNTH_VENDOR_SUBSCRIBE_KEY: "{{ v.subscribe_key | default('') }}"
+      SYNTH_VENDOR_PEER_ID: "{{ v.peer_id }}"
+      # Pure-sink mode — added by commit 7d6d0d48 in the synth-vendor binary
+      # (`--no-publish` / SYNTH_VENDOR_NO_PUBLISH). Containers with this set to
+      # "true" only subscribe and never publish; the binary skips
+      # `declare_publisher` and the tick loop. Pure sinks (e.g. a display, an
+      # archive, an audit log) use this flag.
+      SYNTH_VENDOR_NO_PUBLISH: "{{ v.no_publish | default(false) | string | lower }}"
+      # Per-peer panoscope variety (added). The synth-vendor binary
+      # publishes a schema-decl every 30s on attest/schema/<vendor>/<id>/v1
+      # carrying display_name + site + role_class + format so panoscope can
+      # show per-peer node shapes + the side-panel site / role-class fields.
+      # Without these, every peer falls back to Role::Source (orange circle)
+      # and the side panel labels it with the cert-bound vendor (uniform
+      # "notional" across all 22 peers post-namespace-collapse).
+      SYNTH_VENDOR_DISPLAY_NAME: "{{ v.id }}"
+      SYNTH_VENDOR_LOGICAL_VENDOR: "{{ v.logical_vendor | default(v.vendor) }}"
+      SYNTH_VENDOR_ROLE_CLASS: "{{ v.role_class | default('') }}"
+      SYNTH_VENDOR_SITE: "{{ v.site | default('') }}"
+      RUST_LOG: "{{ synth_vendor_rust_log }}"
+{% if synth_vendor_zenoh_endpoint.startswith('tls/') %}
+      SYNTH_VENDOR_CERT: "/certs/{{ v.vendor }}-cert.pem"
+      SYNTH_VENDOR_KEY: "/certs/{{ v.vendor }}-key.pem"
+      SYNTH_VENDOR_ROOT_CA: "/ca/ca-root.pem"
+    volumes:
+      # Per-vendor leaf cert + key (vendor-prefixed filenames from portal mint).
+      - "{{ synth_vendor_cert_dir }}/{{ v.vendor }}:/certs:ro"
+      # Shared trial-fabric CA root — separate mount so it doesn't collide
+      # with the read-only /certs/ bind above.
+      - "{{ synth_vendor_ca_root_src }}:/ca/ca-root.pem:ro"
+{% endif %}
+{% endfor %}
+
+networks:
+  zenoh:
+    name: {{ synth_vendor_zenoh_network }}
+    external: true

@@ -1,0 +1,18 @@
+---
+# Parse-only fixture for the herd-oidc-client role.
+
+- name: herd-oidc-client | parse-only fixture
+  hosts: localhost
+  gather_facts: false
+  vars:
+    site_id: test-site
+    site_dns_zone: example.invalid
+    herd_oidc_client_secret: "test-oidc-client-secret-32-chars-aaaaaa"
+  tasks:
+    # Skipping the role body because it makes real HTTP calls to Hydra admin.
+    # Syntax-only check; the parent ansible-playbook --syntax-check still
+    # exercises every task's YAML well-formedness via the role import below.
+    - name: import role for syntax-check only
+      ansible.builtin.import_role:
+        name: ../..
+      tags: [never]

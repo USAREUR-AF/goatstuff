@@ -1,0 +1,274 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# microscope role (ADR 1090 Phase C) — deploys the per-entity behavior
+# lens behind Traefik + the oauth2-proxy admin fence on a mgmt host.
+# Stethoscope deployment shape; idempotent.
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. microscope_image pinned to the multi-arch manifest-list digest
+#      (ADR 0859) with a deploy-history.yml row in the same change.
+#   2. Mesh-DNS row for {{ microscope_hostname }} at the mgmt-host mesh IP.
+#   3. Hydra OIDC client for the fence (client id/secret) minted —
+#      same ceremony as oauth2-proxy-id-console-oidc-client.
+#   4. Secrets (portal key, NB PAT, oauth2 client/cookie secrets) via
+#      env-var lookups in group_vars, never committed.
+
+- name: microscope | require the NetBird service identity (netbird-infra)
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/require-netbird-service-identity.yml"
+  vars:
+    nsi_identity: netbird-infra
+    nsi_token: "{{ microscope_netbird_token }}"
+
+- name: microscope | refuse an unpinned image
+  ansible.builtin.assert:
+    that:
+      - microscope_image | length > 0
+      - "'@sha256:' in microscope_image"
+    fail_msg: >-
+      microscope_image must be set per-goatnet to a SHA-pinned multi-arch
+      manifest-list digest (ADR 0859; see the role defaults header).
+
+- name: microscope | refuse fence-on without its secrets
+  ansible.builtin.assert:
+    that:
+      - microscope_oauth2_proxy_oidc_issuer_url | length > 0
+      - microscope_oauth2_proxy_client_secret | length > 0
+      # oauth2-proxy measures the cookie secret in CHARACTERS and refuses
+      # anything but 16/24/32, so `openssl rand -base64 32` (44 chars)
+      # crash-loops it at boot with an otherwise-green play recap.
+      # An exact-set check is the only one that catches it; a floor does not.
+      - microscope_oauth2_proxy_cookie_secret is defined and ((microscope_oauth2_proxy_cookie_secret | length) in [16, 24, 32])
+    fail_msg: >-
+      microscope_oauth2_proxy_enabled=true but issuer/client_secret/
+      cookie_secret are unset — the fence would deploy broken-open.
+  when: microscope_oauth2_proxy_enabled
+
+- name: microscope | refuse an audit tail wired without its credentials
+  ansible.builtin.assert:
+    that:
+      - microscope_audit_access_key | length > 0
+      - microscope_audit_secret_key | length > 0
+    fail_msg: >-
+      microscope_audit_endpoint is wired but the audit access key or secret
+      resolved empty. Without this assertion, fabric-audit and operator-audit
+      adapters would report skipped audit coverage while the deployment
+      recap remained successful. Export the credential variables named in
+      this goatnet's group_vars, then re-apply.
+  when: microscope_audit_endpoint | length > 0
+
+- name: microscope | compose dir
+  ansible.builtin.file:
+    path: "{{ microscope_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: microscope | view-audit dir
+  # Owned by the container's distroless uid (65532, Chainguard nonroot) so
+  # the app can append; root-owned 0750 silently breaks the trail
+  # ('view-audit append failed').
+  ansible.builtin.file:
+    path: "{{ microscope_view_audit_dir }}"
+    state: directory
+    owner: "65532"
+    group: "65532"
+    mode: "0750"
+  become: true
+
+# --- portal service key (self-provisioning; the onboard-runner pattern) -----
+# Replaces a manual "mint the microscope portal key + portal redeploy" step,
+# which goes undone.
+- name: microscope | key dir
+  ansible.builtin.file:
+    path: "{{ microscope_portal_key_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: microscope | check for a persisted portal key
+  ansible.builtin.stat:
+    path: "{{ microscope_portal_key_file }}"
+  register: microscope_keyfile_stat
+  become: true
+
+- name: microscope | generate a portal key (first deploy only, when no seed given)
+  ansible.builtin.command: openssl rand -base64 24
+  register: microscope_genkey
+  changed_when: true
+  when:
+    - not microscope_keyfile_stat.stat.exists
+    - microscope_portal_key_seed | length == 0
+  become: true
+
+- name: microscope | persist the portal key (seed if one was supplied, else the fresh one)
+  ansible.builtin.copy:
+    content: "{{ (microscope_portal_key_seed if (microscope_portal_key_seed | length > 0) else microscope_genkey.stdout) | trim }}"
+    dest: "{{ microscope_portal_key_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not microscope_keyfile_stat.stat.exists
+  no_log: true
+  become: true
+
+- name: microscope | read the persisted portal key
+  ansible.builtin.slurp:
+    src: "{{ microscope_portal_key_file }}"
+  register: microscope_keyfile
+  no_log: true
+  become: true
+
+- name: microscope | set the portal key fact
+  ansible.builtin.set_fact:
+    microscope_portal_api_key: "{{ microscope_keyfile.content | b64decode | trim }}"
+  no_log: true
+
+- name: microscope | register the key in the portal service-key store
+  # Lives under the portal's persistent data dir and is owned by the portal
+  # container uid, so a portal redeploy from any laptop keeps it — no
+  # dependency on the deploying operator's direnv.
+  ansible.builtin.copy:
+    content: "{{ microscope_portal_key_id }}:{{ microscope_portal_api_key }}\n"
+    dest: "{{ microscope_portal_keystore_dir }}/microscope.key"
+    owner: "65532"
+    group: "65532"
+    mode: "0640"
+  register: microscope_keystore_write
+  no_log: true
+  become: true
+  when: microscope_portal_keystore_dir | length > 0
+
+- name: microscope | restart the portal to pick up a newly-written service key
+  # Only when the entry actually changed, so first bring-up authenticates
+  # immediately without a separate portal redeploy; a no-op on reruns.
+  # failed_when:false so a host with no portal doesn't fail the microscope deploy.
+  ansible.builtin.command: "docker restart {{ microscope_portal_container_name }}"
+  register: microscope_portal_restart
+  changed_when: microscope_portal_restart.rc == 0
+  failed_when: false
+  when: microscope_keystore_write is changed
+  become: true
+
+# --- console-audit bind-mount guard ---
+# The compose file bind-mounts microscope_console_audit_path to
+# /data/console-audit.jsonl:ro. Docker's rule for a bind source that does not
+# exist is to CREATE IT AS A DIRECTORY, silently. If microscope comes up before
+# goat-id-console has written its audit file, Docker mints a directory at
+# /var/lib/goat-id-console/audit.jsonl and TWO things break at once —
+# microscope's console-audit source reports `Is a directory (os error 21)`,
+# and the console's own append to its audit trail has nowhere to land, so
+# console audit is silently lost. Neither shows up on a container health probe.
+#
+# So: never let Docker invent that path. Self-heal the empty-directory case
+# (which is always Docker's own artifact, never operator data), and refuse
+# loudly if it is a NON-empty directory, because that is something we did not
+# create and must not delete.
+- name: microscope | stat the console-audit path
+  ansible.builtin.stat:
+    path: "{{ microscope_console_audit_path }}"
+  register: microscope_console_audit_stat
+  when: microscope_console_audit_mount_enabled
+  become: true
+
+- name: microscope | refuse a non-empty directory at the console-audit path
+  ansible.builtin.find:
+    paths: "{{ microscope_console_audit_path }}"
+    file_type: any
+    hidden: true
+  register: microscope_console_audit_dir_contents
+  when:
+    - microscope_console_audit_mount_enabled
+    - microscope_console_audit_stat.stat.exists | default(false)
+    - microscope_console_audit_stat.stat.isdir | default(false)
+  become: true
+
+- name: microscope | fail when the console-audit path is a directory with contents
+  ansible.builtin.fail:
+    msg: >-
+      {{ microscope_console_audit_path }} is a DIRECTORY containing
+      {{ microscope_console_audit_dir_contents.matched }} entries. microscope
+      expects a regular JSONL file written by goat-id-console. Refusing to
+      remove a directory that is not empty — inspect it by hand, then either
+      delete it or point microscope_console_audit_path elsewhere.
+  when:
+    - microscope_console_audit_mount_enabled
+    - microscope_console_audit_dir_contents.matched | default(0) | int > 0
+
+- name: microscope | remove the empty directory Docker minted at the console-audit path
+  ansible.builtin.file:
+    path: "{{ microscope_console_audit_path }}"
+    state: absent
+  when:
+    - microscope_console_audit_mount_enabled
+    - microscope_console_audit_stat.stat.isdir | default(false)
+    - microscope_console_audit_dir_contents.matched | default(0) | int == 0
+  become: true
+
+- name: microscope | ensure the console-audit file exists before compose binds it
+  # Owned by the console's distroless uid so goat-id-console can still APPEND;
+  # microscope mounts it :ro and only reads. Creating it here is deliberate
+  # even though the file is the console's data: whoever's compose runs first
+  # would otherwise get a directory, and microscope is usually first.
+  ansible.builtin.file:
+    path: "{{ microscope_console_audit_path }}"
+    state: touch
+    owner: "65532"
+    group: "65532"
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+  when: microscope_console_audit_mount_enabled
+  become: true
+
+- name: microscope | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ microscope_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: microscope | recreate container
+
+- name: microscope | render .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ microscope_compose_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  notify: microscope | recreate container
+
+- name: microscope | render oauth2-proxy env
+  ansible.builtin.template:
+    src: oauth2-proxy-microscope.env.j2
+    dest: "{{ microscope_compose_dir }}/oauth2-proxy-microscope.env"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  when: microscope_oauth2_proxy_enabled
+  notify: microscope | recreate container
+
+- name: microscope | render Traefik dynamic config
+  ansible.builtin.template:
+    src: traefik-microscope.yml.j2
+    dest: "{{ microscope_traefik_dynamic_dir }}/{{ microscope_traefik_dynamic_filename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: microscope | compose up
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ microscope_compose_dir }}"
+  become: true
+  register: microscope_up
+  changed_when: "'Started' in microscope_up.stderr or 'Recreated' in microscope_up.stderr or 'Created' in microscope_up.stderr"

@@ -1,0 +1,73 @@
+---
+- name: netview | bin dir
+  ansible.builtin.file:
+    path: "{{ netview_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: netview | install the poller
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../netview/netview-poll.py"
+    dest: "{{ netview_bin_dir }}/netview-poll.py"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: netview | install the category grammar (shed policy has ONE home)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../observability/bandwidth-categories.yaml"
+    dest: "{{ netview_bin_dir }}/bandwidth-categories.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: netview | install the pages into the already-gated nginx root
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../netview/www/{{ item }}"
+    dest: "{{ netview_www_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - netview.html
+    - response.html
+
+- name: netview | systemd unit + timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - netview-poll.service
+    - netview-poll.timer
+  notify: netview reload systemd
+
+- name: netview | flush handlers before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: netview | enable + start the timer
+  ansible.builtin.systemd:
+    name: netview-poll.timer
+    enabled: true
+    state: started
+
+- name: netview | run once now so the page has data immediately
+  ansible.builtin.systemd:
+    name: netview-poll.service
+    state: started
+
+- name: netview | prove the json was written and parses
+  # Verification, not hope: a page that fetches a missing json shows an error
+  # banner, which is honest but useless. Fail the play instead.
+  ansible.builtin.command: >-
+    python3 -c "import json,sys; d=json.load(open('{{ netview_www_dir }}/netview.json'));
+    sys.exit(0 if 'pipe' in d and 'shed' in d else 1)"
+  register: _nv
+  retries: 6
+  delay: 5
+  until: _nv.rc == 0
+  changed_when: false

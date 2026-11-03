@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+#
+#   systemctl list-timers lifecycle-sweep.timer
+#   journalctl -u lifecycle-sweep.service -n 60
+#   cat {{ lifecycle_sweep_report_dir }}/last-run.txt
+[Unit]
+Description=Refresh the ADR 1136 lifecycle roster (REPORT ONLY)
+Documentation=https://github.com/usareur-af/goatcore/blob/main/docs/design/live-state-guard-scheduling.md
+
+[Timer]
+# Offset from the host's other hourly timers rather than landing on the hour with
+# them: this one reads the whole peer and setup-key list on a host that also
+# carries the mesh control plane.
+OnCalendar={{ lifecycle_sweep_oncalendar }}
+RandomizedDelaySec={{ lifecycle_sweep_jitter_sec }}
+AccuracySec=1min
+# Persistent so a host that was down at the scheduled minute refreshes when it
+# returns rather than skipping in silence. A late roster beats a stale one
+# presented as current.
+Persistent=true
+Unit=lifecycle-sweep.service
+
+[Install]
+WantedBy=timers.target

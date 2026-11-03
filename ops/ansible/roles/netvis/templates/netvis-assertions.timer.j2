@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=netvis — re-run the declared ACL assertions on a timer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec={{ netvis_assertions_interval }}
+# Spread across the fleet: every mgmt host firing on the same minute is a
+# self-inflicted thundering herd against its own management API.
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

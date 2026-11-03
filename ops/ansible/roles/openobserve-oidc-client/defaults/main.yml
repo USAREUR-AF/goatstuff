@@ -1,0 +1,31 @@
+---
+# Defaults for the `openobserve-oidc-client` role.
+#
+# Block 21H.3b — provisions an OAuth2 client at operator-IdP Hydra for
+# OpenObserve. ADR 0842. Same idempotent GET-then-POST-or-PUT pattern
+# as grafana-oidc-client.
+#
+# IMPORTANT — UPSTREAM ENV VAR UNCERTAINTY:
+# OpenObserve's external-OIDC env-var naming has changed across
+# minor versions. The list in obs-host's compose template uses the
+# names documented for OpenObserve v0.10+ (ZO_OPENID_*). Operator
+# verifies against upstream docs at first bringup; if the bringup smoke
+# fails with "OIDC not configured" or similar, surface as a finding +
+# update obs-host and this role together.
+#
+# Required env vars:
+#   - operator_idp_openobserve_client_secret  (32+ chars; FRESH per site)
+
+openobserve_oidc_client_id: "openobserve"
+openobserve_oidc_client_name: "OpenObserve ({{ site_id }})"
+
+openobserve_oidc_issuer_url: "https://oauth2.ops.{{ site_id }}.{{ site_dns_zone }}"
+openobserve_oidc_redirect_uri: "https://openobserve.{{ site_id }}.{{ site_dns_zone }}/auth/callback"
+
+openobserve_oidc_scopes:
+  - openid
+  - profile
+  - email
+  - groups
+
+openobserve_oidc_hydra_admin: "http://127.0.0.1:{{ operator_idp_hydra_admin_host_port | default(4447) }}"

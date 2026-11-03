@@ -1,0 +1,45 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Operator-fired playbook to bring up flashlight on a mgmt
+# host. Pure Ansible — no out-of-band scripts.
+# Image comes from ghcr.io/{{ ghcr_org }}/flashlight (published by
+# .github/workflows/flashlight-image.yml on main pushes +
+# flashlight/v* tags). Mesh-only allowlist is the whole auth surface.
+#
+# Usage:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+#     ansible-playbook -i inventory/mgmt-hosts-mesh.ini \
+#     flashlight.yml
+#
+# Pre-flight (operator-side):
+#   1. Image present at ghcr.io/{{ ghcr_org }}/flashlight (CI workflow ran on
+#      main; the first apply after PR #5 merge requires bumping the
+#      image SHA in group_vars/<site>_hosts/flashlight.yml off the
+#      `sha-placeholder` sentinel — refuse to apply until a real tag
+#      lands).
+#   2. If flashlight_zenoh_mtls_enabled is true (the default),
+#      mint an operator-class Zenoh client leaf and drop the files
+#      under /etc/flashlight/ on the host.
+#   3. Panoscope's 24h burn-in is clean (the gate in docs/design/flashlight.md).
+
+- name: flashlight | deploy
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: flashlight | refuse to apply against the sha-placeholder sentinel
+      ansible.builtin.fail:
+        msg: >-
+          flashlight_image is still set to "{{ flashlight_image }}".
+          The defaults/main.yml carries a sha-placeholder sentinel that
+          must NEVER reach an apply. Bump it off the sentinel in
+          group_vars/nova_hosts/flashlight.yml to a real
+          ghcr.io/{{ ghcr_org }}/flashlight:sha-<short> tag produced by the
+          flashlight-image workflow on main. Append the new row to
+          ops/ansible/roles/flashlight/deploy-history.yml in the same
+          change-set (CI guard refuses the bump otherwise).
+      when: flashlight_image is search('sha-placeholder')
+  roles:
+    - flashlight

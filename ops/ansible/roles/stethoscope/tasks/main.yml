@@ -1,0 +1,180 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# stethoscope role — deploys the stethoscope container behind the
+# existing Traefik (Let's Encrypt cert resolver `le`) with mesh-only
+# gating on a goatnet mgmt host. Matches the panoscope
+# pattern: file-provider Traefik config, container joined to `mgmt`
+# (Traefik network).
+#
+# Block 90 Phase B per docs/design/stethoscope.md. Idempotent — re-
+# running on a healthy host is a no-op beyond a `docker compose pull`
+# if the image tag changed.
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. DNS record for stethoscope.<site_dns_zone> resolves in the
+#      mesh CoreDNS at the mgmt-host's mesh IP. Public Cloudflare
+#      DNS NOT used (mesh-only posture).
+#   2. STETHOSCOPE_PORTAL_API_KEY operator token issued and wired
+#      via site_vars / envrc → `stethoscope_portal_api_key`.
+#   3. If `stethoscope_audit_enabled: true`, the MinIO read-only
+#      IAM user is minted via the `minio_extra_users` substrate on
+#      roles/minio (see group_vars/<site>_hosts/minio.yml for the
+#      mint-as-code shape), and the audit secret is exported in the
+#      operator shell (the site group_vars stethoscope.yml names the
+#      variable). An enabled tail with an empty endpoint or credential
+#      is refused before anything is rendered (tasks/preflight.yml, which
+#      stethoscope.yml also runs as a pre_task ahead of the ledger row),
+#      not degraded to Skipped: the binary exits at config load and would
+#      crash-loop on that .env.
+
+# First task: refuse before docker-compose.yml (which carries the image pin)
+# or .env is rendered and before the recreate handler is queued, so a refusal
+# never leaves a half-applied host. stethoscope.yml runs the same file as a
+# pre_task, ahead of the rollback-ledger meta-dependency; preflight.yml says
+# why both placements exist.
+- name: stethoscope | preflight
+  ansible.builtin.import_tasks: preflight.yml
+
+# --- portal service key (self-provisioning; the microscope pattern, F-559) --
+- name: stethoscope | portal key — key dir
+  ansible.builtin.file:
+    path: "{{ stethoscope_portal_key_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: stethoscope | portal key — check for a persisted key
+  ansible.builtin.stat:
+    path: "{{ stethoscope_portal_key_file }}"
+  register: stethoscope_keyfile_stat
+  become: true
+
+- name: stethoscope | portal key — generate one (first deploy only, when no seed given)
+  ansible.builtin.command: openssl rand -base64 24
+  register: stethoscope_genkey
+  changed_when: true
+  when:
+    - not stethoscope_keyfile_stat.stat.exists
+    - stethoscope_portal_key_seed | length == 0
+  become: true
+
+- name: stethoscope | portal key — persist it
+  ansible.builtin.copy:
+    content: "{{ (stethoscope_portal_key_seed if (stethoscope_portal_key_seed | length > 0) else stethoscope_genkey.stdout) | trim }}"
+    dest: "{{ stethoscope_portal_key_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not stethoscope_keyfile_stat.stat.exists
+  no_log: true
+  become: true
+
+- name: stethoscope | portal key — read it back
+  ansible.builtin.slurp:
+    src: "{{ stethoscope_portal_key_file }}"
+  register: stethoscope_keyfile
+  no_log: true
+  become: true
+
+- name: stethoscope | portal key — set the fact the template renders
+  ansible.builtin.set_fact:
+    stethoscope_portal_api_key: "{{ stethoscope_keyfile.content | b64decode | trim }}"
+  no_log: true
+
+- name: stethoscope | portal key — register it in the portal service-key store
+  ansible.builtin.copy:
+    content: "{{ stethoscope_portal_key_id }}:{{ stethoscope_portal_api_key }}\n"
+    dest: "{{ stethoscope_portal_keystore_dir }}/{{ stethoscope_portal_key_id }}.key"
+    owner: "65532"
+    group: "65532"
+    mode: "0640"
+  register: stethoscope_keystore_write
+  no_log: true
+  become: true
+  failed_when: false
+  when: stethoscope_portal_keystore_dir | length > 0
+
+
+# F-559: prove the credential before calling the deploy a success. A surface
+# that cannot read the portal starts anyway, looks healthy, and serves nothing
+# useful — which is exactly how this went unnoticed for weeks on three
+# surfaces. Skipped where no portal URL is configured (that adapter is then
+# deliberately off, not broken).
+- name: stethoscope | portal key — prove the portal accepts it
+  ansible.builtin.include_tasks: tasks/assert-portal-key-accepted.yml
+  vars:
+    portal_key_assert_service: stethoscope
+    portal_key_assert_url: "{{ stethoscope_portal_url }}"
+    portal_key_assert_key: "{{ stethoscope_portal_api_key }}"
+  when: stethoscope_portal_api_key | default('') | length > 0
+- name: stethoscope | compose dir
+  ansible.builtin.file:
+    path: "{{ stethoscope_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: stethoscope | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ stethoscope_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: stethoscope | recreate container
+
+- name: stethoscope | render .env
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ stethoscope_compose_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  notify: stethoscope | recreate container
+
+- name: stethoscope | render Traefik dynamic config
+  ansible.builtin.template:
+    src: traefik-stethoscope.yml.j2
+    dest: "{{ stethoscope_traefik_dynamic_dir }}/{{ stethoscope_traefik_dynamic_filename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+# The route filename changed (nova-stethoscope.yml -> stethoscope.yml). Traefik's file provider reads
+# the whole directory, so an orphaned old file is not inert: it declares a
+# second router on the same Host() rule. Guarded on the two names differing so
+# this is a no-op once the rename is old.
+- name: stethoscope | remove pre-rename Traefik route file
+  ansible.builtin.file:
+    path: "{{ stethoscope_traefik_dynamic_dir }}/{{ stethoscope_traefik_dynamic_filename_legacy }}"
+    state: absent
+  become: true
+  when:
+    - stethoscope_traefik_dynamic_filename_legacy | default('') | length > 0
+    - stethoscope_traefik_dynamic_filename_legacy != stethoscope_traefik_dynamic_filename
+
+- name: stethoscope | pull image
+  community.docker.docker_image_pull:
+    name: "{{ stethoscope_image }}"
+  become: true
+  register: stethoscope_pull
+  failed_when: false
+
+- name: stethoscope | bring up via docker compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ stethoscope_compose_dir }}"
+    state: present
+    pull: missing
+  become: true
+  register: stethoscope_compose_result
+
+# Deploy ledger now written by the shared `rollback-ledger`
+# meta-dependency (meta/main.yml) per ADR 1060 — no per-role task here.

@@ -1,0 +1,30 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy synthetic vendor publishers on the mgmt host so the Zenoh
+# trial fabric has real traffic for panoscope to render and for the
+# portal to reference. Block 82Q / docs/design/zenoh-trial-fabric-synth-vendors.md.
+#
+# Run from any laptop on the netbird mesh (-i mgmt-hosts.ini for the
+# base inventory + -i mgmt-hosts-mesh.ini for the mesh-IP override).
+#
+# Pre-flight (operator-side, one-time):
+#   1. zenoh-router container Healthy on the mgmt host (zenoh-deploy.yml).
+#   2. If running mTLS (synth_vendor_zenoh_endpoint starts with tls/),
+#      run ops/zenoh-trial-peers/bootstrap-portal-vendors.sh on this
+#      laptop to mint per-vendor identities via the portal and drop the
+#      cert tarballs at /opt/synth-vendors/certs/<vendor>/ on the mgmt host.
+#   3. ghcr.io/{{ ghcr_org }}/synth-vendor:latest must be published — first
+#      build is triggered by .github/workflows/synth-vendor-image.yml.
+
+- name: deploy synth-vendor publishers (notional pub/sub) — opt-in per goatnet
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+
+  roles:
+    # Optional choice: only a goatnet that sets synth_vendors_enabled: true in
+    # its group_vars gets synthetic producers. Off by default (a real goatnet
+    # wants no notional traffic); on for dev/demo. Skips cleanly otherwise.
+    - role: zenoh-synth-vendors
+      when: synth_vendors_enabled | default(false) | bool

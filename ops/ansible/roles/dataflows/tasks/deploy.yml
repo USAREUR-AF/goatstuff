@@ -1,0 +1,164 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# dataflows role — deploys the static-presentation container
+# (nginx:alpine + 10-slide deck explaining data-movement patterns)
+# behind the existing Traefik (Let's Encrypt cert resolver `le`) with
+# mesh-only gating on a goatnet host. Sibling-of-brief: same
+# shape, different content, separate dynamic-config filename so a
+# dataflows redeploy can't stomp on neighboring routes.
+#
+# Pre-flight (operator-side, NOT this role):
+#   1. Mesh DNS record for `dataflows.<site_id>.<site_dns_zone>` published —
+#      append to the site's mesh-hosts file and re-run
+#      ops/ansible/mesh-coredns.yml.
+#   2. dataflows.<site_id>.<site_dns_zone> is in the master Let's Encrypt
+#      tls.domains SAN list (traefik-acme.yml re-rendered with
+#      `dataflows_enabled: true` in group_vars).
+#   3. Image ghcr.io/{{ ghcr_org }}/dataflows:<tag> exists (CI workflow
+#      runs on push to main + `dataflows/v*` tags).
+#
+# This role is idempotent — re-running on a healthy host is a no-op
+# beyond a `docker compose pull` if the image tag changed.
+
+# ---------------------------------------------------------------------------
+# Cloudflare DNS publish — present for parity with the brief role shape.
+# Service hostnames live in mesh CoreDNS, so this block runs only when
+# explicitly enabled.
+# ---------------------------------------------------------------------------
+
+- name: dataflows | Cloudflare — look up zone id
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones?name={{ dataflows_cloudflare_zone }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token | default('') }}"
+    return_content: true
+  register: dataflows_cf_zone_lookup
+  when: dataflows_publish_cloudflare_dns | bool
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: dataflows | Cloudflare — record zone id fact
+  ansible.builtin.set_fact:
+    dataflows_cf_zone_id: "{{ dataflows_cf_zone_lookup.json.result[0].id }}"
+  when: dataflows_publish_cloudflare_dns | bool
+  run_once: true
+
+- name: dataflows | Cloudflare — list existing A records for the hostname
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ dataflows_cf_zone_id }}/dns_records?type=A&name={{ dataflows_hostname }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token | default('') }}"
+    return_content: true
+  register: dataflows_cf_existing
+  when: dataflows_publish_cloudflare_dns | bool
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: dataflows | Cloudflare — capture existing A-record content set
+  ansible.builtin.set_fact:
+    dataflows_cf_existing_ips: "{{ dataflows_cf_existing.json.result | map(attribute='content') | list }}"
+  when: dataflows_publish_cloudflare_dns | bool
+  run_once: true
+
+- name: dataflows | Cloudflare — create missing A records
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ dataflows_cf_zone_id }}/dns_records"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token | default('') }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      type: A
+      name: "{{ dataflows_hostname }}"
+      content: "{{ item }}"
+      ttl: 60
+      proxied: false
+    status_code: [200, 201]
+  loop: "{{ dataflows_cloudflare_a_record_ips }}"
+  when:
+    - dataflows_publish_cloudflare_dns | bool
+    - item not in (dataflows_cf_existing_ips | default([]))
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+# ---------------------------------------------------------------------------
+
+- name: dataflows | create compose dir
+  ansible.builtin.file:
+    path: "{{ dataflows_compose_dir }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: dataflows | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ dataflows_compose_dir }}/docker-compose.yml"
+    mode: "0644"
+  become: true
+  notify: dataflows | recreate container
+
+- name: dataflows | render Traefik dynamic config (file provider)
+  ansible.builtin.template:
+    src: traefik-dataflows.yml.j2
+    dest: "{{ dataflows_traefik_dynamic_dir }}/{{ dataflows_traefik_dynamic_filename }}"
+    mode: "0644"
+  become: true
+  # Traefik picks up file-provider changes automatically — no SIGHUP needed.
+
+# The route filename changed. Traefik's file provider reads
+# the whole directory, so an orphaned old file is not inert: it declares a
+# second router on the same Host() rule. Guarded on the two names differing so
+# this is a no-op once the rename is old.
+- name: dataflows | remove pre-rename Traefik route file
+  ansible.builtin.file:
+    path: "{{ dataflows_traefik_dynamic_dir }}/{{ dataflows_traefik_dynamic_filename_legacy }}"
+    state: absent
+  become: true
+  when:
+    - dataflows_traefik_dynamic_filename_legacy | default('') | length > 0
+    - dataflows_traefik_dynamic_filename_legacy != dataflows_traefik_dynamic_filename
+
+- name: dataflows | log target docker daemon in to private registry (when enabled)
+  community.docker.docker_login:
+    registry_url: "{{ dataflows_pull_registry }}"
+    username: "{{ dataflows_pull_username }}"
+    password: "{{ dataflows_pull_password }}"
+  become: true
+  when:
+    - dataflows_pull_auth_enabled | bool
+    - dataflows_pull_password | length > 0
+  no_log: true
+
+- name: dataflows | pull image
+  community.docker.docker_image:
+    name: "{{ dataflows_image }}"
+    source: pull
+    force_source: true
+  become: true
+
+- name: dataflows | bring up via docker compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ dataflows_compose_dir }}"
+    state: present
+    pull: missing
+  become: true
+
+- name: dataflows | wait for container to be Running
+  ansible.builtin.command:
+    cmd: "docker inspect -f '{{ '{{' }}.State.Running{{ '}}' }}' {{ dataflows_container_name }}"
+  register: dataflows_running
+  retries: 30
+  delay: 2
+  until: dataflows_running.stdout | trim == 'true'
+  changed_when: false
+  become: true
+# Deploy ledger now written by the shared `rollback-ledger`
+# meta-dependency (meta/main.yml) per ADR 1060 — no per-role task here.

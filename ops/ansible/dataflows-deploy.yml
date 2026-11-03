@@ -1,0 +1,40 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Operator-fired playbook to bring up the data-flow-patterns
+# presentation surface (`dataflows.<site_dns_zone>`) on
+# a mgmt host. Sibling-of-brief: pure Ansible, no
+# out-of-band scripts. Image comes from ghcr.io/{{ ghcr_org }}/dataflows
+# (published by .github/workflows/dataflows-image.yml on main pushes +
+# `dataflows/v*` tags).
+#
+# Usage:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+#     ansible-playbook -i inventory/hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#     -l <mgmt-host> dataflows-deploy.yml
+#
+# Pre-flight (operator-side):
+#   1. Image present at ghcr.io/{{ ghcr_org }}/dataflows (CI workflow
+#      ran on main).
+#   2. Mesh DNS — append `<mesh-ip>  dataflows.<site_dns_zone>`
+#      to ops/dns/<site>/mesh-hosts and re-run
+#      ops/ansible/mesh-coredns.yml (the live posture; service
+#      hostnames live in mesh CoreDNS, NOT Cloudflare).
+#   3. dataflows.<site_dns_zone> is in the master LE SAN list — flip
+#      `dataflows_enabled: true` in group_vars/<site>_hosts/vars.yml and
+#      re-run traefik-acme.yml BEFORE this playbook so the cert is
+#      minted and Traefik can serve it.
+#
+# Cross-refs:
+# - docs/design/dataflows-service.md
+# - ops/serve/dataflows/ (image source-of-truth)
+
+- name: dataflows | deploy
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  vars:
+    cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') | default('') }}"
+  roles:
+    - dataflows

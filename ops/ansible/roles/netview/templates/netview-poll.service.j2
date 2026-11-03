@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=netview — Prometheus to one JSON for the operator reading surfaces (ADR 1128)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env python3 {{ netview_bin_dir }}/netview-poll.py \
+  --prom {{ netview_prom_url }} \
+  --out {{ netview_www_dir }}/netview.json \
+  --host '{{ netview_host_filter }}' \
+  --grammar {{ netview_bin_dir }}/bandwidth-categories.yaml \
+  --stream-services '{{ netview_stream_services }}'
+Nice=10

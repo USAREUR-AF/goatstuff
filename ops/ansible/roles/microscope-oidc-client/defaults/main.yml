@@ -1,0 +1,53 @@
+---
+# Defaults for the `microscope-oidc-client` role.
+#
+# Provisions the OAuth2 client microscope's admin fence consumes, at the site
+# Hydra. Mirrors `isitup-oidc-client` exactly; see that role for the shape
+# rationale. Does NOT manage the microscope container or its oauth2-proxy —
+# that is the `microscope` role, which this one runs before.
+#
+# WHY THIS ROLE EXISTS. microscope's oauth2-proxy env names
+# `OAUTH2_PROXY_CLIENT_ID=microscope`, so that client has to exist at the site
+# Hydra. A client registered by hand does not carry to the next goatnet: its
+# fence then redirects to a Hydra that has never heard of it, and every load ends
+# at Ory's `invalid_client` error page, for every operator, with the service itself
+# perfectly healthy. Codifying the registration is what makes the fence
+# reproducible per-goatnet instead of per-memory.
+#
+# Required at deploy time:
+#   - microscope_oauth2_proxy_client_secret  (32+ chars; per-goatnet,
+#     env-sourced — already declared in each goatnet's group_vars)
+#   - site_id, site_dns_zone                 (per-site identity)
+
+# The client_id is NOT independently configurable here. It must equal
+# `microscope_oauth2_proxy_client_id` from roles/microscope/defaults/main.yml,
+# which is what oauth2-proxy actually presents to Hydra; two knobs that must
+# agree is the drift this whole role exists to remove. Referencing the
+# microscope role's variable directly keeps one home for the fact.
+microscope_oidc_client_id: "{{ microscope_oauth2_proxy_client_id | default('microscope') }}"
+microscope_oidc_client_name: "microscope ({{ site_id }})"
+
+# Env-sourced secret, resolved from the same group_vars key the microscope
+# role templates into the oauth2-proxy env file. ONE value feeds both sides of
+# the handshake — the client Hydra stores and the secret the proxy presents.
+microscope_oidc_client_secret: "{{ microscope_oauth2_proxy_client_secret }}"
+
+# Issuer + redirect built from the site Hydra, never a literal prefix: a
+# hard-coded prefix produces a wrong FQDN on every other site.
+microscope_oidc_issuer_url: "https://oauth2.{{ site_id }}.{{ site_dns_zone }}"
+microscope_oidc_redirect_uri: "https://microscope.{{ site_id }}.{{ site_dns_zone }}/oauth2/callback"
+
+# Same scope baseline as isitup/grafana/forgejo. `groups` matters more here
+# than on those surfaces: microscope is authz-aware, and the group claim it
+# carries is what MICROSCOPE_RBAC_WHO_GROUPS gates on (ADR 1090).
+# `offline_access` lets oauth2-proxy refresh silently at the cookie boundary.
+microscope_oidc_scopes:
+  - openid
+  - profile
+  - email
+  - groups
+  - offline_access
+
+# Hydra admin endpoint. Loopback — this role runs against the same mgmt host
+# that hosts Hydra.
+microscope_oidc_hydra_admin: "http://127.0.0.1:{{ hydra_admin_host_port | default(4445) }}"

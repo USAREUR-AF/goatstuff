@@ -1,0 +1,249 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# netvis — mesh reachability as its own service.
+#
+# Pre-flight (all fail-closed here rather than deploying something half-wired):
+#   - netvis_image pinned, with a deploy-history ledger row in the same change
+#   - netvis_netbird_url in group_vars; the token through the netbird-infra
+#     service identity (ops/netbird/service-identities.yaml)
+#   - an OIDC client registered for the fence
+#   - a mesh-DNS row for netvis_hostname (F-197: a declared-but-unresolvable
+#     service deploys dark)
+
+- name: netvis | require the NetBird service identity (netbird-infra)
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/require-netbird-service-identity.yml"
+  vars:
+    nsi_identity: netbird-infra
+    nsi_token: "{{ netvis_netbird_token }}"
+
+- name: netvis | refuse an unpinned image
+  ansible.builtin.assert:
+    that:
+      - netvis_image | length > 0
+      - "'@sha256:' in netvis_image"
+    fail_msg: >-
+      netvis_image must be a digest-pinned multi-arch INDEX reference
+      (ghcr.io/<org>/netvis:sha-xxxxxxx@sha256:...). Read the digest from the
+      REGISTRY, not from the build log. Empty or tag-only is refused
+      rather than pulling something that can move underneath the goatnet.
+
+- name: netvis | ensure the compose project directory
+  ansible.builtin.file:
+    path: "{{ netvis_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+# --- portal service key for the ownership lens (self-provisioning) ----------
+# Mirrors roles/microscope's block exactly; see netvis_portal_* in defaults for
+# why netvis holds its own key rather than reusing microscope's. The key is
+# generated once, persisted on the host, and registered in the portal's
+# hot-reloaded key dir — so this needs no portal redeploy and survives a
+# redeploy from any laptop (no dependency on the deploying operator's direnv).
+- name: netvis | key dir
+  ansible.builtin.file:
+    path: "{{ netvis_portal_key_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: netvis | check for a persisted portal key
+  ansible.builtin.stat:
+    path: "{{ netvis_portal_key_file }}"
+  register: netvis_keyfile_stat
+
+- name: netvis | generate a portal key (first deploy only, when no seed given)
+  ansible.builtin.command: openssl rand -base64 24
+  register: netvis_genkey
+  changed_when: true
+  when:
+    - not netvis_keyfile_stat.stat.exists
+    - netvis_portal_key_seed | length == 0
+
+- name: netvis | persist the portal key (seed if one was supplied, else the fresh one)
+  ansible.builtin.copy:
+    content: "{{ (netvis_portal_key_seed if (netvis_portal_key_seed | length > 0) else netvis_genkey.stdout) | trim }}"
+    dest: "{{ netvis_portal_key_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not netvis_keyfile_stat.stat.exists
+  no_log: true
+
+- name: netvis | read the persisted portal key
+  ansible.builtin.slurp:
+    src: "{{ netvis_portal_key_file }}"
+  register: netvis_keyfile
+  no_log: true
+
+- name: netvis | set the portal key fact
+  ansible.builtin.set_fact:
+    netvis_portal_api_key: "{{ netvis_keyfile.content | b64decode | trim }}"
+  no_log: true
+
+- name: netvis | register the key in the portal service-key store
+  # Owned by the portal container uid so a portal redeploy keeps it.
+  ansible.builtin.copy:
+    content: "{{ netvis_portal_key_id }}:{{ netvis_portal_api_key }}\n"
+    dest: "{{ netvis_portal_keystore_dir }}/netvis.key"
+    owner: "65532"
+    group: "65532"
+    mode: "0640"
+  no_log: true
+  when: netvis_portal_keystore_dir | length > 0
+
+- name: netvis | render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ netvis_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart netvis
+
+- name: netvis | render .env (mode 0600 — carries the NetBird token)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ netvis_compose_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: restart netvis
+
+- name: netvis | render the oauth2-proxy env (mode 0600)
+  ansible.builtin.template:
+    src: oauth2-proxy-netvis.env.j2
+    dest: "{{ netvis_compose_dir }}/oauth2-proxy-netvis.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: netvis_oauth2_proxy_enabled
+  notify: restart netvis
+
+- name: netvis | render the Traefik dynamic config
+  ansible.builtin.template:
+    src: traefik-netvis.yml.j2
+    dest: "{{ netvis_traefik_dynamic_dir }}/{{ netvis_traefik_dynamic_filename }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Scoped to this project's own directory and to its own services by name.
+# NOT a bare `docker compose up -d`, and NOT from /opt/mgmt-host: that
+# combination recreates traefik without its ACME overlay and takes a goatnet off
+# management.
+# See netvis_traefik_dynamic_filename_legacy in defaults: a renamed file can leave
+# two files declaring the same router. Guarded on the names differing.
+- name: netvis | remove pre-rename Traefik route file
+  ansible.builtin.file:
+    path: "{{ netvis_traefik_dynamic_dir }}/{{ netvis_traefik_dynamic_filename_legacy }}"
+    state: absent
+  become: true
+  when:
+    - netvis_traefik_dynamic_filename_legacy | default('') | length > 0
+    - netvis_traefik_dynamic_filename_legacy != netvis_traefik_dynamic_filename
+
+- name: netvis | compose up (scoped to this project)
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ netvis_compose_dir }}"
+  register: netvis_up
+  changed_when: >-
+    'Started' in (netvis_up.stderr | default(''))
+    or 'Created' in (netvis_up.stderr | default(''))
+    or 'Recreated' in (netvis_up.stderr | default(''))
+
+# netvis publishes NO host port — traefik reaches it through the compose
+# network via its oauth2-proxy. So this probe must run INSIDE that network.
+# It used to hit http://127.0.0.1:9760 on the host, where nothing listens: the
+# gate could never pass, `failed_when: false` meant it could never fail either,
+# and it retried out on every single deploy while the play reported failed=0.
+# A gate that cannot pass and cannot fail is worse than no gate, because a real
+# outage looks exactly like a healthy deploy.
+- name: netvis | wait for /healthz (inside the compose network)
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - container:netvis
+      - "{{ netvis_healthcheck_image }}"
+      - -sf
+      - --max-time
+      - "5"
+      - http://127.0.0.1:9760/healthz
+  register: netvis_health
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: netvis_health.rc == 0
+  become: true
+
+- name: netvis | report
+  ansible.builtin.debug:
+    msg: >-
+      netvis healthy at https://{{ netvis_hostname }}/ —
+      image {{ netvis_image | regex_replace('^.*/', '') }}
+
+# --- the assertion re-run ---------------------------------------------------
+# See defaults/main.yml for why this exists on a TIMER and not only in CI.
+- name: netvis | assertion re-run script
+  ansible.builtin.template:
+    src: check-assertions.sh.j2
+    dest: "{{ netvis_compose_dir }}/check-assertions.sh"
+    mode: "0755"
+  become: true
+  when: netvis_assertions_timer_enabled | bool
+
+- name: netvis | assertion re-run units
+  ansible.builtin.template:
+    src: "netvis-assertions.{{ item }}.j2"
+    dest: "/etc/systemd/system/netvis-assertions.{{ item }}"
+    mode: "0644"
+  loop: [service, timer]
+  become: true
+  register: netvis_assert_units
+  when: netvis_assertions_timer_enabled | bool
+
+- name: netvis | enable the assertion timer
+  ansible.builtin.systemd_service:
+    name: netvis-assertions.timer
+    daemon_reload: "{{ netvis_assert_units is changed }}"
+    enabled: true
+    state: started
+  become: true
+  when: netvis_assertions_timer_enabled | bool
+
+# Fire it ONCE at deploy time. A timer that has never run is indistinguishable
+# from a timer that runs and passes, and the whole point of this surface is
+# that those two must never look the same. Non-fatal: a violation is a real
+# answer about the mesh, not a broken deploy — it lands in the journal and
+# leaves the unit failed, which is exactly where it should be visible.
+- name: netvis | run the assertions once now
+  ansible.builtin.command:
+    cmd: systemctl start --wait netvis-assertions.service
+  register: netvis_assert_run
+  changed_when: false
+  failed_when: false
+  become: true
+  when: netvis_assertions_timer_enabled | bool
+
+- name: netvis | assertion result
+  ansible.builtin.command:
+    cmd: journalctl -u netvis-assertions.service -n 30 --no-pager -o cat
+  register: netvis_assert_log
+  changed_when: false
+  failed_when: false
+  become: true
+  when: netvis_assertions_timer_enabled | bool
+
+- name: netvis | assertions report
+  ansible.builtin.debug:
+    msg: "{{ netvis_assert_log.stdout_lines | default(['(no journal yet)']) }}"
+  when: netvis_assertions_timer_enabled | bool

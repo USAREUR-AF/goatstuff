@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: goat_topology
+  description: >-
+    Zenoh routing-topology surface (ADR 1160) — the per-router publisher and
+    the operator-facing surface, deployed independently by mode.
+
+# Every deploying role carries a rollback ledger (ADR 1060,
+# docs/design/universal-deploy-rollback.md), so a bad image is one
+# `rollback.sh goat-topology` away rather than an archaeology exercise.
+dependencies:
+  - role: rollback-ledger
+    vars:
+      rollback_component: goat-topology
+      rollback_artifact_type: image
+      rollback_ref: "{{ goat_topology_image }}"

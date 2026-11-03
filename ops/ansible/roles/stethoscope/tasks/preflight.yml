@@ -1,0 +1,36 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Refuse an audit tail declared enabled without its endpoint or credentials.
+#
+# Imported from two places on purpose:
+#   - ops/ansible/stethoscope.yml runs it as a pre_task, so it precedes the
+#     role and the role's rollback-ledger meta-dependency (ADR 1060), which
+#     appends an intent row for the new pin before any role task runs.
+#     deploy-component.sh --verify-only trusts the newest ledger row, so a
+#     row written ahead of a refused deploy would read as converged on a
+#     digest that never ran.
+#   - tasks/main.yml runs it as the role's first task, so any other play that
+#     applies the role still refuses before docker-compose.yml or .env is
+#     rendered and before the recreate handler is queued.
+#
+# Every variable carries a default because in pre_tasks the role's
+# defaults/main.yml has not loaded yet; the site group_vars supply the values
+# that matter.
+- name: stethoscope | refuse an audit tail declared enabled without its credentials
+  ansible.builtin.assert:
+    that:
+      - stethoscope_audit_endpoint | default('') | length > 0
+      - stethoscope_audit_access_key | default('') | length > 0
+      - stethoscope_audit_secret_key | default('') | length > 0
+    fail_msg: >-
+      stethoscope_audit_enabled is true for this site, so the rendered .env
+      would carry an empty audit endpoint or credential, and the stethoscope
+      binary refuses to start on it (config load exits and the container
+      crash-loops under restart: unless-stopped). Nothing was rendered. The
+      endpoint and access key come from the site's group_vars stethoscope.yml;
+      the secret key comes from the operator environment, and that same file
+      names the variable to export before the deploy. Fix the empty value, or
+      set stethoscope_audit_enabled to false for this site.
+    quiet: true
+  when: stethoscope_audit_enabled | default(false) | bool

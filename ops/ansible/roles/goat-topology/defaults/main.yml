@@ -1,0 +1,116 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the goat-topology role — ADR 1160,
+# docs/design/zenoh-topology-surface.md.
+#
+# ONE role, TWO modes, because they are one binary and one image but land on
+# different hosts:
+#
+#   publish   every host running a zenoh router. Reads ITS OWN router over
+#             host loopback and publishes ops/fabric/topology/<site>/<node>.
+#   serve     the mgmt-host. Subscribes, holds state, serves the surface.
+#
+# Select with `goat_topology_mode`. A host may run both (the mgmt-host on a
+# single-node goatnet usually does) — set `goat_topology_modes` to a list.
+
+# Which halves to deploy on this host.
+goat_topology_modes: ["publish"]
+
+# Image — deliberately UNSET here, so the role fails closed rather than
+# defaulting to something that cannot exist yet.
+#
+# The digest only exists once .github/workflows/goat-topology-image.yml has run
+# on main, and a pin guard rightly refuses a placeholder: a mutable/bare tag in
+# fleet-pins.yaml is exactly the thing F-245 exists to stop. So the pin lands in
+# ops/pins/fleet-pins.yaml in the change that first deploys this — together with
+# the isitup/DNS registration, which F-335 says must accompany the deploy rather
+# than precede it.
+#
+# goat_topology_image: set by ops/pins/fleet-pins.yaml -> group_vars pins.yml
+
+# `<site>` segment of ops/fabric/topology/<site>/<node>.
+goat_topology_site: "{{ site_id | default('unset') }}"
+# `<node>` segment — must be unique within the site. The inventory hostname is
+# already unique per host and is what an operator will recognise in the graph.
+goat_topology_node: "{{ inventory_hostname }}"
+
+# --- publish mode ----------------------------------------------------------
+# The local router's adminspace. LOOPBACK, not the mesh IP: the router publishes
+# 8000/tcp to 127.0.0.1 only, which is also why this container runs with
+# network_mode host for the read while still reaching the router over the zenoh
+# network for the publish.
+goat_topology_admin_addr: "127.0.0.1:8000"
+
+# The router's DECLARED config. Only its `gateway` block is parsed; the ACL that
+# dominates this file is never read into the envelope, logged, or published.
+goat_topology_config_path: "/etc/{{ zenoh_stack | default('goat-zenoh') }}/config.json5"
+
+goat_topology_interval_secs: 30
+
+# --- serve mode ------------------------------------------------------------
+goat_topology_bind: "0.0.0.0:8080"
+# HOST-side port. NOT 8080: the ntp-admit sidecar can already hold 127.0.0.1:8080.
+# Container-internal stays 8080; only the host mapping moves.
+goat_topology_container_port: 8087
+# Restrict the surface to one site's routers. Empty = roll up every site the
+# subscription can see.
+goat_topology_serve_site: ""
+
+# --- zenoh transport -------------------------------------------------------
+# TWO endpoints, because the two halves sit in different network namespaces.
+#
+#   serve    joins the zenoh compose network and reaches the router by CONTAINER
+#            NAME, like every other meter.
+#   publish  shares the HOST namespace so it can read the adminspace on
+#            127.0.0.1:8000, and therefore has no docker DNS. It dials the
+#            router on the host's own mesh IP, where 7447 is published
+#            (`7447/tcp -> <mesh-ip>:7447`).
+#            Connecting by IP is fine: the client config sets
+#            verify_name_on_connect false, as every meter does.
+goat_topology_zenoh_endpoint: "tls/{{ zenoh_stack | default('goat-zenoh') }}-router:7447"
+goat_topology_publish_endpoint: "tls/{{ mesh_ip_a | default(ansible_facts['default_ipv4']['address']) }}:7447"
+goat_topology_zenoh_network: "{{ zenoh_stack | default('goat-zenoh') }}_default"
+
+# Leaf cert + key. Minted from the site cert manifest via
+# ops/scripts/mint-site-certs.sh; the leaf MUST carry
+# CN=goat-topology-trial-peer, which is the subject the Zenoh ACL matches
+# (goat-zenoh config.json5.j2, subject `infra-topology`, rule
+# `infra-w-topology`). A wrong or empty CN means every publish is silently
+# denied — Zenoh denial is silent, so this fails as "no data" rather
+# than as an error.
+goat_topology_cert_dir: "/opt/goat-topology/certs"
+# Same file the router itself verifies against, and the same path
+# fabric-health uses: /etc/<stack>/tls/ca-root-cert.pem.
+goat_topology_ca_root_src: "/etc/{{ zenoh_stack | default('goat-zenoh') }}/tls/ca-root-cert.pem"
+
+goat_topology_compose_dir: "/opt/goat-topology"
+goat_topology_rust_log: "info"
+
+# --- Traefik front door (serve mode) ---------------------------------------
+# Same shape as flashlight: the container joins `mgmt` so Traefik can resolve
+# it by container alias, Traefik's own labels are OFF, and the route is a
+# file-provider entry rendered into /etc/traefik/dynamic. Labels are avoided
+# deliberately — Traefik only reads labels off containers on a network it is
+# attached to, and a file entry is greppable on the host during an incident.
+#
+# Without this the surface runs and answers on 127.0.0.1 but the FQDN gives a
+# TLS handshake failure (curl exit → HTTP 000), because Traefik has no router
+# for that SNI and so never requests a certificate for it.
+goat_topology_hostname: "topology.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+goat_topology_traefik_network: "mgmt"
+goat_topology_traefik_dynamic_dir: "/etc/traefik/dynamic"
+goat_topology_traefik_dynamic_filename: "topology.yml"
+goat_topology_traefik_router_name: "topology"
+goat_topology_traefik_cert_resolver: "le"
+# Mesh-only gating. Empty = no middleware. Operator surfaces set this
+# to `mesh-only-allowlist@file` (defined in mgmt-dynamic.yml.j2), same as
+# isitup and the consistency console.
+goat_topology_traefik_mesh_only_middleware: ""
+
+# Set false on a host that runs no goatnet zenoh router — the role then ends
+# cleanly for that host instead of failing its config pre-flight forever. The
+# A standby host is the case this exists for (the pair is asymmetric by design).
+# Default true so a missing flag never silently skips a
+# router host.
+goat_topology_host_runs_router: true

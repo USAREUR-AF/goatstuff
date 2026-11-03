@@ -1,0 +1,35 @@
+[Unit]
+Description=feeds-shim — MediaMTX → Zenoh catalog bridge (Block 35E)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ feeds_shim_user }}
+Group={{ feeds_shim_group }}
+ExecStart={{ feeds_shim_binary_path }} \
+  --site {{ feeds_shim_site }} \
+  --mediamtx-url {{ feeds_shim_mediamtx_url }} \
+  --poll-sec {{ feeds_shim_poll_sec }} \
+{% if feeds_shim_zenoh_config_path %}
+  --zenoh-config {{ feeds_shim_zenoh_config_path }}
+{% endif %}
+Restart=always
+RestartSec=5
+
+# Hardening — feeds-shim does not need network admin or filesystem write
+# access beyond reading the optional zenoh config.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

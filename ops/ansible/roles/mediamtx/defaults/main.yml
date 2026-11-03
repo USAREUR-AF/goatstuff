@@ -1,0 +1,86 @@
+---
+# MediaMTX role defaults — Block 35E v1 (post-Spike-B-PASS, D1=MediaMTX-only).
+# See docs/design/video-fabric.md for design + docs/operations/video-fabric-runbook.md
+# for day-2 operations.
+
+# Image pin — verified-good across integdev-a + local Mac
+# substrate proof-of-life + Spike A entry-subset + Spike B 150-viewer ramp.
+mediamtx_image: bluenviron/mediamtx
+mediamtx_image_digest: "sha256:0a232bfb1bea17d547f23b0e83f9aa5e099c558b9c156e414d747eb2888091dc"
+mediamtx_image_label: v1.18.0
+
+# Bind interface — defaults to keepalived VIP for active-passive HA, matching
+# Block 17A.5 / Block 27 OTel collector patterns. Per-site override via
+# inventory or group_vars. Do NOT default to 0.0.0.0 — listeners must be
+# bound to the mesh interface, not all interfaces.
+mediamtx_bind_address: "{{ keepalived_vip | default(ansible_default_ipv4.address) }}"
+
+# Mesh hostname for this site's MediaMTX (DNS round-robin if A+B on shared VIP).
+# Used by viewers / shims / TAK CoT URLs to reach the substrate.
+mediamtx_hostname: "video.{{ site_name | default('local') }}.netbird.legacy.example"
+
+# Ports — defaults match upstream + Spike B verified set.
+mediamtx_port_rtsp: 8554
+mediamtx_port_rtsps: 8322
+mediamtx_port_hls: 8888
+mediamtx_port_webrtc: 8889
+mediamtx_port_webrtc_ice: 8189   # UDP
+mediamtx_port_srt: 8890
+mediamtx_port_api: 9997
+mediamtx_port_metrics: 9998       # for Prometheus scrape
+
+# RTSP transport policy — F-019 mandates TCP on paths-we-control with
+# per-path opt-out for UDP-only upstreams. The default `[tcp]` rejects UDP
+# pushes loudly instead of corrupting silently.
+# (v1.18.0 renamed `rtspProtocols` → `rtspTransports`.)
+mediamtx_rtsp_transports: ["tcp"]
+
+# HLS config — same shape as Spike B / §1.2 runbook.
+mediamtx_hls_variant: mpegts
+mediamtx_hls_always_remux: yes
+mediamtx_hls_segment_count: 3
+mediamtx_hls_segment_duration: "1s"
+
+# Recording — fMP4 segments to local NVMe, hot 7d, then offload to MinIO
+# `video-archive` bucket (per design doc + Block 17D pattern).
+mediamtx_recording_enabled: false   # opt-in per-site until v1 ships
+mediamtx_recording_path: "/opt/docker-data/mediamtx/recordings/%path/%Y-%m-%d_%H-%M-%S-%f"
+mediamtx_recording_format: "fmp4"
+mediamtx_recording_segment_duration: "60s"
+mediamtx_recording_part_duration: "1s"
+mediamtx_recording_max_part_size: "50M"
+mediamtx_recording_delete_after: "7d"
+
+# Auth — production must replace this. Defaults intentionally fail closed
+# (no allowed users); per-site overrides set jwt_jwks_url for Block 21 Ory
+# integration. The `paths` key is generated via template per-camera-class.
+mediamtx_auth_method: "jwt"        # internal | jwt | http
+mediamtx_auth_jwt_jwks_url: ""     # e.g. https://kratos.<site>.netbird.legacy.example/.well-known/jwks.json
+mediamtx_auth_jwt_claim_key: "mediamtx_permissions"
+
+# `paths` — empty by default; populated per-site via inventory:
+#   mediamtx_paths:
+#     cam-001-front-gate:
+#       source: "publisher"          # external upstream pushes to us
+#       record: yes
+#     cam-002-back-perimeter:
+#       source: "rtsp://198.18.0.50:554/Streaming/Channels/101"
+#       record: yes
+mediamtx_paths: {}
+
+# Volume mount paths on host
+mediamtx_data_dir: "/opt/docker-data/mediamtx"
+mediamtx_config_path: "{{ mediamtx_data_dir }}/mediamtx.yml"
+mediamtx_recording_dir: "{{ mediamtx_data_dir }}/recordings"
+
+# Container management — using the existing docker-compose pattern at the
+# mgmt-host (per CLAUDE.md "Docker Compose on mgmt-hosts today").
+mediamtx_compose_dir: "/opt/docker-data/mediamtx"
+mediamtx_container_name: "mediamtx"
+mediamtx_restart_policy: "unless-stopped"   # see F-013 caveat for production hardening
+
+# Hooks — on-stream-events for integrity-ledger ingestion (Block 17D).
+# Empty disables; populated when ledger ingestion is wired up.
+mediamtx_run_on_record_segment_complete: ""
+mediamtx_run_on_connect: ""
+mediamtx_run_on_disconnect: ""

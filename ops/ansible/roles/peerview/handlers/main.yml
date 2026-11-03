@@ -1,0 +1,13 @@
+---
+- name: peerview reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: peerview restart poll
+  # oneshot: "restart" means run it again now, so a changed poller, class map
+  # or credential is reflected in the served document within the same play
+  # rather than at the next timer tick.
+  ansible.builtin.systemd:
+    name: peerview-poll.service
+    state: restarted
+  failed_when: false

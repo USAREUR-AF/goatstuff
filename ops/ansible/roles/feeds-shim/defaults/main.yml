@@ -1,0 +1,36 @@
+---
+# feeds-shim role defaults — Block 35E v1.
+# Deploys the MediaMTX → Zenoh feed-catalog bridge as a systemd service
+# alongside the MediaMTX container on each video-bearing site.
+
+# Image source. Pre-shipping the binary directly via Ansible (build artifact
+# from CI) until GHCR image build workflow lands per ADR 0708 pattern.
+feeds_shim_binary_path: "/usr/local/bin/feeds-shim"
+feeds_shim_binary_source: "{{ playbook_dir }}/../zenoh-shims/feeds-shim/target/release/feeds-shim"
+
+# Where in Zenoh's key-expression hierarchy this site advertises feeds.
+# Two segments: `attest/queryable/feeds/<site>/<feed-id>`.
+feeds_shim_site: "{{ site_name }}"
+
+# MediaMTX endpoint for polling /v3/paths/list. Defaults to the keepalived
+# VIP (matching the mediamtx role's bind address).
+feeds_shim_mediamtx_url: "http://{{ keepalived_vip | default(ansible_default_ipv4.address) }}:9997"
+
+# How often to poll MediaMTX. 5s default — fast enough that the catalog
+# stays current, slow enough that idle-site CPU is negligible.
+feeds_shim_poll_sec: 5
+
+# Optional Zenoh client config. Empty = peer-mode auto-config (multicast
+# discovery on the local link). Production sites override with a JSON5
+# config that points at the per-site Zenoh router.
+feeds_shim_zenoh_config_path: ""
+
+# systemd unit
+feeds_shim_user: "feeds-shim"
+feeds_shim_group: "feeds-shim"
+feeds_shim_unit_path: "/etc/systemd/system/feeds-shim.service"
+
+# Whether to run the schema-publish bootstrap (one-shot) before starting
+# the daemon. Run once per site at first deployment per the data-dictionary
+# discipline (Block 23).
+feeds_shim_publish_schemas: true

@@ -1,0 +1,56 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the goat-trashgoat role — deploys the operator-controlled
+# chaos publisher per docs/design/trashgoat.md.
+#
+# Out-of-the-box configuration targets a single-host trial fabric.
+# Override `goat_trashgoat_*` group vars for other deployments.
+
+# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps to this value
+# require an append to deploy-history.yml (CI checks via
+# .github/workflows/deploy-history-check.yml). Built by
+# .github/workflows/goat-trashgoat-image.yml on push to main that
+# touches ops/goat-trashgoat/. Placeholder until first real build.
+goat_trashgoat_image: "ghcr.io/{{ ghcr_org }}/goat-trashgoat:sha-8b83785"
+
+# Zenoh router endpoint the runner connects to. Internal docker network —
+# container-name resolution. mTLS-only on 7447 (binary auto-detects from
+# the endpoint scheme).
+goat_trashgoat_zenoh_endpoint: "tls/{{ zenoh_stack | default('goat-zenoh') }}-router:7447"
+
+# Docker network the zenoh-router container lives on (`<zenoh_stack>_default`).
+# Matches the audit-subscriber + synth-vendor + panoscope roles.
+goat_trashgoat_zenoh_network: "{{ zenoh_stack | default('goat-zenoh') }}_default"
+
+# Control-topic key the runner subscribes to. Matches the portal's
+# publish contract — internal/api/trashgoat.go's trashgoatControlTopic
+# builds `ops/trashgoat/control/<id>/v1`. The `**` wildcard captures
+# every spec.
+goat_trashgoat_control_key: "ops/trashgoat/control/**"
+
+# Runner ceiling: maximum publish rate per spec (Hz). Cadences that
+# would exceed this get clamped, with a warning. Operator can raise per
+# experiment if a specific shape legitimately needs higher rate.
+goat_trashgoat_max_hz: 100
+
+# Per-spec key-history cap. Bounds memory for cleanse bookkeeping when a
+# template like `trashgoat/burst/v1/{uuid}` produces unbounded distinct
+# keys.
+goat_trashgoat_max_keys_per_spec: 10000
+
+# Host-side cert directory. The cert tarball is minted via the existing
+# portal `POST /api/vendors` flow under URI-SAN `trashgoat`. Operator
+# pre-stages files at:
+#   {cert_dir}/trashgoat-cert.pem
+#   {cert_dir}/trashgoat-key.pem
+# CA root cert is sourced separately from the zenoh-router's CA file
+# (same source pattern as audit-subscriber).
+goat_trashgoat_cert_dir: "/opt/goat-trashgoat/certs"
+goat_trashgoat_ca_root_src: "/etc/{{ zenoh_stack | default('goat-zenoh') }}/tls/ca-root-cert.pem"
+
+# Host-side compose project dir.
+goat_trashgoat_compose_dir: "/opt/goat-trashgoat"
+
+# Logging filter.
+goat_trashgoat_rust_log: "goat_trashgoat=info,zenoh=warn"

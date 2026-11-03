@@ -1,0 +1,7 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+- name: microscope | recreate container
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ microscope_compose_dir }}"
+  become: true

@@ -1,0 +1,121 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the netvis role.
+#
+# netvis is its own service, not a page inside microscope. It answers a
+# different question about a different subject — microscope is one entity
+# across every layer; netvis is the whole goatnet's reachability — and sharing
+# a binary made one surface's fence, pin and release cadence the other's.
+# What IS shared is the resolver (panoscope_core::meshgraph), so the two can
+# never disagree about what a policy permits.
+
+# Image — SHA-pinned per ADR 0859. NO default: the first deploy pins the
+# multi-arch INDEX digest (F-245: read it from the registry, never off the
+# build log) with a deploy-history.yml ledger row in the same change. Empty
+# means the role refuses rather than pulling something unpinned.
+netvis_image: "ghcr.io/{{ ghcr_org }}/netvis:sha-da1a889@sha256:b149da98cae21a9faf24e684afd143c8b3d0039858f56e814c403a56117b262c"
+
+netvis_hostname: "netvis.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+netvis_site_label: "{{ site_id | mandatory }}"
+
+# Its OWN compose project directory. Not /opt/mgmt-host — a bare
+# `docker compose up -d` there recreates traefik and, without the ACME
+# overlay, takes the goatnet off management. A service that owns one
+# directory can never do that to a neighbour.
+netvis_compose_dir: /opt/netvis
+netvis_traefik_network: mgmt
+netvis_traefik_dynamic_dir: /etc/traefik/dynamic
+netvis_traefik_dynamic_filename: netvis-deploy.yml
+
+# An earlier filename that may still be on hosts. /etc/traefik/dynamic/ can hold BOTH netvis.yml and
+# netvis-deploy.yml, each declaring router `netvis` and service `netvis`
+# on the same Host() rule. Identical content today, so nothing is
+# visibly broken — but a netvis change renders into one file while the
+# other keeps the old config, and which one Traefik honours is not
+# something to rely on. Removed on deploy.
+netvis_traefik_dynamic_filename_legacy: netvis.yml
+netvis_traefik_router_name: netvis
+netvis_traefik_cert_resolver: le
+netvis_traefik_mesh_only_middleware: ""
+# Per-source browsing rate ceiling (goat-ratelimit, 50 r/s / burst 100),
+# attached per router — surface-overload-protection.md §3.1.
+# Set to "" to disable.
+netvis_traefik_ratelimit_middleware: "goat-ratelimit@file"
+
+# ---- the NetBird read ------------------------------------------------------
+# Both required. Absent, the service still starts and the page states which
+# source went unread — an unread policy set must never render as an empty one.
+netvis_netbird_url: ""
+netvis_netbird_token: ""
+# Where the NetBird management hostname in netvis_netbird_url points INSIDE the container.
+# On a mgmt host `mesh-coredns` pins that name to 127.0.0.1 in /etc/hosts, and
+# Docker's embedded DNS hands the host resolver's answer to containers, where it
+# arrives as `CNAME localhost.` and glibc discards it. Inside a container
+# 127.0.0.1 would be the container anyway. So the name is pinned to
+# `host-gateway`, the host, where traefik publishes :443 for it. Without the pin
+# every NetBird read fails with `error sending request`. Never a bridge or mesh IP; ""
+# drops the pin for a host whose traefik does not serve the name.
+netvis_netbird_host_addr: "host-gateway"
+
+# ---- the fence -------------------------------------------------------------
+# Fails closed: `enforce` with no groups header admits nobody. This surface
+# renders the entire ACL, so a permissive default is the wrong shape.
+netvis_rbac_mode: enforce
+netvis_rbac_groups: "PLATFORM-ADMIN,IAM-ADMIN"
+
+# ---- the ownership lens ----------------------------------------------------
+# "Who is responsible for this machine", resolved through the portal's access
+# graph (docs/design/peer-identity-resolution.md Option B). netvis answers
+# WHICH machine; without this it cannot answer WHO TO ASK, which is the next
+# question every viewer has.
+#
+# Its OWN portal key, minted and persisted by this role — NOT microscope's.
+# Sharing one would mean revoking microscope's portal access silently revokes
+# netvis's, and the two have different fences and different release cadences.
+# Same self-provisioning shape as microscope's: a manual "mint the key + redeploy
+# the portal" step goes undone. The portal hot-reloads its key dir, so registering a key needs no
+# portal redeploy.
+netvis_portal_url: "https://portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+# Empty here, set per goatnet: the portal hostname does not resolve from inside
+# a container, so it needs an extra_hosts pin. `host-gateway`, NEVER mesh_ip_a
+# — a mesh IP written into a container config is a decaying fact (moving the host
+# 403s every login).
+netvis_portal_host_entry: ""
+netvis_portal_key_file: /etc/goat/netvis-portal.key
+netvis_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
+netvis_portal_key_id: netvis
+netvis_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_NETVIS_PORTAL_KEY') | default('', true) }}"
+# Where a resolved person deep-links. The console is `admin.auth.<site>.<zone>`
+# — a per-goatnet fact, supplied by the server so the browser never derives it
+# by string-munging its own hostname.
+netvis_id_console_url: "https://admin.auth.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+netvis_oauth2_proxy_enabled: true
+netvis_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.6.0"
+netvis_oauth2_proxy_oidc_issuer_url: ""
+netvis_oauth2_proxy_client_id: "netvis"
+netvis_oauth2_proxy_client_secret: ""
+netvis_oauth2_proxy_cookie_secret: ""
+netvis_oauth2_proxy_oidc_host_entry: ""
+netvis_oauth2_proxy_allowed_groups: "PLATFORM-ADMIN,IAM-ADMIN"
+
+# The health probe runs INSIDE netvis's compose network (the app publishes no
+# host port), so it needs a tiny image that has curl. Pinned by digest like
+# everything else this role pulls; it appears in deploy-history.yml for the
+# same reason the oauth2-proxy image does.
+netvis_healthcheck_image: "curlimages/curl:8.8.0"
+
+# ---- the assertion re-run --------------------------------------------------
+# The declared ACL asserts things about itself (netbird_acl_matrix.yml →
+# netbird_acl_tests). A pull-request gate checks those when the POLICY
+# changes; this timer checks them when NOTHING changes, which is when the
+# fault we actually produce happens — a peer gains or loses a group, no file
+# is edited, and an assertion that passed at merge is now false.
+#
+# The unit FAILS on a violation and on anything undecidable, so
+# `systemctl --failed` is the alarm and `journalctl -u netvis-assertions` is
+# the evidence. It reads netvis's own /api/assertions: no extra management-API
+# calls beyond the ones the page already makes.
+netvis_assertions_timer_enabled: true
+netvis_assertions_interval: 15min

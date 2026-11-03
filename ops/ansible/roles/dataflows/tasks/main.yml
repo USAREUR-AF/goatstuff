@@ -1,0 +1,8 @@
+---
+# Declared end state (ADR 1206): a site that sets `dataflows_enabled: false` in its
+# group_vars does not run dataflows, so no play that reaches this role deploys it.
+# Unset keeps the role's long-standing behaviour (deploy). The gate that keeps
+# this true for every catalog service: ops/ci/check-role-honours-presence-flag.py.
+- name: dataflows | deploy (skipped where the site declares dataflows_enabled false)
+  ansible.builtin.import_tasks: deploy.yml
+  when: dataflows_enabled | default(true) | bool

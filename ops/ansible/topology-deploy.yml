@@ -1,0 +1,38 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy the zenoh routing-topology surface (ADR 1160).
+#
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES aws-vault exec usareur-af --no-session -- \
+#     ../scripts/ansible-preflight.sh \
+#       -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#       topology-deploy.yml -e target=zagros_hosts
+#
+# PREREQUISITES, in order. Each is checked by the role and fails closed rather
+# than deploying something that runs but publishes nothing:
+#
+#   1. The zenoh router is deployed on the target hosts, and its ACL carries
+#      the `infra-topology` subject + `infra-w-topology` rule. That ACL lives in
+#      roles/goat-zenoh/templates/config.json5.j2, so adding it needs a zenoh
+#      re-render — see the F-258 note in that role before re-rendering a
+#      goatnet whose ACL is hybrid.
+#   2. A leaf cert with CN=goat-topology-trial-peer at
+#      {{ goat_topology_cert_dir }}. Mint from the site manifest:
+#        ops/scripts/mint-site-certs.sh <site> --only goat-topology
+#      A wrong CN means every publish is denied SILENTLY.
+#
+# Modes are per-host: router hosts get `publish`, the mgmt-host also gets
+# `serve`. Set goat_topology_modes in group_vars, not here.
+
+- name: Deploy goat-topology
+  # No default. A deploy playbook that picks a goatnet for you will one day pick
+  # the wrong one silently, and `zagros_hosts` is not a safer guess than an error.
+  # Both documented invocations — this file's own header and
+  # zenoh-topology-surface.md §"Playbook" — already pass `-e target=`, so the
+  # default was never on a path anyone used.
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  roles:
+    - role: goat-topology

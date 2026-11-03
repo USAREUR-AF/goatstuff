@@ -1,0 +1,134 @@
+---
+# Shared deploy-rollback ledger defaults (ADR 1060).
+# Every depending role overrides rollback_component (+ rollback_ref for
+# image/config/acl artifact types) in its meta/main.yml dependency stanza.
+
+# REQUIRED — the ledger key; equals the `ops/scripts/rollback.sh <component>`
+# argument and the /var/lib/goat/<component>/ directory. Empty fails closed.
+rollback_component: ""
+
+# image | config | acl | data | cert | forward-only
+#   image        -> rollback.sh re-pins + redeploys (automated)
+#   config / acl -> git-SHA revert + redeploy (tool prints guidance)
+#   data         -> tool refuses; print rollback_restore_pointer (backup-restore)
+#   cert         -> tool refuses auto; print rollback_restore_pointer (rotate)
+#   forward-only -> tool refuses (also set rollback_reversible: false)
+rollback_artifact_type: image
+
+# The ref actually deployed (image string for image; git SHA / path for
+# config/acl). REQUIRED for image/config/acl; may be empty for data/cert/
+# forward-only where there is no rollable ref.
+rollback_ref: ""
+
+# false -> rollback.sh refuses this component (forward-only changes).
+rollback_reversible: true
+
+# Optional operator-facing pointer surfaced by the tool when it refuses or
+# guides (e.g. "pgBackRest stanza <x>" / "goat admin rotate <anchor>").
+rollback_restore_pointer: ""
+
+# The rollout preflight's accepted risk (ADR 1211). When a deploy of a `none`
+# or `restore-required` rollout proceeds with --ack, the deploy driver passes
+# this object ({state, rollback, scope, accepted_by}); the row then records what
+# risk was knowingly accepted, and by whom. Empty (the default) adds nothing.
+rollback_preflight_accept: {}
+
+rollback_ledger_dir: "/var/lib/goat/{{ rollback_component }}"
+rollback_ledger_path: "{{ rollback_ledger_dir }}/deploy-history.jsonl"
+
+# Ledger file/dir ownership. Defaults to root:root (the fleet baseline, with
+# become:true); overridable for hosts/tests where the writing identity differs.
+rollback_ledger_owner: root
+rollback_ledger_group: root
+
+# When the pending row is promoted to `deploy`+`promoted_at`:
+#
+#   handler  (default) — the row is queued at role entry and promoted by the
+#             end-of-play handler, on hosts that did not fail. Correct for a
+#             role that runs no `meta: flush_handlers` before its own
+#             bring-up/health/smoke: the first handler flush IS the end of play.
+#
+#   explicit — the meta-dep still writes the `pending` row at role entry, but
+#             does NOT queue it for the handler. A role that calls
+#             `meta: flush_handlers` mid-role (to land a compose/cert change
+#             before it smoke-tests) MUST use this, because flush_handlers is
+#             PLAY-scoped and would otherwise promote the row BEFORE the health
+#             gate — leaving a `deploy` row for a deploy that then failed. Such
+#             a role includes `rollback-ledger` `tasks_from: promote` as the
+#             LAST step of its deploy path, after health/smoke; a role that
+#             fails before reaching it leaves the row `pending` (its truth).
+#
+# ops/ci/test-ledger-promote-pending.py enforces that every role which both
+# depends on this role AND runs `meta: flush_handlers` sets `explicit` and
+# carries the promote include — the invariant can only hold, never regress.
+rollback_promote_mode: handler
+
+# ---------------------------------------------------------------------------
+# The applied-intent stamp (CF-3, consistency-foundation.md §5.2)
+# ---------------------------------------------------------------------------
+# One idempotent write per converging node: /var/lib/goat/intent/applied.json,
+# recording which generation of its goatnet's IntentV1 this run is converging
+# the node to, and which checkout delivered it.
+#
+# It lives in THIS role rather than a new one on purpose. This role already runs
+# at the entry of every deploying role, already sets allow_duplicates, and is
+# already fail-closed-ratcheted by ops/ci/check-rollback-coverage.sh — so intent
+# stamping inherits universal coverage from a gate that is already green,
+# instead of starting a second coverage campaign at zero.
+#
+# FAIL-OPEN BY DESIGN, and this is the one place in the arc where that is right:
+# a goatnet with no `consistency_goatnet` set is simply not governed by
+# ops/pins/fleet-pins.yaml, and the forward-only scope (environment-parity.md
+# §Scope) means legacy envs must keep deploying exactly as they do today. An
+# ungoverned node writes no stamp, and a reader grades it `indeterminate` —
+# nothing to read — which is the honest answer, not a failure.
+consistency_stamp_enabled: true
+
+# The goatnet whose intent artifact governs this host, per fleet-pins.yaml's
+# `goatnets:` keys (`zagros`, `zagros_prod`). Empty = ungoverned; no stamp.
+consistency_goatnet: ""
+
+# Which IntentV1 member COLUMN this host is (`zagros_hosts`, `zagros_b_hosts`, …).
+# Declared rather than derived from `group_names`, which lists every group a
+# host belongs to and cannot say which one is the intent column.
+consistency_member_group: ""
+
+consistency_stamp_dir: /var/lib/goat/intent
+consistency_stamp_path: "{{ consistency_stamp_dir }}/applied.json"
+
+# ---------------------------------------------------------------------------
+# The render manifest (CF-4, consistency-foundation.md §5.2a)
+# ---------------------------------------------------------------------------
+# One post-render write per adopting role: /var/lib/goat/<component>/
+# render-manifest.json, recording the sha256 of every file in the component's
+# DECLARED watch-set (consistency_render_watch, rendered into pins.yml from
+# ops/pins/fleet-pins.yaml — the one home of the declaration) as this converge
+# rendered it. The consistency collector hashes the same files later and
+# publishes BOTH hashes; a hand-edit then grades `unaccountable` at the reader.
+#
+# Unlike the ledger row (role ENTRY, recorded intent), the manifest is written
+# by `tasks_from: render-manifest` included at the END of the adopting role's
+# tasks — position, not reconciliation, is what makes it a post-render fact.
+#
+# DEFAULT-OFF, and doubly gated: this flag must be true AND the component must
+# have a non-empty watch-set declared. A goatnet that declares nothing records
+# nothing, and a reader grades a declared-but-unrecorded set `indeterminate` —
+# nothing to read, never a finding. Fail-closed within a recording: a declared
+# file that cannot be hashed at converge is recorded with an empty hash and a
+# note, never silently omitted.
+consistency_render_manifest_enabled: false
+
+# component -> [on-host paths]; rendered into group_vars/<member>/pins.yml by
+# ops/pins/generate-pins.py. Empty = nothing declared for this host.
+consistency_render_watch: {}
+
+# Where render manifests live: <root>/<component>/render-manifest.json — the
+# same tree as the ledger. Overridable for tests, like rollback_ledger_dir.
+consistency_render_manifest_root: /var/lib/goat
+
+# Served payloads (goat-get, goat-docs): release assets a role downloads at
+# deploy time, versioned by a role var rather than the image. A list of
+# {name, tag_var, enabled_var (optional), file (relative to rollback_served_root)}.
+# Empty for every role that serves nothing but its image.
+rollback_served: []
+rollback_served_root: ""

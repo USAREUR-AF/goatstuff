@@ -1,0 +1,106 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Defaults for the stethoscope role (Block 90 Phase B).
+# Override in group_vars or by passing -e via the playbook.
+
+# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps require an
+# append to deploy-history.yml; CI gate at
+# .github/workflows/deploy-history-check.yml refuses image-pin changes
+# without a matching ledger row.
+stethoscope_image: "ghcr.io/{{ ghcr_org }}/stethoscope@sha256:72b09f4a77ce868feb13befc13c322eff291f4916c17f6462513b23e5730f269"
+
+# Public hostname for browser-facing access. Pattern is
+# `<surface>.<site_id>.<site_dns_zone>`, the canonical naming. The
+# role default has to carry <site_id> or it is wrong for every site
+# without an explicit override.
+stethoscope_hostname: "stethoscope.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+
+# User-facing site label shown in the slim top bar of every page.
+stethoscope_site_label: "{{ site_id | mandatory }}"
+
+# Portal API endpoint + bearer token. Empty disables every portal-
+# dependent check (registration, schema-body); they degrade to
+# Skipped with an honest "portal client not configured" summary so a
+# partial deploy doesn't crash the page.
+stethoscope_portal_url: "https://portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+# Self-provisioning portal key (the microscope / panoscope pattern, F-559).
+# The per-goatnet wiring named a variable the portal never accepted, so portal
+# reads 401'd silently. The role now owns the credential end to end.
+stethoscope_portal_api_key: ""            # set in tasks from the persisted file
+stethoscope_portal_key_file: /etc/goat/stethoscope-portal.key
+stethoscope_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
+stethoscope_portal_key_id: stethoscope
+stethoscope_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_STETHOSCOPE_PORTAL_KEY') | default('', true) }}"
+
+# On-host DNS override. The portal
+# hostname is in mesh-DNS only; Docker's embedded resolver can't see
+# CoreDNS on :5353, so the public name is statically pinned to the
+# mgmt-host's mesh IP.
+stethoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+
+# Audit-tail (flow-rate check) data source — MinIO. Disabled by default
+# so hosts ship the role without the credential dependency. A site's
+# group_vars enables + supplies the endpoint + read-only IAM user.
+stethoscope_audit_enabled: false
+stethoscope_audit_endpoint: ""
+stethoscope_audit_region: "us-east-1"
+stethoscope_audit_bucket: "audit-integrity"
+# Per-site key prefix in audit-integrity (e.g. `site-a/`). Audit-subscriber
+# writes audit-integrity/<id>/<YYYY>/<MM>/<DD>/<HH>/... — derived from the
+# per-site audit_subscriber_id SoT so a fork can't read another's prefix;
+# the fallback is legacy back-compat.
+stethoscope_audit_key_prefix: "{{ audit_subscriber_id | default('nova-a') }}/"
+stethoscope_audit_access_key: ""
+stethoscope_audit_secret_key: ""
+stethoscope_audit_request_timeout_s: 30
+stethoscope_audit_max_objects: 5000
+
+# Logging.
+stethoscope_rust_log: "stethoscope=info,stethoscope_checks=info,panoscope_core=info,axum=info,hyper=warn"
+
+# Bind — container side. Traefik routes to this from the mgmt network.
+stethoscope_bind: "0.0.0.0:8080"
+
+# Compose state.
+stethoscope_compose_dir: "/opt/stethoscope"
+
+# Traefik wiring — matches the live panoscope / demogame pattern:
+# file-provider config in /etc/traefik/dynamic/, container joined to
+# the `mgmt` Docker network so Traefik resolves it by alias.
+stethoscope_traefik_provider: file
+stethoscope_traefik_network: "mgmt"
+stethoscope_traefik_dynamic_dir: "/etc/traefik/dynamic"
+stethoscope_traefik_dynamic_filename: "stethoscope.yml"
+
+# The pre-rename filename, removed from the host on deploy. Leaving it
+# behind would give Traefik two routers on the same Host() rule.
+stethoscope_traefik_dynamic_filename_legacy: "nova-stethoscope.yml"
+stethoscope_traefik_cert_resolver: "le"
+stethoscope_traefik_router_name: "stethoscope"
+
+# Mesh-only gating — stethoscope is not part of the
+# enrollment surface; restrict to the netbird mesh CIDR via the
+# `mesh-only-allowlist` middleware defined in mgmt-dynamic.yml.j2.
+stethoscope_traefik_mesh_only_middleware: "mesh-only-allowlist@file"
+# Per-source browsing rate ceiling (goat-ratelimit, 50 r/s / burst 100),
+# attached per router — surface-overload-protection.md §3.1.
+# Set to "" to disable.
+stethoscope_traefik_ratelimit_middleware: "goat-ratelimit@file"
+
+# Ory OIDC client provisioning. Phase B: any authenticated identity
+# can diagnose (matching panoscope's posture); ADMINS gating lands in
+# Phase C alongside the configure-checks drawer.
+stethoscope_oidc_client_id: "stethoscope"
+stethoscope_oidc_redirect_uri: "https://{{ stethoscope_hostname }}/oauth2/callback"
+stethoscope_oidc_scope: "openid profile email"
+stethoscope_hydra_admin_url: "http://127.0.0.1:4445"
+
+# Block 94 cross-surface deep-link contract — sibling-surface base URLs.
+# Rendered into the topbar as `see in panoscope ↗` + `watch in flashlight ↗`
+# buttons that preserve the current target. Empty = no button (URL-only
+# contract, no runtime coupling). Hostname pattern is
+# `<surface>.<site_id>.<site_dns_zone>`, the canonical naming. See
+# docs/design/zenoh-surface-deep-links.md.
+stethoscope_sibling_panoscope_url: "https://panoscope.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"
+stethoscope_sibling_flashlight_url: "https://flashlight.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}"

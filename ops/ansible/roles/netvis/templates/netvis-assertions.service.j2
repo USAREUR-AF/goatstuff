@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+[Unit]
+Description=netvis — re-run the declared ACL assertions against live state
+Documentation=https://github.com/usareur-af/goatcore/blob/main/docs/design/netvis.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart={{ netvis_compose_dir }}/check-assertions.sh
+# A failure here is a STANDING condition, not a transient one: the mesh
+# disagrees with what the declaration says about it, and it will keep
+# disagreeing until somebody changes one of them. So the unit stays failed and
+# `systemctl --failed` is the alarm.
+SuccessExitStatus=0

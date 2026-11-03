@@ -1,0 +1,33 @@
+// zenoh-sandbox router config — router + rest + remote_api WebSocket plugin.
+// Rendered by ops/ansible/roles/zenoh-sandbox/tasks/main.yml — do not edit on host.
+// Design: docs/design/zenoh-sandbox.md
+//
+// ISOLATION INVARIANT: there is intentionally NO `connect:` block. This
+// router peers with NOTHING — not the trial fabric, not any production
+// router. Adding a connect endpoint here would stop this being a sandbox.
+{
+  mode: "router",
+  listen: {
+    endpoints: ["tcp/0.0.0.0:{{ zenoh_sandbox_router_port }}"]
+  },
+  plugins_loading: {
+    enabled: true,
+    // "/" carries the upstream rest plugin shipped in the eclipse/zenoh
+    // image; our mounted dir carries the downloaded remote_api .so. Both
+    // must be searched (omitting "/" makes even the built-in plugins fail
+    // to load — same gotcha the zenoh role documents).
+    search_dirs: ["/", "{{ zenoh_sandbox_plugin_dir }}"]
+  },
+  plugins: {
+    rest: {
+      // Ad-hoc GET <keyexpr> for engineers; reachable inside the compose net.
+      http_port: "0.0.0.0:{{ zenoh_sandbox_rest_port }}"
+    },
+    remote_api: {
+      // WebSocket the browser SPA connects to (via Traefik wss → here).
+      // Plain ws inside the compose network; Traefik terminates TLS and
+      // WireGuard encrypts the mesh hop, so cleartext never leaves the host.
+      websocket_port: "0.0.0.0:{{ zenoh_sandbox_ws_port }}"
+    }
+  }
+}

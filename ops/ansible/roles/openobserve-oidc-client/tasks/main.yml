@@ -1,0 +1,88 @@
+---
+# Block 21H.3b — provision OAuth2 client for OpenObserve at operator-IdP Hydra.
+# Idempotent. Mirrors grafana-oidc-client shape with F-077 + F-078
+# mitigations baked in.
+
+- name: Require OpenObserve OIDC client secret
+  ansible.builtin.assert:
+    that:
+      - operator_idp_openobserve_client_secret is defined
+      - (operator_idp_openobserve_client_secret | length) >= 32
+      - site_id is defined and (site_id | length) > 0
+    fail_msg: |
+      Missing operator_idp_openobserve_client_secret. Generate fresh:
+        export <SITE>_C_OPERATOR_IDP_OPENOBSERVE_CLIENT_SECRET=$(openssl rand -hex 32)
+
+- name: Pre-flight Hydra admin reachability
+  ansible.builtin.uri:
+    url: "{{ openobserve_oidc_hydra_admin }}/health/ready"
+    status_code: 200
+  retries: 5
+  delay: 2
+
+- name: Check whether OpenObserve OAuth2 client exists at Hydra
+  ansible.builtin.uri:
+    url: "{{ openobserve_oidc_hydra_admin }}/admin/clients/{{ openobserve_oidc_client_id }}"
+    status_code: [200, 404]
+    return_content: true
+  register: openobserve_client_get
+
+- name: Construct desired OpenObserve OAuth2 client config
+  ansible.builtin.set_fact:
+    openobserve_client_config:
+      client_id: "{{ openobserve_oidc_client_id }}"
+      client_name: "{{ openobserve_oidc_client_name }}"
+      client_secret: "{{ operator_idp_openobserve_client_secret }}"
+      grant_types: [authorization_code, refresh_token]
+      response_types: [code]
+      scope: "{{ openobserve_oidc_scopes | join(' ') }}"
+      redirect_uris: ["{{ openobserve_oidc_redirect_uri }}"]
+      token_endpoint_auth_method: client_secret_post
+      skip_consent: true              # F-077
+      access_token_strategy: jwt      # F-078
+      audience: ["{{ openobserve_oidc_client_id }}"]
+
+- name: Create OpenObserve OAuth2 client (POST when not present)
+  ansible.builtin.uri:
+    url: "{{ openobserve_oidc_hydra_admin }}/admin/clients"
+    method: POST
+    body_format: json
+    body: "{{ openobserve_client_config }}"
+    status_code: 201
+  when: openobserve_client_get.status == 404
+  no_log: true
+
+- name: Detect drift on existing OpenObserve OAuth2 client
+  ansible.builtin.set_fact:
+    openobserve_client_drift: >-
+      {{ openobserve_client_get.json.client_secret != operator_idp_openobserve_client_secret
+         or (openobserve_client_get.json.redirect_uris | sort) != ([openobserve_oidc_redirect_uri] | sort)
+         or openobserve_client_get.json.skip_consent != true
+         or openobserve_client_get.json.access_token_strategy != 'jwt' }}
+  when: openobserve_client_get.status == 200
+
+- name: Update OpenObserve OAuth2 client (PUT on drift)
+  ansible.builtin.uri:
+    url: "{{ openobserve_oidc_hydra_admin }}/admin/clients/{{ openobserve_oidc_client_id }}"
+    method: PUT
+    body_format: json
+    body: "{{ openobserve_client_config }}"
+    status_code: 200
+  when:
+    - openobserve_client_get.status == 200
+    - openobserve_client_drift | default(false) | bool
+  no_log: true
+
+- name: Surface OpenObserve OIDC client status
+  ansible.builtin.debug:
+    msg: |
+      OpenObserve OAuth2 client at operator-IdP Hydra:
+        client_id:    {{ openobserve_oidc_client_id }}
+        issuer:       {{ openobserve_oidc_issuer_url }}
+        redirect:     {{ openobserve_oidc_redirect_uri }}
+        action:       {{ 'created' if openobserve_client_get.status == 404
+                         else ('updated (drift)' if (openobserve_client_drift | default(false))
+                               else 'no change') }}
+      OpenObserve env-var consumption: see openobserve role's compose
+      template (ZO_OPENID_* env vars; verify against upstream docs at
+      first bringup — UPSTREAM ENV NAMING IS A KNOWN UNCERTAINTY).

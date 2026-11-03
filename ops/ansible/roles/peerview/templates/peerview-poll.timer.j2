@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=peerview poll ({{ peerview_interval_s }}s)
+
+[Timer]
+# Deliberately offset from netview-poll's OnBootSec=45s. Both read the same
+# host and one of them shells out to `docker logs`; starting them in the same
+# second on a boot storm is free contention for nothing.
+OnBootSec=90s
+OnUnitActiveSec={{ peerview_interval_s }}s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

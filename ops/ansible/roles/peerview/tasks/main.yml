@@ -1,0 +1,398 @@
+---
+- name: peerview | require the NetBird service identity (netbird-infra)
+  ansible.builtin.include_tasks: "{{ role_path }}/../../tasks/require-netbird-service-identity.yml"
+  vars:
+    nsi_identity: netbird-infra
+    nsi_token: "{{ peerview_netbird_token }}"
+
+- name: peerview | refuse to deploy without a management URL
+  # Fail at the top rather than deploying a surface whose only real source is
+  # dark. A page that renders "the census did not answer" is honest and it is
+  # not what anyone asked for, and shipping it quietly is how a broken deploy
+  # gets reported as a green one.
+  ansible.builtin.assert:
+    that:
+      - peerview_netbird_url | length > 0
+    fail_msg: >-
+      peerview needs a NetBird management URL. Set peerview_netbird_url in this
+      goatnet's group_vars. Its token is the netbird-infra service identity,
+      checked by the task above.
+    quiet: true
+
+- name: peerview | bin dir
+  ansible.builtin.file:
+    path: "{{ peerview_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: peerview | state dir (the ledger, NOT served)
+  ansible.builtin.file:
+    path: "{{ peerview_state_dir }}"
+    state: directory
+    owner: root
+    group: "{{ onboard_runner_uid | default('root') if onboard_runner_enabled | default(false) | bool else 'root' }}"
+    # The console needs traversal for its read-only mount. When the runner is
+    # enabled, its private uid group also needs directory write permission for
+    # the lifecycle engine's lock file and atomic hold-record replacement; the
+    # 0600 ledger remains unreadable to the console's separate container.
+    mode: "{{ '0770' if onboard_runner_enabled | default(false) | bool else '0711' }}"
+
+- name: peerview | share lifecycle hold records with the onboard runner
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: root
+    group: "{{ onboard_runner_uid }}"
+    mode: "0660"
+    access_time: preserve
+    modification_time: preserve
+  loop:
+    - "{{ lifecycle_hold_records }}"
+    - "{{ lifecycle_hold_records }}.lock"
+  when: onboard_runner_enabled | default(false) | bool
+
+- name: peerview | install the poller
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../peerview/peerview-poll.py"
+    dest: "{{ peerview_bin_dir }}/peerview-poll.py"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: peerview restart poll
+
+- name: peerview | install the service-class declaration
+  # The browse/core line has ONE home and it is a file on disk, so the answer
+  # to "why is panoscope counted as browsing" is readable on the host that
+  # rendered the page rather than only in the repo.
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../peerview/peerview-service-classes.yaml"
+    dest: "{{ peerview_bin_dir }}/peerview-service-classes.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: peerview restart poll
+
+- name: peerview | install the ACL taxonomy (role + scope vocabulary)
+  # Copied from the repo rather than re-declared, so the roles this page counts
+  # are the roles the ACL actually declares. A second copy of the vocabulary is
+  # a second thing to drift.
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/netbird_acl_taxonomy.yml"
+    dest: "{{ peerview_bin_dir }}/netbird_acl_taxonomy.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: peerview restart poll
+
+- name: peerview | install the shared peer→person client
+  # ops/identity/peerowner.py — the Python client for the portal's peer→person
+  # resolver (docs/design/peer-identity-resolution.md). Shared with the Thor
+  # relay-health resolver rather than re-inlined here: the endpoint was already
+  # shared, the READING of it was not, and a consumer that gets the four-state
+  # attribution wrong renders a blank that reads as "unowned".
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../identity/peerowner.py"
+    dest: "{{ peerview_bin_dir }}/peerowner.py"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: peerview restart poll
+
+- name: peerview | locate THIS goatnet's declared owner registry
+  # ADR 1172 — one artifact per goatnet. A roster that unions every environment
+  # would attribute a peer to somebody its goatnet never admitted and expose other
+  # goatnets' declared owners, so the registry this surface reads is the one that
+  # goatnet built for itself.
+  ansible.builtin.set_fact:
+    peerview_roster_src: >-
+      {{ lookup('first_found', {'files': ['roster.json'],
+                                'paths': [playbook_dir ~ '/../../docs/operators/' ~ peerview_goatnet]},
+                errors='ignore') | default('', true) }}
+
+- name: peerview | remove a registry this goatnet is no longer served (ADR 1172)
+  # Same rule as the portal's: skipping the copy leaves the last converge's file
+  # in place, and peerview attributes peer owners from this file, so leaving it
+  # would keep attributing another goatnet's people from a file nothing refreshes.
+  ansible.builtin.file:
+    path: "{{ peerview_bin_dir }}/roster.json"
+    state: absent
+  when: peerview_roster_src | length == 0
+  notify: peerview restart poll
+
+- name: peerview | say so when this goatnet has no declared owner registry
+  # Absent, not stale-but-plausible: the page renders "no owner recorded",
+  # which is true. Generate one with
+  #   ops/operators/gen-roster.py --env {{ peerview_goatnet }}
+  # once ops/operators/{{ peerview_goatnet }}/ holds that goatnet's manifests.
+  ansible.builtin.debug:
+    msg: >-
+      no docs/operators/{{ peerview_goatnet }}/roster.json in this checkout —
+      peerview will attribute no peer owners on this goatnet. This is the
+      honest state for a goatnet whose declared half does not exist yet; it is
+      NOT a reason to fall back to docs/operators/roster.json, which spans
+      every environment (ADR 1172).
+  when: peerview_roster_src | length == 0
+
+- name: peerview | install the declared owner registry
+  # docs/operators/<goatnet>/roster.json — the generated, public-safe half of
+  # that goatnet's operator manifests (handles, org slugs, states, the
+  # person->system custody edge; no names, no emails). Copied from the repo for
+  # the same reason the taxonomy is: the identities this surface attributes
+  # peers to are the identities the registry declares, and a second copy of
+  # that list is a second thing to drift. A goatnet deploying from a stale
+  # checkout gets a stale registry and the page says when it was generated, so
+  # staleness is visible rather than silent.
+  ansible.builtin.copy:
+    src: "{{ peerview_roster_src }}"
+    dest: "{{ peerview_bin_dir }}/roster.json"
+    owner: root
+    group: root
+    mode: "0644"
+  when: peerview_roster_src | length > 0
+  notify: peerview restart poll
+
+- name: peerview | install the declared owners for substrate peers
+  # The peers that will never carry an onboarding name — the mgmt host, relays,
+  # a kiosk box. Empty by default: an undeclared substrate peer reads "no owner
+  # recorded", which is true, rather than being quietly attributed to whoever
+  # runs the goatnet.
+  #
+  # The header below is a LITERAL, not the ansible_managed magic variable. That
+  # variable is injected by the TEMPLATE module; this is `copy: content:`, which
+  # evaluates plain Jinja against play vars where it does not exist. The task
+  # failed on every run with "'ansible_managed' is undefined", so
+  # declared-owners.txt was never written — the play reported failed=1 and the
+  # file was simply absent. Every other use in this repo is inside a .j2 and is
+  # fine. NOTE the explanation lives HERE, in a YAML comment: the first fix put
+  # it inside `content:`, where Jinja rendered the very expression it was
+  # warning about and the task kept failing.
+  ansible.builtin.copy:
+    content: |
+      # Ansible managed — edit peerview_declared_owners in group_vars, not here.
+      #
+      # <peer-name-or-glob>: <handle>
+      #
+      # A FALLBACK for peers with no onboarding name in them. Never an override:
+      # a peer whose name resolves to a person in the registry stays theirs.
+      # Longest pattern wins, so a specific host beats the class glob.
+      {% for pat, handle in (peerview_declared_owners | default({})).items() %}
+      {{ pat }}: {{ handle }}
+      {% endfor %}
+    dest: "{{ peerview_bin_dir }}/declared-owners.txt"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: peerview restart poll
+
+- name: peerview | write the credential env file
+  ansible.builtin.template:
+    src: peerview.env.j2
+    dest: "{{ peerview_bin_dir }}/peerview.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: peerview restart poll
+
+- name: peerview | install the pages into the already-gated nginx root
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../peerview/www/{{ item }}"
+    dest: "{{ peerview_www_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - peers.html
+    - demand.html
+    - peerview.css
+    - peerview-common.js
+
+- name: peerview | systemd unit + timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - peerview-poll.service
+    - peerview-poll.timer
+  notify: peerview reload systemd
+
+# ── ADR 1136 dormancy sweep ────────────────────────────────────────────────
+# Installed here because it writes into peerview_state_dir. Before this
+# nothing deployed it: the script and its units were placed by hand, drifted
+# from the repo, and kept running a broken age clock after the fix merged.
+# Conforms to live-state-guard-scheduling.md §4.
+
+# Refuse to install unconfigured rather than deploy a unit that fails hourly —
+# the credentials row of the §4 contract. Skipping the timer leaves the roster
+# stale, which is visible; a unit failing every hour gets muted, then ignored.
+- name: peerview | lifecycle sweep — refuse to install without a token
+  ansible.builtin.debug:
+    msg: >-
+      lifecycle_sweep_nb_token is empty, so the ADR 1136 sweep timer is NOT being
+      installed on this host. Set it (or peerview_netbird_token) in this goatnet's
+      group_vars and re-run. The roster will be absent, not stale-but-plausible.
+  when:
+    - lifecycle_sweep_enabled | default(true) | bool
+    - not (lifecycle_sweep_nb_token | default('') | length > 0)
+
+- name: peerview | ADR 1136 dormancy sweep
+  when:
+    - lifecycle_sweep_enabled | default(true) | bool
+    - lifecycle_sweep_nb_token | default('') | length > 0
+  block:
+    # /etc/goat is created here rather than assumed: the sibling guard roles that
+    # also put an env file there may not have run on this host.
+    - name: peerview | lifecycle sweep report + config dirs
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /etc/goat, mode: "0755" }
+        - { path: "{{ lifecycle_sweep_report_dir }}", mode: "0750" }
+
+    - name: peerview | install the ADR 1136 dormancy sweep
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/lifecycle-sweep.py"
+        dest: "{{ peerview_bin_dir }}/lifecycle-sweep.py"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: peerview | lifecycle sweep guard wrapper
+      ansible.builtin.template:
+        src: lifecycle-sweep-guard.sh.j2
+        dest: "{{ peerview_bin_dir }}/lifecycle-sweep-guard.sh"
+        owner: root
+        group: root
+        mode: "0750"
+
+    # 0600: an admin-scoped mesh token. Written by ansible from group_vars, never
+    # hand-edited on the box.
+    - name: peerview | lifecycle sweep env file
+      ansible.builtin.copy:
+        dest: /etc/goat/lifecycle-sweep.env
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          NB_API={{ lifecycle_sweep_nb_api }}
+          GOATNET={{ site_id }}
+          NB_TOKEN={{ lifecycle_sweep_nb_token }}
+          LIFECYCLE_HOLD_RECORDS={{ lifecycle_hold_records }}
+      no_log: true
+
+    - name: peerview | lifecycle sweep unit + timer
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - lifecycle-sweep.service
+        - lifecycle-sweep.timer
+      notify: peerview reload systemd
+
+    # The hand-placed copy lived at /usr/local/bin. Remove it once the managed
+    # copy is in place, so a stale script cannot be run by muscle memory or by a
+    # unit somebody wrote before this role owned the job.
+    - name: peerview | remove the hand-placed lifecycle sweep
+      ansible.builtin.file:
+        path: /usr/local/bin/lifecycle-sweep.py
+        state: absent
+
+- name: peerview | flush handlers before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: peerview | enable + start the timer
+  ansible.builtin.systemd:
+    name: peerview-poll.timer
+    enabled: true
+    state: started
+
+- name: peerview | enable + start the lifecycle sweep timer
+  ansible.builtin.systemd:
+    name: lifecycle-sweep.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - lifecycle_sweep_enabled | default(true) | bool
+    - lifecycle_sweep_nb_token | default('') | length > 0
+
+# `enabled: false` must TEAR DOWN, not merely stop converging — the teardown row
+# of the §4 contract. A timer left running from a previous apply keeps writing a
+# roster nobody is maintaining, and a metric left behind keeps being scraped and
+# graphed as though it were current. Removing the units, the scripts, the token
+# and the stale metric is the whole of "off".
+- name: peerview | tear the lifecycle sweep down when disabled
+  when: not (lifecycle_sweep_enabled | default(true) | bool)
+  block:
+    - name: peerview | stop + disable the lifecycle sweep timer
+      ansible.builtin.systemd:
+        name: lifecycle-sweep.timer
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    # The metric path is appended only when a textfile dir is actually declared —
+    # otherwise the empty default would synthesise `/lifecycle_sweep.prom` and the
+    # teardown would be reaching at the filesystem root.
+    - name: peerview | remove the lifecycle sweep units, scripts, token + metric
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: >-
+        {{ ['/etc/systemd/system/lifecycle-sweep.timer',
+            '/etc/systemd/system/lifecycle-sweep.service',
+            peerview_bin_dir ~ '/lifecycle-sweep-guard.sh',
+            peerview_bin_dir ~ '/lifecycle-sweep.py',
+            '/etc/goat/lifecycle-sweep.env']
+           + ([lifecycle_sweep_textfile_dir ~ '/lifecycle_sweep.prom']
+              if (lifecycle_sweep_textfile_dir | default('') | length > 0) else []) }}
+      notify: peerview reload systemd
+
+- name: peerview | run once now so the pages have data immediately
+  ansible.builtin.systemd:
+    name: peerview-poll.service
+    state: started
+
+- name: peerview | prove the json was written, parses, and carries a census
+  # Verification, not hope. A page that fetches a missing json shows an error
+  # banner — honest, and useless. And a json that parses but has no census is
+  # the failure that actually happens (a bad token, a URL typo), so the check
+  # asserts the census answered rather than only that the file exists.
+  ansible.builtin.command: >-
+    python3 -c "import json,sys;
+    d=json.load(open('{{ peerview_www_dir }}/peerview.json'));
+    c=d.get('census') or {};
+    sys.exit(0 if c.get('ok') and c.get('peers_total') is not None else 1)"
+  register: _pv
+  retries: 6
+  delay: 5
+  until: _pv.rc == 0
+  changed_when: false
+
+- name: peerview | report which sources answered
+  # Printed, not asserted. On some goatnets the traefik-metrics and attribution
+  # sources do not exist and the surface runs with them dark; failing on that
+  # would be wrong. Surfacing it in the deploy log means nobody has to open the
+  # page to find out what it will be missing.
+  ansible.builtin.command: >-
+    python3 -c "import json;
+    d=json.load(open('{{ peerview_www_dir }}/peerview.json'));
+    print(' '.join(('%s=%s' % (k, 'ok' if v['ok'] else 'DARK')) for k,v in d['sources'].items()))"
+  register: _pv_sources
+  changed_when: false
+
+- name: peerview | sources
+  ansible.builtin.debug:
+    msg: "peerview sources on {{ inventory_hostname }}: {{ _pv_sources.stdout }}"

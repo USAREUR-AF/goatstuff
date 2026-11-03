@@ -1,0 +1,272 @@
+---
+# tak-server.yml — Deploy TAK Server with WebTAK, federation, and mesh integration
+#
+# Configures a bare-metal or VM host with:
+#   - TAK Server (Docker) with WebTAK, Missions, Data Sync, ExCheck
+#   - PostgreSQL 16 (TAK-only instance)
+#   - TAK certificate authority and server/client certs
+#   - Federation hub connection (outbound to a partner hub)
+#   - Mesh DNS registration
+#
+# Usage:
+#   ansible-playbook tak-server.yml
+#   ansible-playbook tak-server.yml --limit tak-01
+#   ansible-playbook tak-server.yml -e tak_pg_password=abc123
+#   ansible-playbook tak-server.yml --tags certs        # Certs only
+#   ansible-playbook tak-server.yml --tags federation    # Federation only
+#
+# Required host vars (set by inventory or extra-vars):
+#   - tak_mesh_ip          — Netbird mesh IP of the TAK host
+#
+# Optional extra-vars:
+#   - tak_pg_password       — PostgreSQL password (generated if not set)
+#   - tak_cert_password     — Certificate keystore password
+#   - federation_host       — partner federation endpoint (IP or hostname)
+#   - federation_port       — partner federation port (default 9000)
+#
+# Prerequisites:
+#   - Host provisioned and enrolled in Netbird mesh (build.sh --role client)
+#   - TAK Server Docker image loaded on the host
+#   - Docker installed (handled by this playbook if missing)
+#
+# Idempotent — safe to re-run. Only regenerates certs on fresh install.
+
+- name: Deploy TAK Server
+  hosts: tak_servers
+  become: true
+
+  tasks:
+    # ==================================================================
+    # Dependencies
+    # ==================================================================
+    - name: Install dependencies
+      ansible.builtin.apt:
+        name: [docker.io, docker-compose-plugin, python3-docker, openssl, zip]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    # ==================================================================
+    # Directory structure
+    # ==================================================================
+    - name: Create TAK directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ tak_config_dir }}"
+        - "{{ tak_certs_dir }}"
+        - "{{ tak_data_dir }}"
+
+    # ==================================================================
+    # Get mesh IP from Netbird (if not provided)
+    # ==================================================================
+    - name: Get Netbird mesh IP
+      when: tak_mesh_ip is not defined or tak_mesh_ip == ""
+      block:
+        - name: Read Netbird status
+          ansible.builtin.command: netbird status -j
+          register: netbird_status
+          changed_when: false
+
+        - name: Parse mesh IP
+          ansible.builtin.set_fact:
+            tak_mesh_ip: "{{ (netbird_status.stdout | from_json).localPeerState.IP | regex_replace('/.*', '') }}"
+
+    # ==================================================================
+    # Generate PostgreSQL password (if not provided)
+    # ==================================================================
+    - name: Check for existing .env
+      ansible.builtin.stat:
+        path: "{{ tak_config_dir }}/.env"
+      register: env_file
+
+    - name: Generate PostgreSQL password
+      when: tak_pg_password is not defined and not env_file.stat.exists
+      block:
+        - name: Generate random password
+          ansible.builtin.command: openssl rand -hex 16
+          register: generated_pg_pass
+          changed_when: false
+
+        - name: Set password fact
+          ansible.builtin.set_fact:
+            tak_pg_password: "{{ generated_pg_pass.stdout }}"
+
+    - name: Read existing password from .env
+      when: tak_pg_password is not defined and env_file.stat.exists
+      block:
+        - name: Read .env file
+          ansible.builtin.slurp:
+            src: "{{ tak_config_dir }}/.env"
+          register: env_contents
+
+        - name: Parse password from .env
+          ansible.builtin.set_fact:
+            tak_pg_password: "{{ (env_contents.content | b64decode) | regex_search('TAK_PG_PASSWORD=(.+)', '\\1') | first }}"
+
+    # ==================================================================
+    # Configuration files
+    # ==================================================================
+    - name: Write .env file
+      ansible.builtin.copy:
+        dest: "{{ tak_config_dir }}/.env"
+        mode: "0600"
+        content: |
+          TAK_PG_PASSWORD={{ tak_pg_password }}
+      notify: Restart TAK Server
+
+    - name: Write docker-compose.yml
+      ansible.builtin.template:
+        src: templates/tak-docker-compose.yml.j2
+        dest: "{{ tak_config_dir }}/docker-compose.yml"
+        mode: "0644"
+      notify: Restart TAK Server
+
+    - name: Write CoreConfig.xml
+      ansible.builtin.template:
+        src: templates/tak-CoreConfig.xml.j2
+        dest: "{{ tak_config_dir }}/CoreConfig.xml"
+        mode: "0644"
+      notify: Restart TAK Server
+
+    # ==================================================================
+    # Certificate Authority and server cert (first-time only)
+    # ==================================================================
+    - name: Check for existing CA
+      ansible.builtin.stat:
+        path: "{{ tak_certs_dir }}/files/ca.pem"
+      register: ca_check
+      tags: certs
+
+    - name: Generate TAK certificates
+      when: not ca_check.stat.exists
+      tags: certs
+      block:
+        - name: Generate Root CA
+          ansible.builtin.command:
+            cmd: >
+              docker exec takserver bash -c
+              'cd /opt/tak/certs && ./makeRootCa.sh --ca-name {{ tak_ca_name }}'
+          changed_when: true
+          ignore_errors: true
+
+        - name: Generate server certificate
+          ansible.builtin.command:
+            cmd: >
+              docker exec takserver bash -c
+              'cd /opt/tak/certs && ./makeCert.sh server takserver'
+          changed_when: true
+          ignore_errors: true
+
+        - name: Generate admin client certificate
+          ansible.builtin.command:
+            cmd: >
+              docker exec takserver bash -c
+              'cd /opt/tak/certs && ./makeCert.sh client admin'
+          changed_when: true
+          ignore_errors: true
+
+    # ==================================================================
+    # Federation — outbound to a partner hub
+    # ==================================================================
+    - name: Write federation config
+      when: federation_host is defined and federation_host != ""
+      tags: federation
+      block:
+        - name: Generate federation certificate
+          ansible.builtin.command:
+            cmd: >
+              docker exec takserver bash -c
+              'cd /opt/tak/certs && ./makeCert.sh client {{ tak_federation_name }}'
+          args:
+            creates: "{{ tak_certs_dir }}/files/{{ tak_federation_name }}.p12"
+          changed_when: true
+
+        - name: Write federation configuration
+          ansible.builtin.template:
+            src: templates/tak-federation.xml.j2
+            dest: "{{ tak_config_dir }}/federation.xml"
+            mode: "0644"
+          notify: Restart TAK Server
+
+    # ==================================================================
+    # Start TAK Server
+    # ==================================================================
+    - name: Start TAK Server stack
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ tak_config_dir }}"
+      register: compose_result
+      changed_when: "'Started' in compose_result.stdout or 'Created' in compose_result.stdout"
+
+    - name: Wait for TAK Server to respond
+      ansible.builtin.wait_for:
+        host: "{{ tak_mesh_ip }}"
+        port: 8443
+        timeout: 120
+        state: started
+
+    # ==================================================================
+    # Mesh DNS registration
+    # ==================================================================
+    - name: Register TAK DNS on NETHOST
+      delegate_to: nethost-01
+      tags: dns
+      block:
+        - name: Add TAK to mesh-hosts
+          ansible.builtin.lineinfile:
+            path: /opt/goat/dns/mesh-hosts
+            line: "{{ tak_mesh_ip }}  tak.{{ netbird_domain }} tak"
+            regexp: "tak\\.{{ netbird_domain }}"
+            insertafter: "# Custom entries"
+          notify: Reload coredns
+
+        - name: Add WebTAK to mesh-hosts
+          ansible.builtin.lineinfile:
+            path: /opt/goat/dns/mesh-hosts
+            line: "{{ tak_mesh_ip }}  webtak.{{ netbird_domain }} webtak"
+            regexp: "webtak\\.{{ netbird_domain }}"
+            insertafter: "# Custom entries"
+          notify: Reload coredns
+
+    # ==================================================================
+    # Verify
+    # ==================================================================
+    - name: Print deployment status
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+            TAK SERVER DEPLOYED
+          ========================================
+          Host:         {{ inventory_hostname }}
+          Mesh IP:      {{ tak_mesh_ip }}
+          CoT:          {{ tak_mesh_ip }}:8089 (mTLS)
+          WebTAK:       https://tak.{{ netbird_domain }}:8443/webtak/
+          Enrollment:   https://tak.{{ netbird_domain }}:8446
+          Admin:        https://tak.{{ netbird_domain }}:9000
+          Federation:   {{ federation_host | default('not configured') }}:{{ federation_port | default('9000') }}
+          ========================================
+          Next: generate client certs with
+            ansible-playbook tak-server.yml --tags certs -e tak_client_name=operator-01
+          ========================================
+
+  handlers:
+    - name: Restart TAK Server
+      ansible.builtin.command:
+        cmd: docker compose restart takserver
+        chdir: "{{ tak_config_dir }}"
+
+    - name: Reload coredns
+      delegate_to: nethost-01
+      ansible.builtin.command:
+        cmd: docker exec mesh-dns kill -HUP 1

@@ -1,0 +1,63 @@
+# Rendered by ops/ansible/roles/openobserve on {{ ansible_date_time.iso8601 }}
+# Anchor: ADR 0822. Alerts for OpenObserve on host C.
+
+groups:
+  - name: openobserve
+    interval: 30s
+    rules:
+
+      - alert: OpenObserveDown
+        expr: up{job="openobserve"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: openobserve
+          site: "{{ site_id }}"
+        annotations:
+          summary: "OpenObserve is down on {{ '{{' }} $labels.target_name {{ '}}' }}"
+          description: |
+            OpenObserve has been unreachable for 5+ minutes.
+            Wide-event ingest is stopped and OTel Collector is
+            buffering or dropping. Cross-plane debugging queries are
+            unavailable until restored.
+
+      - alert: OpenObserveS3RotationStalled
+        # OpenObserve rotates write-ahead segments to MinIO on a
+        # configurable interval. Stalled rotation means hot-tier
+        # NVMe will fill. Track via OpenObserve's own metrics if
+        # available; if the metric name varies across versions,
+        # fall back to inspecting MinIO bucket growth (an
+        # rate(minio_bucket_objects_count{bucket="telemetry-otlp"}[1h])
+        # close to zero with non-zero ingest is the smoke).
+        expr: |
+          rate(minio_bucket_usage_object_total{bucket="telemetry-otlp"}[1h]) == 0
+          and
+          rate(otelcol_exporter_sent_log_records[1h]) > 0
+        for: 30m
+        labels:
+          severity: warning
+          service: openobserve
+          site: "{{ site_id }}"
+        annotations:
+          summary: "OpenObserve receiving OTLP but no Parquet rotation to MinIO"
+          description: |
+            OTel Collector is exporting log records (>0/h) but the
+            telemetry-otlp bucket is not growing. Likely OpenObserve
+            cannot write to S3 — check ZO_S3_* env, MinIO connectivity,
+            credentials. If left alone, hot-tier NVMe fills.
+
+      - alert: OpenObserveHotTierGrowingFast
+        # Hot-tier NVMe fills if rotation lags or volume spikes.
+        expr: predict_linear(node_filesystem_free_bytes{mountpoint="/opt/docker-data"}[1h], 6 * 3600) < 0
+        for: 30m
+        labels:
+          severity: warning
+          service: openobserve
+          site: "{{ site_id }}"
+        annotations:
+          summary: "/opt/docker-data projected to fill in < 6 hours"
+          description: |
+            Linear projection over the next 6h shows the LUKS NVMe
+            filling. OpenObserve hot tier is the most likely culprit
+            (also MinIO + Prometheus TSDB). Investigate ingest rate +
+            S3 rotation + Prometheus retention.

@@ -1,0 +1,241 @@
+---
+# ops/ansible/roles/herd/tasks/main.yml — bearer-gear console (ADR 1131).
+
+- name: herd | skip when disabled
+  ansible.builtin.meta: end_host
+  when: not (herd_enabled | bool)
+
+# Fail-closed on the image sentinel. A PENDING pin means nobody has published a
+# build yet; deploying anyway would either fail obscurely or, worse, leave a
+# previous image running while the play reports success.
+- name: herd | refuse the PENDING image sentinel
+  ansible.builtin.assert:
+    that:
+      - herd_image is defined
+      - herd_image != "PENDING"
+    fail_msg: >-
+      herd_image is still the PENDING sentinel. Pin a multi-arch INDEX digest
+      (never a per-arch leaf — zagros is amd64 and zagros-prod is arm64) before
+      enabling this role.
+
+# The secrets are the deploy's real preconditions. Asserting them here turns a
+# silent half-configured console into a refusal at the top of the play.
+- name: herd | refuse missing secrets
+  ansible.builtin.assert:
+    that:
+      - herd_db_password | length > 0
+      - herd_portal_key | length > 0
+      # The app's own boot validation rejects <32 chars; catch it here rather
+      # than as a restart loop with a correct-looking config.
+      - herd_admin_override_secret | length >= 32
+      - (not herd_oauth2_proxy_enabled) or (herd_oauth2_proxy_client_secret | length > 0)
+      - (not herd_oauth2_proxy_enabled) or (herd_oauth2_proxy_cookie_secret | length > 0)
+    fail_msg: >-
+      Missing one of HERD_POSTGRES_PASSWORD / HERD_PORTAL_KEY /
+      HERD_OAUTH2_CLIENT_SECRET / HERD_OAUTH2_COOKIE_SECRET /
+      HERD_ADMIN_OVERRIDE_SECRET (>=32 chars) in the environment.
+
+# ADR 1131's load-bearing invariant, asserted rather than trusted: turning the
+# entitlement gate or the node-class check off leaves a console that opens
+# switches on group membership alone. Allowed only where it is explicitly a
+# sandbox, never by omission.
+- name: herd | refuse a production deploy with the ADR 1131 gates disabled
+  ansible.builtin.assert:
+    that:
+      - herd_entitlement_required | bool
+      - herd_enforce_node_class | bool
+    fail_msg: >-
+      herd_entitlement_required and herd_enforce_node_class must both be true.
+      With either off, herd opens bearer-gear sessions on Ory group membership
+      alone — which is the second door the one-door rule forbids (ADR 1131).
+
+- name: herd | create deploy dir
+  ansible.builtin.file:
+    path: "{{ herd_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+# `copy` does not create parent directories, and herd_portal_key_file lives
+# under /var/lib/herd — NOT under herd_dir, which the deploy-dir task above
+# creates. Without this the first deploy on a clean host fails inside a no_log
+# task, so the operator sees a censored failure and no reason.
+- name: herd | ensure the portal key directory exists
+  ansible.builtin.file:
+    path: "{{ herd_portal_key_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: herd | install the portal service key
+  ansible.builtin.copy:
+    content: "{{ herd_portal_key }}"
+    dest: "{{ herd_portal_key_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart herd
+
+- name: herd | render env
+  ansible.builtin.template:
+    src: herd.env.j2
+    dest: "{{ herd_dir }}/herd.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart herd
+
+- name: herd | render fence env
+  ansible.builtin.template:
+    src: oauth2-proxy-herd.env.j2
+    dest: "{{ herd_dir }}/oauth2-proxy-herd.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: herd_oauth2_proxy_enabled | bool
+  notify: Restart herd fence
+
+- name: herd | render compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ herd_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart herd
+
+# An invalid Traefik router is discarded silently — the container stays healthy,
+# the dynamic file stays present and well-formed, and the host simply 404s with
+# a self-signed cert. That shape cost a full deploy cycle to spot, so name the
+# two references and check them BEFORE writing the file rather than after.
+- name: herd | read the middlewares Traefik actually has defined
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      grep -rhoE '^\s{4}[a-zA-Z0-9_-]+:'
+      {{ herd_traefik_dynamic_dir }}/*.yml 2>/dev/null
+      | tr -d ' :' | sort -u
+    executable: /bin/bash
+  register: herd_traefik_defined_middlewares
+  changed_when: false
+  failed_when: false
+
+- name: herd | refuse to install a router naming a middleware that does not exist
+  ansible.builtin.assert:
+    that:
+      - herd_traefik_mesh_only_middleware | regex_replace('@file$', '')
+        in herd_traefik_defined_middlewares.stdout_lines
+    fail_msg: >-
+      herd_traefik_mesh_only_middleware is
+      '{{ herd_traefik_mesh_only_middleware }}', which is NOT defined in
+      {{ herd_traefik_dynamic_dir }}. Traefik would drop the whole herd router
+      and the site would 404 with an untrusted certificate, while every
+      container reported healthy. Defined here:
+      {{ herd_traefik_defined_middlewares.stdout_lines | join(', ') }}
+    success_msg: "middleware {{ herd_traefik_mesh_only_middleware }} is defined"
+
+- name: herd | render traefik dynamic config
+  ansible.builtin.template:
+    src: traefik-herd.yml.j2
+    dest: "{{ herd_traefik_dynamic_dir }}/{{ herd_traefik_dynamic_filename }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: herd | pull images
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ herd_dir }}/docker-compose.yml pull"
+  changed_when: false
+
+- name: herd | bring the stack up
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ herd_dir }}/docker-compose.yml up -d"
+  register: herd_up
+  changed_when: "'Started' in herd_up.stderr or 'Created' in herd_up.stderr"
+
+# F-330: a bind-mounted single FILE is pinned to the inode the container was
+# created with, so re-rendering it on the host does NOT change what the process
+# reads — and ansible reports ok/changed=0, which is exactly what a correctly
+# converged host prints. Compare the RUNNING copy against the host copy and
+# recreate on mismatch, rather than trusting the convergence verdict.
+- name: herd | detect a stale bind-mounted key inside the container
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      host=$(md5sum {{ herd_portal_key_file }} | awk '{print $1}')
+      run=$(docker exec herd md5sum {{ herd_portal_key_file }} 2>/dev/null | awk '{print $1}')
+      if [ -n "$run" ] && [ "$host" != "$run" ]; then
+        echo "STALE host=$host running=$run"
+      fi
+    executable: /bin/bash
+  register: herd_stale
+  changed_when: "'STALE' in herd_stale.stdout"
+  failed_when: false
+  notify: Restart herd
+
+- name: herd | install the audit forwarder
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/herd-audit-forward.sh"
+    dest: "{{ herd_dir }}/herd-audit-forward.sh"
+    owner: root
+    group: root
+    mode: "0750"
+  when: herd_audit_forward_enabled | bool
+
+- name: herd | install the audit forwarder unit + timer
+  ansible.builtin.template:
+    src: "herd-audit-forward.{{ item }}.j2"
+    dest: "/etc/systemd/system/herd-audit-forward.{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [service, timer]
+  when: herd_audit_forward_enabled | bool
+  notify: Reload systemd
+
+- name: herd | enable the audit forwarder timer
+  ansible.builtin.systemd:
+    name: herd-audit-forward.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: herd_audit_forward_enabled | bool
+
+- name: herd | run database migrations
+  ansible.builtin.command:
+    cmd: "docker compose -f {{ herd_dir }}/docker-compose.yml exec -T herd npx prisma migrate deploy"
+  register: herd_migrate
+  changed_when: "'Applying migration' in herd_migrate.stdout"
+
+# Probed from the host against the container's own IP, not 127.0.0.1:3000 and
+# not `docker exec` (the image ships no wget/curl). herd publishes no host
+# port ({"3000/tcp":null}) — it is reached only through Traefik and the proxy.
+# On this host 127.0.0.1:3000 is a docker-proxy for an UNRELATED nginx
+# container, so the old probe tested someone else's service: it failed here
+# with an nginx 404, but had that container answered 200 on /api/health the
+# deploy would have reported a healthy herd while herd was broken. A false PASS
+# is the worse failure, so the probe now names the container it means.
+- name: herd | smoke the health endpoint (host -> container IP)
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      ip=$(docker inspect -f
+      '{% raw %}{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}{% endraw %}'
+      {{ herd_container_name | default('herd') }} | awk '{print $1}');
+      test -n "$ip" || { echo "no container IP"; exit 1; };
+      curl -sS --max-time 5 "http://${ip}:3000/api/health"
+    executable: /bin/bash
+  register: herd_health
+  retries: 12
+  delay: 5
+  until: herd_health.rc == 0 and '"checks"' in (herd_health.stdout | default(''))
+  changed_when: false
+  # The pass condition is "the app answered with its health document", NOT
+  # "everything downstream is green". The surface is honesty-graded and grades
+  # worst-wins, so a console with no connector and no gear enrolled legitimately
+  # reports `unknown` — demanding `ok` here would force the surface to lie.

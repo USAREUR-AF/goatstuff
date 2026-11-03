@@ -1,0 +1,42 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Operator-fired playbook to bring up stethoscope on a goatnet mgmt
+# host (Block 90 Phase B).
+#
+# Usage:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+#     ansible-playbook -i inventory/mgmt-hosts-mesh.ini \
+#     stethoscope.yml
+#
+# Pre-flight (operator-side):
+#   1. Image present at ghcr.io/{{ ghcr_org }}/stethoscope (CI workflow ran
+#      on main, OR first-time-only manual `docker push` from operator
+#      workstation — same shape as panoscope's first-publish).
+#   2. STETHOSCOPE_PORTAL_API_KEY operator token issued and wired via
+#      `<SITE>_PORTAL_OPERATOR_API_KEY` (existing envrc) → site_vars.
+#   3. MinIO read-only IAM user `goat-stethoscope-audit-read` minted
+#      declaratively via the `minio_extra_users` substrate on
+#      roles/minio (see group_vars/<site>_hosts/minio.yml), and the
+#      audit secret exported in the operator shell. With
+#      stethoscope_audit_enabled true, the pre_task below refuses the
+#      deploy if the endpoint or a credential is empty rather than
+#      degrading to Skipped — the binary would crash-loop on that .env.
+#      Set enabled false to run without the tail.
+#   4. mesh DNS entry for stethoscope.<site>.<site_dns_zone>
+#      already in the site's mesh-hosts pointing at the host's
+#      mesh IP. Public Cloudflare DNS is NOT used — mesh-only posture.
+
+- name: stethoscope | deploy
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+  # Before the role, and so before its rollback-ledger meta-dependency appends
+  # an intent row for the new pin: a refused deploy must leave no ledger row
+  # that a later deploy-component.sh --verify-only would read as converged.
+  pre_tasks:
+    - name: stethoscope | preflight
+      ansible.builtin.import_tasks: roles/stethoscope/tasks/preflight.yml
+  roles:
+    - stethoscope

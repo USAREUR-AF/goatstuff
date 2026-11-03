@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# netvis assertion re-run — the half of the gate that fires when NOTHING is
+# being written.
+#
+# {{ ansible_managed }}
+#
+# A pull-request gate fires when the POLICY changes. The fault this substrate
+# actually produces is a MEMBERSHIP change: a peer gains or loses a group, no
+# file is edited, no review happens, and an assertion that passed at merge is
+# now false. No write-time gate of any design fires then, because nothing is
+# being written. Tailscale's equivalent has been open since 2023 for exactly
+# this reason.
+#
+# So this runs on a timer, whether or not anyone is looking at the page, and
+# fails the unit when the answer is anything other than a clean pass.
+# `systemctl --failed` is then the alarm, and `journalctl -u
+# netvis-assertions` is the evidence.
+#
+# It reaches netvis INSIDE its own compose network: the app publishes no host
+# port, and a probe aimed at 127.0.0.1 on the host is the exact shape of the
+# health gate that could neither pass nor fail.
+set -euo pipefail
+
+NET="container:netvis"
+CURL_IMAGE="{{ netvis_healthcheck_image }}"
+# The app's fence reads this header itself; oauth2-proxy is not in this path.
+# Anything already on the compose network can read the ACL, which is the
+# fence's existing threat model — this changes nothing about it.
+GROUP="$(echo '{{ netvis_rbac_groups }}' | cut -d, -f1)"
+
+# Via a file, not argv: the heredoc below owns stdin, and a report large
+# enough to hit ARG_MAX would fail in a way that reads as "the mesh is fine".
+BODY="$(mktemp)"
+trap 'rm -f "$BODY"' EXIT
+
+docker run --rm --network "$NET" "$CURL_IMAGE" \
+  -sf --max-time 20 \
+  -H "x-forwarded-groups: ${GROUP}" \
+  -H 'accept: application/json' \
+  http://127.0.0.1:9760/api/assertions > "$BODY" || {
+  echo "netvis-assertions: could not read /api/assertions — that is UNKNOWN, not a pass" >&2
+  exit 2
+}
+
+python3 - "$BODY" <<'PY'
+import json, sys
+
+d = json.load(open(sys.argv[1]))
+r = d.get("report") or {}
+v = r.get("verdict")
+site = r.get("site", "?")
+n = len(r.get("outcomes") or [])
+
+if n == 0:
+    # Nothing declared is NOT a pass. A quiet unit here would mean "this
+    # goatnet is checked" when nothing is checking it.
+    print(f"netvis-assertions[{site}]: NO ASSERTIONS DECLARED — nothing is being checked",
+          file=sys.stderr)
+    raise SystemExit(3)
+
+print(f"netvis-assertions[{site}]: {v} — {r.get('satisfied',0)} hold, "
+      f"{r.get('violated',0)} violated, {r.get('baselined',0)} baselined, "
+      f"{r.get('undetermined',0)} undetermined ({n} checked against LIVE state)")
+
+for name in r.get("baseline_now_passing") or []:
+    print(f"  ratchet: `{name}` was baselined and now passes — delete the baseline")
+
+for o in r.get("outcomes") or []:
+    if o.get("verdict") in ("satisfied", "baselined"):
+        continue
+    print(f"  [{o.get('check')}] {o.get('name')} -> {o.get('verdict')}"
+          + (f" ({o['reason']})" if o.get("reason") else ""))
+    for c in o.get("counterexamples") or []:
+        line = f"      {c['src']} -> {c['dst']}:{c['port']} ({c['proto']})"
+        if c.get("granted_by"):
+            line += f"  granted by `{c['granted_by']}`"
+        print(line)
+        if c.get("nearest"):
+            print(f"        nearest: {c['nearest']}")
+
+# UNDETERMINED fails too. An assertion nobody could decide is not an
+# assertion anybody passed, and a unit that goes green on it is a unit that
+# lies in exactly the direction this whole surface exists to prevent.
+raise SystemExit(0 if v in ("satisfied", "baselined") else 1)
+PY

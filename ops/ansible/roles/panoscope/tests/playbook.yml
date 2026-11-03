@@ -1,0 +1,15 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# Parse-only syntax check fixture per ADR 50H (Ansible role test parity).
+# Verifies the role's tasks parse cleanly; does NOT run them.
+
+- name: panoscope | parse-only fixture
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # Stub values for required defaults so the template Jinja resolves
+    # cleanly under --syntax-check.
+    ansible_default_ipv4:
+      address: "127.0.0.1"
+  roles:
+    - role: ../..

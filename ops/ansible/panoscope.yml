@@ -1,0 +1,76 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Operator-fired playbook to bring up panoscope on a goatnet
+# host. Pure Ansible — no out-of-band scripts. Image comes
+# from ghcr.io/{{ ghcr_org }}/panoscope (published by .github/workflows/
+# panoscope-image.yml on main pushes + panoscope/v* tags); Cloudflare
+# DNS publishing matches the demogame pattern.
+#
+# Usage:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+#     CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN_<SITE> \
+#     ansible-playbook -i inventory/mgmt-hosts-mesh.ini \
+#     panoscope.yml
+#
+# Pre-flight (operator-side):
+#   1. Image present at ghcr.io/{{ ghcr_org }}/panoscope (CI workflow ran on
+#      main, or first-time-only manual push from operator workstation
+#      via `docker push` — see docs/operations/panoscope-runbook.md
+#      §"First-time image publish").
+#      panoscope_publish_cloudflare_dns is true in group_vars.
+#   3. If panoscope_zenoh_mtls_enabled is true (the router runs plain
+#      TCP when it is false), mint an operator-class Zenoh client leaf
+#      per the cert-issuance runbook and drop the files under
+#      /etc/panoscope/ on the router host.
+#   4. Hydra admin loopback reachable at panoscope_hydra_admin_url
+#      (default http://127.0.0.1:4445 on the router host).
+
+- name: panoscope | deploy
+  hosts: "{{ target | mandatory }}"   # -e target=<site>_hosts selects the goatnet
+  become: true
+  gather_facts: true
+  # NOTE: do NOT set a play-var `cloudflare_api_token` here — a play var would
+  # SHADOW the per-site group_vars value (group_vars/<site>_hosts/vars.yml sets
+  # it to the site's own token). The generic token makes the panoscope CF zone
+  # lookup fail on a sibling goatnet (`result[0]` on an empty list). The role
+  # reads the group_var directly; -e still overrides at the CLI.
+  #
+  # Active-router-only. On an A/B pair goatnet (both routers share ONE group
+  # so they stay image-consistent) panoscope runs on the ACTIVE router alone —
+  # Router-B is a hot standby whose containers are stopped and which carries no
+  # `/etc/panoscope/*.pem`, so a run against it fails the cert precondition and
+  # reports `failed=1` on an otherwise clean deploy. A recurring expected
+  # failure trains operators to ignore the recap, which is how a real failure
+  # gets missed. Single-host goatnets declare no `router_role`, so the default
+  # keeps them running.
+  #
+  # Deploying panoscope to the standby would mean staging its certs there
+  # first; until that is a deliberate decision, skipping is the honest
+  # behaviour. Override per-run with `-e panoscope_active_router_only=false`.
+  #
+  # Kept as a `roles:` entry with a `when:` rather than a tasks-level
+  # `include_role`: a role listed under `roles:` exposes its defaults/main.yml
+  # to the whole play, an included one does not, and this role's group_vars
+  # layering depends on that visibility.
+  #
+  # PASS BOTH INVENTORIES on an A/B goatnet:
+  #   -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini
+  # `router_role` is declared ONLY in mgmt-hosts.ini; the mesh file overrides
+  # ansible_host/connection/user and nothing else. With the mesh file alone
+  # `router_role` is undefined, the default below reads 'A', and the play
+  # deploys to the STANDBY — the failure this guard exists to prevent. Verify
+  # before a run you care about:
+  #   ansible-inventory -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+  #     --host <host-B> | jq .router_role   # must be "B"
+  #
+  # The default stays permissive rather than fail-closed on purpose: single
+  # host goatnets legitimately declare no `router_role`, and making
+  # its absence an error would break every one of them to guard an operator
+  # slip on the two-host case.
+  roles:
+    - role: panoscope
+      when: >-
+        not (panoscope_active_router_only | default(true) | bool)
+        or (router_role | default('A') | upper) == 'A'

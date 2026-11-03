@@ -1,0 +1,110 @@
+# {{ ansible_managed }}
+#
+# goat-topology for {{ goat_topology_site }} / {{ goat_topology_node }}.
+# Rendered by ops/ansible/roles/goat-topology/ (ADR 1160).
+#
+# Persists nothing and holds no secrets, so there is no sibling .env. The
+# publisher READS the local router's adminspace and its declared config; the
+# surface only subscribes. Neither has a write path to any router.
+
+services:
+{% if 'publish' in goat_topology_modes %}
+  goat-topology-publish:
+    image: {{ goat_topology_image }}
+    container_name: goat-topology-publish
+    restart: unless-stopped
+    command:
+      - publish
+      - --endpoint={{ goat_topology_publish_endpoint }}
+      - --site={{ goat_topology_site }}
+      - --node={{ goat_topology_node }}
+      - --admin-addr={{ goat_topology_admin_addr }}
+      - --config-path=/router/config.json5
+      - --interval-secs={{ goat_topology_interval_secs }}
+{% if goat_topology_publish_endpoint.startswith('tls/') %}
+      - --cert=/certs/goat-topology-cert.pem
+      - --key=/certs/goat-topology-key.pem
+      - --root-ca=/ca/ca-root.pem
+{% endif %}
+    environment:
+      RUST_LOG: "{{ goat_topology_rust_log }}"
+    # The adminspace binds to the HOST's loopback, so this half shares the host
+    # network namespace to read it — and therefore has no docker DNS, which is
+    # why it dials the router by mesh IP rather than container name.
+    network_mode: host
+    volumes:
+      # Read-only, and only the `gateway` block is parsed out of it.
+      - "{{ goat_topology_config_path }}:/router/config.json5:ro"
+{% if goat_topology_publish_endpoint.startswith('tls/') %}
+      - "{{ goat_topology_cert_dir }}:/certs:ro"
+      - "{{ goat_topology_ca_root_src }}:/ca/ca-root.pem:ro"
+{% endif %}
+{% endif %}
+{% if 'serve' in goat_topology_modes %}
+
+  goat-topology:
+    image: {{ goat_topology_image }}
+    container_name: goat-topology
+    restart: unless-stopped
+    command:
+      - serve
+      - --endpoint={{ goat_topology_zenoh_endpoint }}
+      - --bind={{ goat_topology_bind }}
+{% if goat_topology_serve_site %}
+      - --site={{ goat_topology_serve_site }}
+{% endif %}
+{% if goat_topology_zenoh_endpoint.startswith('tls/') %}
+      - --cert=/certs/goat-topology-cert.pem
+      - --key=/certs/goat-topology-key.pem
+      - --root-ca=/ca/ca-root.pem
+{% endif %}
+    environment:
+      RUST_LOG: "{{ goat_topology_rust_log }}"
+    networks:
+      # `zenoh` — reaches the router by container name to subscribe.
+      - zenoh
+      # `mgmt` — Traefik resolves goat-topology:8080 over this network. Without
+      # it the FQDN fails the TLS handshake; see the role defaults.
+      - "{{ goat_topology_traefik_network }}"
+    labels:
+      # Routing is a file-provider entry, not labels:
+      # /etc/traefik/dynamic/{{ goat_topology_traefik_dynamic_filename }}.
+      - "traefik.enable=false"
+    ports:
+      # Host-side loopback map, for on-host probes and the isitup fallback.
+      - "127.0.0.1:{{ goat_topology_container_port }}:8080"
+{% if goat_topology_zenoh_endpoint.startswith('tls/') %}
+    volumes:
+      - "{{ goat_topology_cert_dir }}:/certs:ro"
+      - "{{ goat_topology_ca_root_src }}:/ca/ca-root.pem:ro"
+{% endif %}
+    healthcheck:
+      # Liveness only — deliberately not a fabric probe (ADR 1123).
+      #
+      # `--help`, not `--version`: this binary takes a required subcommand and
+      # has no `--version` flag, so a `--version` probe exits 2 EVERY time and
+      # marks the container unhealthy while it serves correctly.
+      # A liveness check that cannot pass is worse than none: it marks a
+      # healthy service unhealthy forever, so the signal stops meaning
+      # anything to anyone reading `docker ps`.
+      #
+      # What this proves and does not: the image is distroless with no shell
+      # and no curl, so the binary is the only thing that can be executed. This
+      # confirms the process starts and the entrypoint is intact. It does NOT
+      # confirm the serve loop is answering — that is the role's own FQDN
+      # assertion, and the isitup front-door probe on every tick.
+      test: ["CMD", "/usr/local/bin/goat-topology", "--help"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+{% endif %}
+
+{% if 'serve' in goat_topology_modes %}
+networks:
+  zenoh:
+    name: {{ goat_topology_zenoh_network }}
+    external: true
+  "{{ goat_topology_traefik_network }}":
+    name: {{ goat_topology_traefik_network }}
+    external: true
+{% endif %}

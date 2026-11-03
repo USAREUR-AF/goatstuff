@@ -1,0 +1,10 @@
+---
+- name: openobserve-oidc-client | parse-only fixture
+  hosts: localhost
+  gather_facts: false
+  vars:
+    site_id: "stub-site"
+    site_dns_zone: "netbird-prod.goat.example"
+    operator_idp_openobserve_client_secret: "stubsecret64hexcharsforsyntaxcheckonlydonotreuse00000000000000000"
+  roles:
+    - role: ../..

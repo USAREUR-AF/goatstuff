@@ -1,0 +1,13 @@
+---
+- name: openobserve compose changed
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ openobserve_compose_dir }}"
+  changed_when: true
+
+- name: prometheus reload from openobserve role
+  ansible.builtin.uri:
+    url: http://localhost:9090/-/reload
+    method: POST
+    status_code: 200
+  failed_when: false
