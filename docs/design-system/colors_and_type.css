@@ -1,0 +1,469 @@
+/* ============================================================
+   GOAT-Net Design System — Colors & Type
+   ============================================================
+
+   Voice: matter-of-fact, technical, specific about failures.
+   Visual: near-black backgrounds, glowing tactical green accent,
+           sharp corners, monospace for data and identifiers.
+
+   Tokens are split into two layers:
+     1. Primitives ($-prefix names) — raw values, do not use directly
+        in components. Reference only from semantic vars below.
+     2. Semantic  (no prefix)        — what UI code should use.
+   ============================================================ */
+
+/* NO WEBFONT IMPORT. This file used to @import Geist from fonts.googleapis.com.
+   It never worked and could never have worked: every surface that compiles this
+   CSS — microscope, stethoscope, flashlight — is MESH-ONLY, with no route to the
+   public internet. The import failed silently on every page load and the type
+   fell through to `system-ui` / `ui-monospace` below, which is what these
+   surfaces have actually been rendering since they shipped. Zero font files are
+   vendored anywhere in this repo, so nothing was ever going to satisfy it.
+
+   Two reasons not to "fix" it by vendoring the woff2 instead:
+     - A mesh-only admin surface must not attempt egress to a third party on
+       every page load. That is the defect, independent of whether it succeeds.
+     - Font binaries are a maintenance liability with licensing and subsetting
+       attached, for a tool whose foundation is meant to outlast its authors.
+
+   The stack below is deliberately self-sufficient: it names Geist FIRST, so if
+   the fonts are ever vendored and served locally the design upgrades for free
+   with no change here, and resolves to high-quality platform faces until then.
+   Type hierarchy comes from size, weight and spacing — all of which work in any
+   face — never from the face being present. */
+
+:root {
+  /* -------- Primitive: Tactical neutral scale ---------------- */
+  /* Cool, near-black with the faintest green cast. Each step
+     ~6–8% lightness so borders and panels read distinctly under
+     low ambient light. */
+  --c-ink-0:    #06090a;   /* page bg, deepest */
+  --c-ink-1:    #0b0f0e;   /* surface bg */
+  --c-ink-2:    #11171a;   /* raised panel */
+  --c-ink-3:    #161e22;   /* card / row */
+  --c-ink-4:    #1e272c;   /* hovered row, well */
+  --c-ink-5:    #283238;   /* divider strong */
+
+  --c-line:     #28333a;   /* hairline border (default) */
+  --c-line-2:   #3a474e;   /* visible border */
+  --c-line-3:   #4e5d66;   /* focus / selected border */
+
+  --c-fog-0:    #e8ece9;   /* high-emphasis text */
+  --c-fog-1:    #b9c2bd;   /* primary body */
+  --c-fog-2:    #8a958f;   /* secondary / labels */
+  --c-fog-3:    #5d6661;   /* faint / placeholder */
+  --c-fog-4:    #525c56;   /* disabled (kept readable on bg-page) */
+
+  /* -------- Primitive: Accent (tactical green) -------------- */
+  /* Derived from the logo (#20964f). Mid is the brand. Hi is the
+     "phosphor glow" used sparingly for live data + focus rings. */
+  --c-green-deep:  #0c2e1c;   /* tint, fills */
+  --c-green-mid:   #20964f;   /* brand, primary action */
+  --c-green-hi:    #34d97e;   /* glow, active state */
+  --c-green-flare: #6cf5a8;   /* peak — links, scanlines, cursor */
+
+  /* -------- Primitive: Semantic signal ---------------------- */
+  /* Status colors are desaturated to sit on dark surfaces without
+     vibrating. No reds-as-buttons. Failure is information. */
+  --c-amber:    #d9a834;
+  --c-amber-hi: #f4c860;
+  --c-amber-bg: #2a2110;
+
+  --c-red:      #d95e4b;
+  --c-red-hi:   #ff7c69;
+  --c-red-bg:   #2a1410;
+
+  --c-blue:     #4fb2d9;
+  --c-blue-hi:  #7ed1f0;
+  --c-blue-bg:  #0e1f28;
+
+  --c-violet:   #9d7fe0;   /* used for "experimental" / pre-1.0 */
+  --c-violet-bg:#1a1430;
+
+  /* ============================================================
+     SEMANTIC COLOR TOKENS — use these in components
+     ============================================================ */
+
+  /* Surfaces, top-down: page → panel → card → well */
+  --bg-page:      var(--c-ink-0);
+  --bg-surface:   var(--c-ink-1);
+  --bg-panel:     var(--c-ink-2);
+  --bg-card:      var(--c-ink-3);
+  --bg-well:      var(--c-ink-4);
+  --bg-hover:     #1a2226;
+  --bg-active:    #222d33;
+
+  /* Foreground */
+  --fg-primary:   var(--c-fog-0);
+  --fg-body:      var(--c-fog-1);
+  --fg-muted:     var(--c-fog-2);
+  --fg-faint:     var(--c-fog-3);
+  --fg-disabled:  var(--c-fog-4);
+  --fg-hairline:  #3b423f;     /* below disabled — rule strokes only, never text */
+  --fg-on-accent: #06120a;     /* text on a filled green button */
+  --fg-accent:    var(--c-green-hi);
+  --fg-link:      var(--c-green-flare);
+
+  /* Borders */
+  --border:        1px solid var(--c-line);
+  --border-strong: 1px solid var(--c-line-2);
+  --border-focus:  1px solid var(--c-green-hi);
+  --border-color:        var(--c-line);
+  --border-color-strong: var(--c-line-2);
+  --border-color-focus:  var(--c-green-hi);
+
+  /* Accent */
+  --accent:       var(--c-green-mid);
+  --accent-hi:    var(--c-green-hi);
+  --accent-flare: var(--c-green-flare);
+  --accent-deep:  var(--c-green-deep);
+
+  /* Status semantic (foreground + ambient bg + border) */
+  --status-ok-fg:      var(--c-green-hi);
+  --status-ok-bg:      var(--c-green-deep);
+  --status-warn-fg:    var(--c-amber-hi);
+  --status-warn-bg:    var(--c-amber-bg);
+  --status-err-fg:     var(--c-red-hi);
+  --status-err-bg:     var(--c-red-bg);
+  --status-info-fg:    var(--c-blue-hi);
+  --status-info-bg:    var(--c-blue-bg);
+  --status-exp-fg:     var(--c-violet);
+  --status-exp-bg:     var(--c-violet-bg);
+
+  /* Glow — used on focus, live data, links on hover. Sparingly. */
+  --glow-accent:   0 0 0 1px var(--c-green-hi),
+                   0 0 12px -2px rgba(52, 217, 126, 0.55);
+  --glow-soft:     0 0 16px -4px rgba(52, 217, 126, 0.4);
+  --glow-text:     0 0 6px rgba(52, 217, 126, 0.6);
+
+  /* Scanline / grid overlays (for hero & live-data surfaces) */
+  --scanline:      repeating-linear-gradient(
+                     to bottom,
+                     transparent 0 2px,
+                     rgba(108, 245, 168, 0.03) 2px 3px
+                   );
+  --grid-overlay:  linear-gradient(rgba(108, 245, 168, 0.04) 1px, transparent 1px) 0 0/100% 24px,
+                   linear-gradient(90deg, rgba(108, 245, 168, 0.04) 1px, transparent 1px) 0 0/24px 100%;
+
+  /* ============================================================
+     TYPE SYSTEM
+     ============================================================
+     Two families. No serif — this is not a marketing site.
+       --font-sans  Geist            — UI, labels, prose
+       --font-mono  Geist Mono       — data, IDs, code, status
+
+     If Geist is unavailable, system-ui is an acceptable fallback;
+     the system holds up at IBM Plex Sans + JetBrains Mono.
+     ============================================================ */
+
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  /* Type scale — modular, but compressed for high information density */
+  --t-12: 12px;
+  --t-13: 13px;
+  --t-14: 14px;
+  --t-15: 15px;
+  --t-16: 16px;
+  --t-18: 18px;
+  --t-20: 20px;
+  --t-24: 24px;
+  --t-28: 28px;
+  --t-32: 32px;
+  --t-40: 40px;
+  --t-56: 56px;
+  --t-72: 72px;
+
+  /* Tracking */
+  --track-tight:  -0.02em;
+  --track-normal: 0;
+  --track-wide:   0.04em;
+  --track-mono:   0.06em;   /* uppercase mono labels */
+
+  /* Line heights */
+  --lh-tight: 1.08;
+  --lh-snug:  1.25;
+  --lh-text:  1.55;
+
+  /* ============================================================
+     SPACING — 4px base. Use these tokens in component CSS.
+     ============================================================ */
+  --s-0:   0;
+  --s-1:   2px;
+  --s-2:   4px;
+  --s-3:   8px;
+  --s-4:   12px;
+  --s-5:   16px;
+  --s-6:   24px;
+  --s-7:   32px;
+  --s-8:   48px;
+  --s-9:   64px;
+  --s-10:  96px;
+  --s-11:  128px;
+
+  /* ============================================================
+     SHAPE — sharp corners are the default. Pill is reserved for
+     status chips. Slightly-rounded (--r-1) is the maximum for
+     general UI; never go higher.
+     ============================================================ */
+  --r-0:   0;       /* default — sharp */
+  --r-1:   2px;     /* inputs, buttons */
+  --r-pill: 999px;  /* status chip only */
+
+  /* ============================================================
+     TIMING — linear, short, never bouncy.
+     ============================================================ */
+  --dur-fast:   90ms;
+  --dur-base:   140ms;
+  --dur-slow:   240ms;
+  --ease:       cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* ============================================================
+   LIGHT MODE — paper-warm palette from the Zenoh brief.
+   Apply via <html data-theme="light"> or <body data-theme="light">.
+   Auto-applies via prefers-color-scheme: light if no explicit theme.
+
+   Only background, foreground, and border tokens shift. The brand
+   green, status colors, and tactical spacing stay constant.
+   ============================================================ */
+
+:root[data-theme="light"],
+[data-theme="light"] {
+  /* Surface scale — interpolated from brief's paper + paper-soft */
+  --c-ink-0:    #fbf8f3;   /* page bg — paper */
+  --c-ink-1:    #f6efe1;   /* surface */
+  --c-ink-2:    #f0eade;   /* panel — paper-soft */
+  --c-ink-3:    #e8dec5;   /* card */
+  --c-ink-4:    #ddd0b1;   /* well */
+  --c-ink-5:    #cabe9c;   /* divider strong */
+
+  /* Borders — derived from brief's rule */
+  --c-line:     #d4cab2;
+  --c-line-2:   #c8bfb0;   /* brief rule */
+  --c-line-3:   #20964f;   /* focus — green for contrast */
+
+  /* Foreground — brief's ink + ink-soft + ink-mute, with two extras */
+  --c-fog-0:    #1f1d1a;   /* high — brief ink */
+  --c-fog-1:    #2e2b27;   /* body */
+  --c-fog-2:    #4a4744;   /* muted — brief ink-soft */
+  --c-fog-3:    #6e6a63;   /* faint */
+  --c-fog-4:    #807c76;   /* disabled — brief ink-mute */
+
+  /* Semantic surfaces — explicit so they cascade through theme override */
+  --bg-page:      #fbf8f3;
+  --bg-surface:   #f6efe1;
+  --bg-panel:     #f0eade;
+  --bg-card:      #e8dec5;
+  --bg-well:      #ddd0b1;
+  --bg-hover:     #ebe3cc;
+  --bg-active:    #e1d6b8;
+
+  --fg-primary:   #1f1d1a;
+  --fg-body:      #2e2b27;
+  --fg-muted:     #4a4744;
+  --fg-faint:     #6e6a63;
+  --fg-disabled:  #807c76;
+  --fg-hairline:  #b3a991;
+  --fg-on-accent: #fbf8f3;   /* paper-white on filled green button */
+  --fg-accent:    #20964f;   /* mid, not hi, for light contrast */
+  --fg-link:      #20964f;
+
+  --border-color:        #d4cab2;
+  --border-color-strong: #c8bfb0;
+  --border-color-focus:  #20964f;
+  --border:        1px solid #d4cab2;
+  --border-strong: 1px solid #c8bfb0;
+  --border-focus:  1px solid #20964f;
+
+  /* Status — light tints, deeper foreground for contrast */
+  --status-ok-fg:   #176e3a;
+  --status-ok-bg:   #d6efde;
+  --status-warn-fg: #8a5f12;
+  --status-warn-bg: #f5e6c8;
+  --status-err-fg:  #a83b2a;
+  --status-err-bg:  #f5d8d2;
+  --status-info-fg: #2a6fa3;
+  --status-info-bg: #d8eaf2;
+  --status-exp-fg:  #5d4bb0;
+  --status-exp-bg:  #ebe3f5;
+
+  /* Glow — toned down for light bg */
+  --glow-accent:   0 0 0 1px #20964f,
+                   0 0 12px -2px rgba(32, 150, 79, 0.4);
+  --glow-soft:     0 0 16px -4px rgba(32, 150, 79, 0.28);
+  --glow-text:     0 0 6px rgba(32, 150, 79, 0.35);
+
+  /* Scanline / grid overlays — green still, lower opacity */
+  --scanline:      repeating-linear-gradient(
+                     to bottom,
+                     transparent 0 2px,
+                     rgba(32, 150, 79, 0.04) 2px 3px
+                   );
+  --grid-overlay:  linear-gradient(rgba(32, 150, 79, 0.05) 1px, transparent 1px) 0 0/100% 24px,
+                   linear-gradient(90deg, rgba(32, 150, 79, 0.05) 1px, transparent 1px) 0 0/24px 100%;
+
+  color-scheme: light;
+}
+
+/* Auto-apply light mode if the OS prefers light AND no explicit theme is set */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg-page: #fbf8f3; --bg-surface: #f6efe1; --bg-panel: #f0eade;
+    --bg-card: #e8dec5; --bg-well: #ddd0b1;
+    --bg-hover: #ebe3cc; --bg-active: #e1d6b8;
+    --fg-primary: #1f1d1a; --fg-body: #2e2b27; --fg-muted: #4a4744;
+    --fg-faint: #6e6a63; --fg-disabled: #807c76; --fg-hairline: #b3a991;
+    --fg-on-accent: #fbf8f3; --fg-accent: #20964f; --fg-link: #20964f;
+    --c-line: #d4cab2; --c-line-2: #c8bfb0; --c-line-3: #20964f;
+    --border: 1px solid #d4cab2;
+    --border-strong: 1px solid #c8bfb0;
+    --border-focus:  1px solid #20964f;
+    --status-ok-fg: #176e3a;  --status-ok-bg:  #d6efde;
+    --status-warn-fg:#8a5f12;  --status-warn-bg:#f5e6c8;
+    --status-err-fg: #a83b2a;  --status-err-bg: #f5d8d2;
+    --status-info-fg:#2a6fa3;  --status-info-bg:#d8eaf2;
+    --status-exp-fg: #5d4bb0;  --status-exp-bg: #ebe3f5;
+    --glow-accent: 0 0 0 1px #20964f, 0 0 12px -2px rgba(32,150,79,0.4);
+    --glow-soft:   0 0 16px -4px rgba(32,150,79,0.28);
+    --glow-text:   0 0 6px rgba(32,150,79,0.35);
+    color-scheme: light;
+  }
+}
+
+/* ============================================================
+   SEMANTIC TYPOGRAPHY CLASSES
+   Use these as utility classes OR copy the rule into component CSS.
+   ============================================================ */
+
+.t-display {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--t-72);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--track-tight);
+  color: var(--fg-primary);
+}
+.t-h1 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--t-40);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--track-tight);
+  color: var(--fg-primary);
+}
+.t-h2 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--t-28);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--track-tight);
+  color: var(--fg-primary);
+}
+.t-h3 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--t-20);
+  line-height: var(--lh-snug);
+  color: var(--fg-primary);
+}
+.t-h4 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--t-16);
+  line-height: var(--lh-snug);
+  color: var(--fg-primary);
+}
+
+.t-body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--t-15);
+  line-height: var(--lh-text);
+  color: var(--fg-body);
+}
+.t-body-sm {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--t-13);
+  line-height: var(--lh-text);
+  color: var(--fg-body);
+}
+.t-lead {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--t-18);
+  line-height: var(--lh-text);
+  color: var(--fg-body);
+}
+
+/* Mono — data, identifiers, code, keys, IDs, durations, IPs */
+.t-mono {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: var(--t-13);
+  letter-spacing: 0;
+  color: var(--fg-body);
+  font-variant-numeric: tabular-nums;
+}
+.t-mono-sm {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: var(--t-12);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+/* Uppercase mono — used for system labels: SECTOR, PEER, STATUS */
+.t-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--t-12);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  color: var(--fg-muted);
+}
+.t-label-strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--t-12);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  color: var(--fg-primary);
+}
+
+/* Eyebrow above section titles — green, mono, very small */
+.t-eyebrow {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--t-12);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  color: var(--fg-accent);
+}
+
+/* Inline code */
+.t-code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 6px;
+  background: var(--bg-well);
+  border: 1px solid var(--c-line);
+  color: var(--fg-primary);
+  border-radius: 0;
+}
+
+/* Reset / base */
+html { background: var(--bg-page); color-scheme: dark light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+body {
+  font-family: var(--font-sans);
+  font-size: var(--t-15);
+  line-height: var(--lh-text);
+  color: var(--fg-body);
+  background: var(--bg-page);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";   /* Geist alternates */
+}

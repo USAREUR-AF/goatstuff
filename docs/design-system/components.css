@@ -1,0 +1,320 @@
+/* ============================================================
+   GOAT-Net Components
+   ----------------------------------------------------------
+   Concrete component classes, built on tokens from
+   colors_and_type.css. Import that file first.
+   ============================================================ */
+
+/* -------- Buttons ------------------------------------------ */
+.btn {
+  font-family: var(--font-sans);
+  font-size: var(--t-13);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  height: 32px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--c-line-2);
+  background: var(--bg-card);
+  color: var(--fg-primary);
+  border-radius: var(--r-1);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease);
+}
+.btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--c-line-3);
+}
+.btn:active {
+  background: var(--bg-active);
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-accent);
+  border-color: var(--c-green-hi);
+}
+.btn[disabled],
+.btn.is-disabled {
+  color: var(--fg-disabled);
+  background: var(--bg-card);
+  border-color: var(--c-line);
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--c-green-mid);
+  border-color: var(--c-green-hi);
+  color: var(--fg-on-accent);
+  font-weight: 600;
+}
+.btn--primary:hover {
+  background: var(--c-green-hi);
+  border-color: var(--c-green-flare);
+  box-shadow: var(--glow-soft);
+}
+.btn--primary:active { background: var(--c-green-mid); }
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-body);
+}
+.btn--ghost:hover {
+  background: var(--bg-hover);
+  border-color: var(--c-line);
+  color: var(--fg-primary);
+}
+
+.btn--danger {
+  border-color: var(--c-red);
+  color: var(--c-red-hi);
+  background: var(--c-red-bg);
+}
+.btn--danger:hover {
+  background: #381810;
+  border-color: var(--c-red-hi);
+}
+
+.btn--sm { height: 24px; padding: 0 10px; font-size: var(--t-12); }
+.btn--lg { height: 40px; padding: 0 20px; font-size: var(--t-14); }
+
+/* -------- Inputs ------------------------------------------- */
+.input {
+  font-family: var(--font-sans);
+  font-size: var(--t-14);
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-well);
+  border: 1px solid var(--c-line-2);
+  border-radius: var(--r-1);
+  color: var(--fg-primary);
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease);
+}
+.input::placeholder { color: var(--fg-faint); }
+.input:focus {
+  outline: none;
+  border-color: var(--c-green-hi);
+  box-shadow: var(--glow-accent);
+}
+.input--mono {
+  font-family: var(--font-mono);
+  font-size: var(--t-13);
+  letter-spacing: 0;
+}
+
+/* -------- Status chips ------------------------------------- */
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
+  font-weight: 500;
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: var(--r-pill);
+  border: 1px solid currentColor;
+  background: transparent;
+  flex-shrink: 0;
+}
+.chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.chip--ok     { color: var(--status-ok-fg);   background: var(--status-ok-bg); }
+.chip--ok .chip__dot { box-shadow: var(--glow-text); }
+.chip--warn   { color: var(--status-warn-fg); background: var(--status-warn-bg); }
+.chip--err    { color: var(--status-err-fg);  background: var(--status-err-bg); }
+.chip--info   { color: var(--status-info-fg); background: var(--status-info-bg); }
+.chip--exp    { color: var(--status-exp-fg);  background: var(--status-exp-bg); }
+.chip--muted  { color: var(--fg-muted);       background: var(--bg-well); }
+
+/* -------- Cards & panels ----------------------------------- */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--c-line);
+  padding: var(--s-6);
+  border-radius: var(--r-0);
+}
+.card--live { border-top: 1px solid var(--c-green-mid); }
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--c-line);
+}
+
+/* -------- Key-value rows (the workhorse) ------------------- */
+.kv {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 4px 16px;
+  font-family: var(--font-mono);
+  font-size: var(--t-13);
+}
+.kv dt {
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  font-size: var(--t-12);
+}
+.kv dd {
+  margin: 0;
+  color: var(--fg-primary);
+}
+
+/* -------- Kbd ---------------------------------------------- */
+.kbd {
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
+  padding: 2px 6px;
+  background: var(--bg-well);
+  border: 1px solid var(--c-line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-1);
+  color: var(--fg-primary);
+}
+
+/* -------- Toolbar / top bar --------------------------------- */
+.bar {
+  height: 56px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--c-line);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--s-7);
+  gap: var(--s-6);
+}
+
+/* -------- Tabs --------------------------------------------- */
+.tabs {
+  display: flex;
+  gap: var(--s-6);
+  border-bottom: 1px solid var(--c-line);
+}
+.tab {
+  font-family: var(--font-mono);
+  font-size: var(--t-13);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 14px 0;
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+}
+.tab:hover { color: var(--fg-primary); }
+.tab.is-active {
+  color: var(--fg-accent);
+  border-bottom-color: var(--c-green-hi);
+}
+
+/* -------- Live indicator (blinking dot) -------------------- */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg-accent);
+  box-shadow: var(--glow-text);
+  display: inline-block;
+  animation: pulse 1.8s var(--ease) infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* -------- Mono cursor blink -------------------------------- */
+.cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  background: var(--fg-link);
+  vertical-align: -0.12em;
+  margin-left: 0.05em;
+  animation: blink 1.0s steps(2, end) infinite;
+  box-shadow: var(--glow-text);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* -------- Table -------------------------------------------- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--t-13);
+}
+.table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--t-12);
+  text-transform: uppercase;
+  letter-spacing: var(--track-mono);
+  color: var(--fg-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-line-2);
+  background: var(--bg-panel);
+}
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--c-line);
+  color: var(--fg-primary);
+  font-variant-numeric: tabular-nums;
+}
+.table tr:hover td { background: var(--bg-hover); }
+
+/* -------- Banner ------------------------------------------- */
+.banner {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--c-line-2);
+  background: var(--bg-panel);
+  font-family: var(--font-sans);
+  font-size: var(--t-13);
+  color: var(--fg-body);
+}
+.banner__strip {
+  width: 3px;
+  background: var(--accent);
+  margin: -14px 0 -14px -16px;
+}
+.banner--warn .banner__strip { background: var(--c-amber); }
+.banner--err  .banner__strip { background: var(--c-red); }
+
+/* -------- Code block --------------------------------------- */
+.code-block {
+  font-family: var(--font-mono);
+  font-size: var(--t-13);
+  line-height: 1.55;
+  background: var(--bg-page);
+  border: 1px solid var(--c-line);
+  color: var(--fg-body);
+  padding: 14px 16px;
+  white-space: pre;
+  overflow-x: auto;
+}
+.code-block .c-comment { color: var(--fg-faint); font-style: italic; }
+.code-block .c-key     { color: var(--c-blue-hi); }
+.code-block .c-str     { color: var(--c-amber-hi); }
+.code-block .c-ok      { color: var(--c-green-hi); }
+.code-block .c-err     { color: var(--c-red-hi); }
