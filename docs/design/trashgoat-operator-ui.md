@@ -148,10 +148,10 @@ design pass should address:
 
 ## What the design pass should produce
 
-A claude.ai/design bundle landing at `docs/design-assets/trashgoat/`,
+A design-tool bundle landing at `docs/design-assets/trashgoat/`,
 following the same shape as `docs/design-assets/stethoscope/`:
 
-- `README.md` — verbatim from claude.ai/design (handoff README; not edited
+- `README.md` — verbatim from the design tool (handoff README; not edited
   after handoff).
 - `chats/` — the conversation transcript(s) from the design session.
 - `project/` — the HTML/CSS/JS prototype output.
@@ -224,7 +224,7 @@ The bundle should cover the states the v1 UI currently glosses over:
 
 ```
 docs/design-assets/trashgoat/
-├── README.md                                  # verbatim from claude.ai/design
+├── README.md                                  # verbatim from the design tool
 ├── chats/                                     # conversation transcript(s)
 │   └── chat1.md
 ├── project/                                   # HTML/CSS/JS prototype
