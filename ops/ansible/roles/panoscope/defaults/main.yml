@@ -144,7 +144,7 @@ panoscope_zenoh_mtls_enabled: false
 panoscope_cert_dir: "/etc/panoscope"
 panoscope_zenoh_client_cert: "{{ panoscope_cert_dir }}/zenoh-client-cert.pem"
 panoscope_zenoh_client_key: "{{ panoscope_cert_dir }}/zenoh-client-key.pem"
-panoscope_nova_ca_root: "{{ panoscope_cert_dir }}/{{ site_id }}-ca-root.pem"   # REQUIRED per goatnet; a shared role must not default to one
+panoscope_ca_root: "{{ panoscope_cert_dir }}/{{ site_id }}-ca-root.pem"   # REQUIRED per goatnet; a shared role must not default to one
 
 # Compose state.
 panoscope_compose_dir: "/opt/panoscope"

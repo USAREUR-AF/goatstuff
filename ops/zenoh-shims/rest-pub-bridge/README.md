@@ -72,4 +72,4 @@ Deployed as a sidecar in the demogame compose project
 (`ops/ansible/templates/demogame-docker-compose.yml.j2`). The vendor
 leaf is minted by `ops/zenoh-trial-peers/bootstrap-demogame-portal.sh`
 and the matching ACL rule comes from adding the vendor to
-`nova_seed_vendors`.
+`zenoh_seed_vendors`.

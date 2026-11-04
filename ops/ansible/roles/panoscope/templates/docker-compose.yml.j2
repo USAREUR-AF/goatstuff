@@ -41,7 +41,7 @@ services:
 {% if panoscope_zenoh_mtls_enabled %}
       - "{{ panoscope_zenoh_client_cert }}:/etc/panoscope/zenoh-client-cert.pem:ro"
       - "{{ panoscope_zenoh_client_key }}:/etc/panoscope/zenoh-client-key.pem:ro"
-      - "{{ panoscope_nova_ca_root }}:/etc/panoscope/nova-ca-root.pem:ro"
+      - "{{ panoscope_ca_root }}:/etc/panoscope/nova-ca-root.pem:ro"
 {% endif %}
     # No Traefik docker labels — the live deploy uses file-provider
     # routing via /etc/traefik/dynamic/{{ panoscope_traefik_dynamic_filename }}.

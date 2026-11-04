@@ -37,7 +37,3 @@ The Rust crates share one workspace and depend on `panoscope-core` from `goatcor
 ## Contributing and licence
 
 [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [GOVERNANCE.md](GOVERNANCE.md) · Apache License 2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)).
-
-## Licence
-
-`goatstuff` was written by U.S. Federal government employees. In the U.S. it is not subject to copyright and is in the public domain; in countries where copyright is recognized, it is released under the [Apache License 2.0](LICENSE). See [INTENT.md](INTENT.md).

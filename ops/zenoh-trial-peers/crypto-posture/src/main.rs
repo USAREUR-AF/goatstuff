@@ -74,13 +74,13 @@ struct FipsAttest {
     about = "Evidence-based crypto-posture publisher for a Zenoh router (ADR 1079)."
 )]
 struct Args {
-    /// Router host:port for the raw-TLS probe, e.g. `zagros-sandbox-zenoh-router:7447`.
+    /// Router host:port for the raw-TLS probe, e.g. `zenoh-router:7447`.
     #[arg(long, env = "CRYPTO_POSTURE_PROBE_ADDR")]
     probe_addr: String,
     /// TLS SNI the router cert is issued for (defaults to the probe host).
     #[arg(long, env = "CRYPTO_POSTURE_SNI")]
     sni: Option<String>,
-    /// Zenoh publish endpoint, e.g. `tls/zagros-sandbox-zenoh-router:7447`.
+    /// Zenoh publish endpoint, e.g. `tls/zenoh-router:7447`.
     #[arg(long, env = "CRYPTO_POSTURE_ENDPOINT")]
     endpoint: String,
     /// Site segment of `ops/fabric/crypto/<site>`.
@@ -95,7 +95,7 @@ struct Args {
     /// CA root (PEM) to verify the router.
     #[arg(long, env = "CRYPTO_POSTURE_ROOT_CA")]
     root_ca: String,
-    /// REST admin base for the router version, e.g. `http://zagros-sandbox-zenoh-router:8000`.
+    /// REST admin base for the router version, e.g. `http://zenoh-router:8000`.
     #[arg(long, env = "CRYPTO_POSTURE_REST_URL")]
     rest_url: Option<String>,
     /// Host-side FIPS attestation file (written by the deploy). Optional.

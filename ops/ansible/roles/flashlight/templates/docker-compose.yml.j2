@@ -31,7 +31,7 @@ services:
     volumes:
       - "{{ flashlight_zenoh_client_cert }}:/etc/flashlight/zenoh-client-cert.pem:ro"
       - "{{ flashlight_zenoh_client_key }}:/etc/flashlight/zenoh-client-key.pem:ro"
-      - "{{ flashlight_nova_ca_root }}:/etc/flashlight/nova-ca-root.pem:ro"
+      - "{{ flashlight_ca_root }}:/etc/flashlight/nova-ca-root.pem:ro"
 {% endif %}
     # No Traefik docker labels — the deploy uses file-provider
     # routing via /etc/traefik/dynamic/{{ flashlight_traefik_dynamic_filename }}.

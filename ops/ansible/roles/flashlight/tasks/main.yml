@@ -12,7 +12,7 @@
 #   1. If flashlight_zenoh_mtls_enabled, pre-mint operator-class Zenoh client
 #      leaf + key per the cert-issuance runbook and drop them at the
 #      `flashlight_zenoh_client_*` paths (plus the site CA root
-#      at `flashlight_nova_ca_root`).
+#      at `flashlight_ca_root`).
 #
 # Idempotent — re-running on a healthy host is a no-op beyond a
 # `docker compose pull` when the image tag changes.
@@ -23,7 +23,7 @@
   loop:
     - "{{ flashlight_zenoh_client_cert }}"
     - "{{ flashlight_zenoh_client_key }}"
-    - "{{ flashlight_nova_ca_root }}"
+    - "{{ flashlight_ca_root }}"
   register: flashlight_cert_stats
   when: flashlight_zenoh_mtls_enabled | bool
 
@@ -133,7 +133,7 @@
   loop:
     - "{{ flashlight_zenoh_client_cert }}"
     - "{{ flashlight_zenoh_client_key }}"
-    - "{{ flashlight_nova_ca_root }}"
+    - "{{ flashlight_ca_root }}"
   when: flashlight_zenoh_mtls_enabled | bool
   become: true
   notify: flashlight | recreate container

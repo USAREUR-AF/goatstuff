@@ -71,7 +71,7 @@ struct Args {
     listen: String,
 
     /// Zenoh router endpoint. `tls/...` selects native mTLS (the live
-    /// router listens mTLS-only on 7447); `tcp/...` is plaintext
+    /// the router listens mTLS-only on 7447); `tcp/...` is plaintext
     /// for local testing only.
     #[arg(
         long,

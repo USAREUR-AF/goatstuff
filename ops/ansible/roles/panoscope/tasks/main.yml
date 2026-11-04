@@ -16,7 +16,7 @@
 #      operator-class Zenoh client leaf + key per the site's cert issuance
 #      runbook and drop them at the
 #      `panoscope_zenoh_client_*` paths (plus the site CA root at
-#      `panoscope_nova_ca_root`). The role pre-flights with `stat`
+#      `panoscope_ca_root`). The role pre-flights with `stat`
 #      and fails fast if any of the three files are missing.
 #   3. Confirm Hydra admin endpoint reachable at `panoscope_hydra_admin_url`
 #      (loopback only).
@@ -30,7 +30,7 @@
   loop:
     - "{{ panoscope_zenoh_client_cert }}"
     - "{{ panoscope_zenoh_client_key }}"
-    - "{{ panoscope_nova_ca_root }}"
+    - "{{ panoscope_ca_root }}"
   register: panoscope_cert_stats
   when: panoscope_zenoh_mtls_enabled | bool
 
@@ -168,7 +168,7 @@
   loop:
     - "{{ panoscope_zenoh_client_cert }}"
     - "{{ panoscope_zenoh_client_key }}"
-    - "{{ panoscope_nova_ca_root }}"
+    - "{{ panoscope_ca_root }}"
   when: panoscope_zenoh_mtls_enabled | bool
   become: true
   notify: panoscope | recreate container

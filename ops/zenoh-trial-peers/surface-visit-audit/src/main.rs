@@ -89,7 +89,7 @@ struct Args {
     #[arg(long, env = "SURFACE_VISIT_SURFACE")]
     surface: String,
 
-    /// goatnet label.
+    /// goatnet label, e.g. zagros.
     #[arg(long, env = "SURFACE_VISIT_ENV")]
     env: String,
 

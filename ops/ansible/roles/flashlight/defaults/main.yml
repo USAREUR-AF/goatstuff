@@ -68,7 +68,7 @@ flashlight_zenoh_mtls_enabled: false
 flashlight_cert_dir: "/etc/flashlight"
 flashlight_zenoh_client_cert: "{{ flashlight_cert_dir }}/zenoh-client-cert.pem"
 flashlight_zenoh_client_key: "{{ flashlight_cert_dir }}/zenoh-client-key.pem"
-flashlight_nova_ca_root: "{{ flashlight_cert_dir }}/{{ site_id }}-ca-root.pem"   # a shared role must not name a goatnet
+flashlight_ca_root: "{{ flashlight_cert_dir }}/{{ site_id }}-ca-root.pem"   # a shared role must not name a goatnet
 
 # Compose state.
 flashlight_compose_dir: "/opt/flashlight"

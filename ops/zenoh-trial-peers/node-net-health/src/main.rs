@@ -324,7 +324,7 @@ fn unmetered(node: &str, window_secs: u32) -> EnvHealthV1 {
     about = "Net domain of the environment-health surface — per-node connection inventory roll-up (node-net-health.md/ADR 1036)"
 )]
 struct Args {
-    /// Zenoh router endpoint, e.g. `tls/zagros-sandbox-zenoh-router:7447`.
+    /// Zenoh router endpoint, e.g. `tls/zenoh-router:7447`.
     #[arg(long, env = "NNH_ENDPOINT")]
     endpoint: String,
 

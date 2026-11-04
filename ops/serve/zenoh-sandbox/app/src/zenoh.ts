@@ -302,7 +302,7 @@ function rand() { return (now() % 1000) / 1000 }
 function humanError(e: any): string {
   const m = (e && (e.message || e.toString())) || 'unknown error'
   if (/closed|connect|websocket|network/i.test(m)) {
-    return `${m}. Is the server URL right, and are you on the nova mesh?`
+    return `${m}. Is the server URL right, and are you on the goatnet's mesh?`
   }
   return m
 }

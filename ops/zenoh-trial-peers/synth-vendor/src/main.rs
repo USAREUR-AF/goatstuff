@@ -185,7 +185,7 @@ struct Args {
     #[arg(long, env = "SYNTH_VENDOR_KEY")]
     key: Option<String>,
 
-    /// Path to the CA root certificate (PEM) — used to verify
+    /// Path to the goatnet CA root certificate (PEM) — used to verify
     /// the router's server cert. Required when `endpoint` is `tls/...`;
     /// ignored otherwise.
     #[arg(long, env = "SYNTH_VENDOR_ROOT_CA")]
