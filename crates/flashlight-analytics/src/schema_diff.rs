@@ -26,6 +26,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::events::Event;
 
+/// Most recent drift events kept in memory. A key whose content-classified
+/// format flaps (e.g. `json-obj` / `json-arr`) would otherwise grow the list
+/// without bound, and every snapshot clones the whole list.
+pub const MAX_DRIFT_EVENTS: usize = 256;
+
 /// One observed format-drift event. Records the moment a key's format
 /// tag changed, with the previous + current format strings so a
 /// frontend can render "key X: protobuf:A → protobuf:B".
@@ -97,6 +102,10 @@ impl SchemaDiffer {
                     previous_format: previous.clone(),
                     current_format: format.clone(),
                 });
+                if self.drift_events.len() > MAX_DRIFT_EVENTS {
+                    let excess = self.drift_events.len() - MAX_DRIFT_EVENTS;
+                    self.drift_events.drain(..excess);
+                }
                 self.seen_formats.insert(event.key.clone(), format);
             }
         }
@@ -220,6 +229,23 @@ mod tests {
         assert_eq!(snap.drift_events[0].key, "k1");
         assert_eq!(snap.drift_events[1].ts_ms, 40);
         assert_eq!(snap.drift_events[1].key, "k2");
+    }
+
+    #[test]
+    fn drift_events_are_capped_to_the_most_recent() {
+        let mut d = SchemaDiffer::new();
+        let total = MAX_DRIFT_EVENTS + 50;
+        for i in 0..=total {
+            let fmt = if i % 2 == 0 { "A" } else { "B" };
+            d.observe(&ev(i as i64, "k", Some(fmt)));
+        }
+        let snap = d.snapshot();
+        assert_eq!(snap.drift_events.len(), MAX_DRIFT_EVENTS);
+        assert_eq!(snap.drift_events.last().unwrap().ts_ms, total as i64);
+        assert_eq!(
+            snap.drift_events.first().unwrap().ts_ms,
+            (total - MAX_DRIFT_EVENTS + 1) as i64
+        );
     }
 
     #[test]

@@ -219,6 +219,8 @@ The `?compute=` URL parameter selects where analytics compute runs:
 
 Switching `?compute=` is an MPA navigation. No state is lost — both modes operate on the same focused subscription.
 
+**Bounded cost per event.** *(built)* The rolling-stats and sparkline windows evict through a min-heap on `ts_ms` (O(log n) per event) instead of a `Vec::retain` over the whole window on every event (O(window)); the retained set is unchanged, including for out-of-order timestamps (regression tests compare against the retain-per-event model). The schema-diff drift history keeps the most recent `MAX_DRIFT_EVENTS` (256). In `?compute=server` mode the browser buffer is trimmed to the 1000 events each POST re-sends; previously it was copied but never trimmed, so it grew for the life of the page. *(measured, native release build, 5-minute window: at 1000 events/s the CPU per second of traffic went from 258 ms to 2 ms, and filling the window from 32.7 s to 58 ms; a snapshot costs 3.5 ms, up from 2.0 ms.)*
+
 Equivalence is CI-asserted (per Principle 12): canned event-stream fixtures feed both the WASM build and the native build, and the test asserts byte-identical output.
 
 ## Equivalence-test substrate
