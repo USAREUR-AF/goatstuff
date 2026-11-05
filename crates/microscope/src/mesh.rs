@@ -773,7 +773,7 @@ mod tests {
         let p = NbPeer {
             id: "da30q07439rs73buutag".into(),
             name: "chrome-151-browser-client".into(),
-            ip: "100.127.0.77".into(),
+            ip: "100.127.0.80".into(),
             user_id: "5debdb57-f7c2-4a95-bc4b-0bc52750ab24".into(),
             ephemeral: true,
             ..Default::default()

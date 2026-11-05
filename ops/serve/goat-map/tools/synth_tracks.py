@@ -189,7 +189,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bundle", required=True, help="unpacked org bundle dir (cert+key+CA)")
     ap.add_argument("--anchor", help="32-hex slot anchor (default: inferred from bundle)")
-    ap.add_argument("--endpoint", required=True, help="e.g. tls/100.127.0.222:7447")
+    ap.add_argument("--endpoint", required=True, help="e.g. tls/100.127.0.224:7447")
     ap.add_argument("--org", default="SYNTHETIC — simulated tracks (NOT REAL DATA)")
     ap.add_argument("--center", required=True,
                     help="lon,lat — REQUIRED. No default: a synthetic feed that\n"

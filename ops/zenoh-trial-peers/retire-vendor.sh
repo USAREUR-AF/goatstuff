@@ -33,7 +33,7 @@
 set -euo pipefail
 
 PORTAL_URL_DEFAULT="https://portal.nova.netbird.nova.example"
-PORTAL_RESOLVE_DEFAULT="100.127.0.191"  # nova-a mesh IP (mesh CoreDNS handles the public URL otherwise)
+PORTAL_RESOLVE_DEFAULT="100.127.0.193"  # nova-a mesh IP (mesh CoreDNS handles the public URL otherwise)
 
 usage() {
     cat <<EOF

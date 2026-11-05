@@ -248,11 +248,11 @@ mod tests {
                 "locators": ["tls/172.19.0.13:7447"],
                 "sessions": [
                     {"peer": "4b54", "whatami": "router", "region": "north",
-                     "links": [{"dst": "tls/100.127.0.99:38374"}]},
+                     "links": [{"dst": "tls/100.127.0.102:38374"}]},
                     {"peer": "fd12", "whatami": "router", "region": "north",
-                     "links": [{"dst": "tls/100.127.0.200:48524"}]},
+                     "links": [{"dst": "tls/100.127.0.202:48524"}]},
                     {"peer": "7513", "whatami": "client", "region": "south:0:client",
-                     "links": [{"dst": "tls/100.127.0.161:47048"}]}
+                     "links": [{"dst": "tls/100.127.0.163:47048"}]}
                 ]}},
             {"key": "@/8b9a/router/status/plugins/rest/version", "value": "v1.9.0-modified"},
             {"key": "@/8b9a/router/linkstate/north", "value":
