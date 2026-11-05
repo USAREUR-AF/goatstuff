@@ -1,6 +1,6 @@
 # Governance
 
-How decisions are made in the goat repositories (`goatcore`, `goatdocs`, `goatstuff`, `goatenv`, `hello-galaxy-goatenv`).
+How decisions are made in the goat repositories (`goatcore`, `goatdocs`, `goatstuff`, `goatenv`, `hello-galaxy-goatenv`, `zagros-moon-pod`).
 
 ## Roles
 

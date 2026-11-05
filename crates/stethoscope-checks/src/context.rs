@@ -81,11 +81,11 @@ impl Target {
 pub struct CheckCtx {
     pub portal: Arc<PortalClient>,
     pub audit: Arc<AuditTail>,
-    /// Display-only participant noun (nova-a "vendor" / ZAGROS "org") for
+    /// Display-only participant noun (one goatnet "vendor" / another "org") for
     /// operator-facing verdict messages. Render-time wording only — the
     /// `<anchor>/<rest>` key shape, the `vendor`/`key` filter kind, the
     /// portal `list_vendors` call, and the `vendor-decode-rca` tool name
-    /// are all untouched. Defaults to "vendor" (nova-a, byte-stable); the
+    /// are all untouched. Defaults to "vendor" (byte-stable); the
     /// stethoscope binary sets it from `STETHOSCOPE_LEX_ORG` via
     /// [`CheckCtx::with_org`]. See docs/design/portal-lexicon.md.
     pub org: String,
@@ -101,7 +101,7 @@ impl CheckCtx {
     }
 
     /// Set the display noun (chained at construction in the binary). Empty
-    /// input is ignored so the nova-a default survives.
+    /// input is ignored so the "vendor" default survives.
     pub fn with_org(mut self, org: impl Into<String>) -> Self {
         let org = org.into();
         if !org.trim().is_empty() {
@@ -121,7 +121,7 @@ impl CheckCtx {
     }
 
     /// Topics declared for `vendor` under slot-anchor vendor rows — the
-    /// slot-pool registry shape. On slot-pool goatnets (ZAGROS) the
+    /// slot-pool registry shape. On slot-pool goatnets the
     /// portal files topics under anchor-named vendor rows
     /// (`<anchor>/<vendor>/...`), so `list_topics(vendor)` by handle comes
     /// back empty even though the vendor's topics exist. This sweep walks the

@@ -24,7 +24,7 @@
 //   published-but-never-declared (severity: warn) — fires on the
 //   vendor target when audit-tail shows keys the vendor publishes on
 //   that don't appear in the registry. The DRS case is exactly this
-//   shape: org-1/radar1radar/... in audit, drs/radar1/... in registry.
+//   shape: org-1/radar1radar/... in audit, org-1/radar1/... in registry.
 
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -76,8 +76,8 @@ impl Check for RegistrationCheck {
 
 async fn run_vendor(ctx: &CheckCtx, target: &Target) -> CheckOutcome {
     let vendor = &target.value;
-    // Display-only participant noun for the verdict text (nova-a "Vendor" /
-    // ZAGROS "Org"). The `vendor` value, key shape, and portal calls are
+    // Display-only participant noun for the verdict text (one goatnet "Vendor" /
+    // another "Org"). The `vendor` value, key shape, and portal calls are
     // unchanged — only the word shown.
     let org_t = ctx.org_title();
     // Direct lookup: topics filed under a vendor row named by this handle
@@ -185,7 +185,7 @@ async fn run_vendor(ctx: &CheckCtx, target: &Target) -> CheckOutcome {
 
 async fn run_topic(ctx: &CheckCtx, target: &Target) -> CheckOutcome {
     let key = &target.value;
-    // Display-only participant noun (nova-a "vendor" / ZAGROS "org"). The
+    // Display-only participant noun (one goatnet "vendor" / another "org"). The
     // `/?vendor=` deep-link param + `/api/vendors` curl routes below stay
     // literal — they're machine surfaces, not display.
     let org = &ctx.org;

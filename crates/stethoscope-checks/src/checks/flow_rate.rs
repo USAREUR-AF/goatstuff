@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // `flow-rate` check — counts events in the audit-tail over rolling
-// 15-minute and 1-hour windows. A Contributor's design Phase B verdict:
+// 15-minute and 1-hour windows. Per the design's Phase B verdict:
 //   Pass    = ≥1 event in last 15m
 //   Warn    = events in last 1h but none in last 15m
 //   Fail    = no events in last 1h

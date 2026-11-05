@@ -3,7 +3,7 @@
 // Phase B passive checks — one module per check, registered via
 // `register_phase_b(&mut Registry)` from the binary's main.rs.
 //
-// A Contributor's design: adding a new diagnostic is a one-file PR under
+// By design: adding a new diagnostic is a one-file PR under
 // this directory + a one-line addition to `register_phase_b`. CI
 // requires a regression-test fixture per check.
 
