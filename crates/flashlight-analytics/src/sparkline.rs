@@ -13,6 +13,9 @@
 // range, since they're all < 2^53). usize cast truncates toward zero;
 // the right-edge sample at exactly window_end clamps to the last bin.
 
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
 use serde::{Deserialize, Serialize};
 
 /// Snapshot of the sparkline tracker. Serializes deterministically —
@@ -30,18 +33,25 @@ pub struct SparklineSnapshot {
 }
 
 /// Rolling sparkline tracker. Retains in-window timestamps; recomputes
-/// bin counts on snapshot.
+/// bin counts on snapshot. Timestamps sit in a min-heap so eviction pops
+/// only the expired ones (O(log n) per event) instead of scanning the
+/// whole window; binning is order-independent, so the heap order is
+/// never observed.
 #[derive(Debug, Clone)]
 pub struct Sparkline {
     bin_count: usize,
     window_ms: i64,
-    timestamps: Vec<i64>,
+    timestamps: BinaryHeap<Reverse<i64>>,
 }
 
 impl Sparkline {
     /// Construct with operator-supplied bin count + window length.
     pub fn new(bin_count: usize, window_ms: i64) -> Self {
-        Self { bin_count, window_ms, timestamps: Vec::new() }
+        Self {
+            bin_count,
+            window_ms,
+            timestamps: BinaryHeap::new(),
+        }
     }
 
     /// Default per design doc: 5-minute window, 60 bins (5-second
@@ -65,9 +75,14 @@ impl Sparkline {
         if self.window_ms <= 0 || self.bin_count == 0 {
             return;
         }
-        self.timestamps.push(ts_ms);
+        self.timestamps.push(Reverse(ts_ms));
         let cutoff = ts_ms.saturating_sub(self.window_ms);
-        self.timestamps.retain(|&t| t >= cutoff);
+        while let Some(&Reverse(t)) = self.timestamps.peek() {
+            if t >= cutoff {
+                break;
+            }
+            self.timestamps.pop();
+        }
     }
 
     pub fn snapshot(&self) -> SparklineSnapshot {
@@ -81,13 +96,18 @@ impl Sparkline {
 
         // Right edge of the window = most-recent timestamp; left edge
         // = right - window_ms. Bins divide [left, right] evenly.
-        let window_end = *self.timestamps.iter().max().expect("non-empty");
+        let window_end = self
+            .timestamps
+            .iter()
+            .map(|&Reverse(t)| t)
+            .max()
+            .expect("non-empty");
         let window_start = window_end.saturating_sub(self.window_ms);
         let window_ms = self.window_ms as f64;
         let bin_count = self.bin_count as f64;
 
         let mut counts = vec![0_u64; self.bin_count];
-        for &ts in &self.timestamps {
+        for &Reverse(ts) in &self.timestamps {
             if ts < window_start {
                 // Eviction is by ts_ms.saturating_sub(window_ms) so the
                 // strictly-less case shouldn't happen, but guard so an
@@ -211,6 +231,26 @@ mod tests {
         let s = Sparkline::default_window();
         assert_eq!(s.bin_count(), 60);
         assert_eq!(s.window_ms(), 5 * 60 * 1_000);
+    }
+
+    #[test]
+    fn heap_eviction_matches_retain_reference_with_out_of_order_ts() {
+        let mut x: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut ts: i64 = 50_000;
+        let mut reference: Vec<i64> = Vec::new();
+        let mut s = Sparkline::new(12, 2_000);
+        for _ in 0..2_000 {
+            x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            ts += ((x >> 33) % 300) as i64 - 90;
+            s.observe(ts);
+            reference.push(ts);
+            let cutoff = ts.saturating_sub(2_000);
+            reference.retain(|&t| t >= cutoff);
+        }
+        let mut got: Vec<i64> = s.timestamps.iter().map(|&Reverse(t)| t).collect();
+        got.sort_unstable();
+        reference.sort_unstable();
+        assert_eq!(got, reference);
     }
 
     #[test]

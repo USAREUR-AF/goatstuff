@@ -1071,6 +1071,10 @@
     return 'off';
   })();
 
+  // ?compute=server re-sends the most recent events on every snapshot
+  // tick (the endpoint is stateless), so this is also the buffer bound.
+  const T2_SERVER_EVENTS = 1000;
+
   const t2 = {
     mode: t2Mode,
     engine: null, // wasm module {push_event, snapshot_json}
@@ -1154,7 +1158,13 @@
         evictTier2();
       }
     } else if (t2.mode === 'server') {
+      // Keep only the window the next POST sends. The flush below copied
+      // the last T2_SERVER_EVENTS but never trimmed the buffer itself, so
+      // it grew for the life of the page.
       t2.pendingEvents.push(event);
+      if (t2.pendingEvents.length > T2_SERVER_EVENTS) {
+        t2.pendingEvents.splice(0, t2.pendingEvents.length - T2_SERVER_EVENTS);
+      }
     }
   }
 
@@ -1183,7 +1193,7 @@
       }
     } else if (t2.mode === 'server') {
       // Flush the pending buffer; keep recent events for next tick.
-      const events = t2.pendingEvents.slice(-1000);
+      const events = t2.pendingEvents.slice(-T2_SERVER_EVENTS);
       fetch('/api/compute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

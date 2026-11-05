@@ -17,6 +17,9 @@
 // gate to Phase E, and interpolation-based methods can diverge across
 // rounding modes.
 
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BinaryHeap};
+
 use serde::{Deserialize, Serialize};
 
 use crate::events::Event;
@@ -54,10 +57,20 @@ struct Sample {
 /// Sliding-window rolling statistics over event timestamps and payload
 /// sizes. Memory grows with the in-window sample count, bounded by the
 /// window length divided by minimum inter-arrival time.
+///
+/// Eviction is O(log n) per observed event: in-window samples live in
+/// arrival order keyed by an ingest sequence number, and a min-heap on
+/// `ts_ms` finds every sample below the cutoff without scanning the whole
+/// window. (A `Vec::retain` per event was O(window) per event, so at
+/// 1000 events/s over a 5-minute window each event walked ~300k samples.)
+/// The retained set is exactly what the earlier retain-per-event produced,
+/// including for out-of-order timestamps.
 #[derive(Debug, Clone)]
 pub struct RollingStats {
     window_ms: i64,
-    samples: Vec<Sample>,
+    next_seq: u64,
+    samples: BTreeMap<u64, Sample>,
+    by_ts: BinaryHeap<Reverse<(i64, u64)>>,
 }
 
 impl RollingStats {
@@ -65,7 +78,12 @@ impl RollingStats {
     /// milliseconds. `window_ms <= 0` produces a tracker that retains
     /// nothing and reports rate 0.
     pub fn new(window_ms: i64) -> Self {
-        Self { window_ms, samples: Vec::new() }
+        Self {
+            window_ms,
+            next_seq: 0,
+            samples: BTreeMap::new(),
+            by_ts: BinaryHeap::new(),
+        }
     }
 
     /// Default per design doc: 5-minute window.
@@ -80,9 +98,24 @@ impl RollingStats {
             return;
         }
         let bytes = u32::try_from(event.payload.len()).unwrap_or(u32::MAX);
-        self.samples.push(Sample { ts_ms: event.ts_ms, bytes });
+        let seq = self.next_seq;
+        self.next_seq = self.next_seq.wrapping_add(1);
+        self.samples.insert(
+            seq,
+            Sample {
+                ts_ms: event.ts_ms,
+                bytes,
+            },
+        );
+        self.by_ts.push(Reverse((event.ts_ms, seq)));
         let cutoff = event.ts_ms.saturating_sub(self.window_ms);
-        self.samples.retain(|s| s.ts_ms >= cutoff);
+        while let Some(&Reverse((ts, old))) = self.by_ts.peek() {
+            if ts >= cutoff {
+                break;
+            }
+            self.by_ts.pop();
+            self.samples.remove(&old);
+        }
     }
 
     pub fn window_ms(&self) -> i64 {
@@ -101,15 +134,16 @@ impl RollingStats {
         let window_seconds = (self.window_ms as f64) / 1000.0;
         let rate_hz = n as f64 / window_seconds;
 
+        let ordered: Vec<Sample> = self.samples.values().copied().collect();
         let mut deltas: Vec<f64> = Vec::with_capacity(n.saturating_sub(1));
-        for win in self.samples.windows(2) {
+        for win in ordered.windows(2) {
             deltas.push((win[1].ts_ms - win[0].ts_ms) as f64);
         }
         // f64 inter-arrival values are non-negative integers cast from
         // i64; total_cmp gives a deterministic strict ordering.
         deltas.sort_by(f64::total_cmp);
 
-        let mut bytes_sorted: Vec<u32> = self.samples.iter().map(|s| s.bytes).collect();
+        let mut bytes_sorted: Vec<u32> = ordered.iter().map(|s| s.bytes).collect();
         bytes_sorted.sort_unstable();
 
         StatsSnapshot {
@@ -266,6 +300,39 @@ mod tests {
         let snap = s.snapshot();
         assert_eq!(snap.sample_count, 0);
         assert_eq!(snap.rate_hz, 0.0);
+    }
+
+    /// Reference model: the earlier implementation, which retained by
+    /// scanning the whole window on every event.
+    fn retain_reference(window_ms: i64, events: &[(i64, usize)]) -> Vec<(i64, u32)> {
+        let mut v: Vec<(i64, u32)> = Vec::new();
+        for &(ts, bytes) in events {
+            v.push((ts, bytes as u32));
+            let cutoff = ts.saturating_sub(window_ms);
+            v.retain(|&(t, _)| t >= cutoff);
+        }
+        v
+    }
+
+    #[test]
+    fn heap_eviction_matches_retain_reference_with_out_of_order_ts() {
+        // Deterministic LCG; timestamps jitter backwards and forwards.
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut ts: i64 = 10_000;
+        let mut events = Vec::new();
+        for _ in 0..2_000 {
+            x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            ts += ((x >> 33) % 400) as i64 - 120;
+            events.push((ts, ((x >> 20) % 900) as usize));
+        }
+        let window_ms = 3_000;
+        let mut s = RollingStats::new(window_ms);
+        for &(t, b) in &events {
+            s.observe(&ev(t, b));
+        }
+        let expected = retain_reference(window_ms, &events);
+        let got: Vec<(i64, u32)> = s.samples.values().map(|x| (x.ts_ms, x.bytes)).collect();
+        assert_eq!(got, expected);
     }
 
     #[test]
