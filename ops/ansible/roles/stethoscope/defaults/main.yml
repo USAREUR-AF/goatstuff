@@ -37,7 +37,7 @@ stethoscope_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | re
 # hostname is in mesh-DNS only; Docker's embedded resolver can't see
 # CoreDNS on :5353, so the public name is statically pinned to the
 # mgmt-host's mesh IP.
-stethoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+stethoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.191') }}"
 
 # Audit-tail (flow-rate check) data source — MinIO. Disabled by default
 # so hosts ship the role without the credential dependency. A site's

@@ -91,7 +91,7 @@ panoscope_portal_schemas_url: "https://portal.{{ site_id | mandatory }}.{{ site_
 # mgmt-host's mesh IP. The pinned IP is mesh_ip_a by default (single-
 # host sites); override per-site for multi-host sites where VRRP
 # floats a virtual IP.
-panoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+panoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.191') }}"
 
 # Resolver refresh + sampling tuning.
 panoscope_portal_refresh_secs: 60
@@ -338,7 +338,7 @@ panoscope_oauth2_proxy_cookie_secret: ""
 # Issuer trailing slash NOT optional (Hydra emits it; string-exact compare).
 panoscope_oauth2_proxy_oidc_issuer_url: "https://oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}/"
 # On-host DNS override for the OIDC issuer.
-panoscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+panoscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.191') }}"
 
 # Door policy, declared rather than implied. "" = any authenticated identity
 # may reach the surface; authorization lives INSIDE the app. Stated as a

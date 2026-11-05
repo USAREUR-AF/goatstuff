@@ -55,7 +55,7 @@ flashlight_portal_key_file: /etc/goat/flashlight-portal.key
 flashlight_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
 flashlight_portal_key_id: flashlight
 flashlight_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_FLASHLIGHT_PORTAL_KEY') | default('', true) }}"
-flashlight_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.190') }}"
+flashlight_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.191') }}"
 
 # Logging.
 flashlight_rust_log: "flashlight=info,axum=info,tower_http=info"

@@ -433,10 +433,10 @@ mod tests {
         let mut person = c("someone@example.test", "someone@example.test", "person");
         person.keys = vec!["7ba9fa8c-9a71-4d18-a28c-c2b6b2a90f5c".into()];
         let mut peer = c("peer-a", "peer-a", "peer");
-        peer.keys = vec!["100.127.0.221".into()];
+        peer.keys = vec!["100.127.0.222".into()];
         let u = vec![person, peer];
         assert_eq!(rank(&u, "c2b6b2a9", 10).len(), 1);
-        assert_eq!(rank(&u, "100.127.0.221", 10)[0].selector, "peer-a");
+        assert_eq!(rank(&u, "100.127.0.222", 10)[0].selector, "peer-a");
     }
 
     #[test]

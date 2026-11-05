@@ -40,7 +40,7 @@ set -euo pipefail
 : "${PORTAL_OPERATOR_API_KEY:?set PORTAL_OPERATOR_API_KEY (matches portal compose env)}"
 PORTAL_URL="${PORTAL_URL%/}"
 CERT_OUT_DIR="${SYNTH_VENDOR_CERT_OUT_DIR:-./synth-vendor-certs}"
-SCP_TARGET="${SCP_TARGET:-goat@100.127.0.190:/opt/synth-vendors/certs}"
+SCP_TARGET="${SCP_TARGET:-goat@100.127.0.191:/opt/synth-vendors/certs}"
 
 # Vendor list — must match ops/ansible/roles/zenoh-synth-vendors/defaults/main.yml.
 # All four are operator-managed demo vendors; the portal marks them

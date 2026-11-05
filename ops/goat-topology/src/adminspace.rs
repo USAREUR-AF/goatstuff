@@ -250,9 +250,9 @@ mod tests {
                     {"peer": "4b54", "whatami": "router", "region": "north",
                      "links": [{"dst": "tls/100.127.0.99:38374"}]},
                     {"peer": "fd12", "whatami": "router", "region": "north",
-                     "links": [{"dst": "tls/100.127.0.199:48524"}]},
+                     "links": [{"dst": "tls/100.127.0.200:48524"}]},
                     {"peer": "7513", "whatami": "client", "region": "south:0:client",
-                     "links": [{"dst": "tls/100.127.0.160:47048"}]}
+                     "links": [{"dst": "tls/100.127.0.161:47048"}]}
                 ]}},
             {"key": "@/8b9a/router/status/plugins/rest/version", "value": "v1.9.0-modified"},
             {"key": "@/8b9a/router/linkstate/north", "value":
