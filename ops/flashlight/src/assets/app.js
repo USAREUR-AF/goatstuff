@@ -580,8 +580,7 @@
       }
       pushRow(payload, /* lagged= */ false);
       bumpRate();
-      renderTable();
-      drawSparkline();
+      scheduleRender();
       // Auto-follow: mark the newest seq for the throttled panel refresh.
       if (state.following && payload.seq != null) {
         state.pendingSeq = payload.seq;
@@ -603,7 +602,7 @@
         },
         /* lagged= */ true
       );
-      renderTable();
+      scheduleRender();
     });
     es.addEventListener('error', () => {
       // EventSource auto-reconnects; reflect that in the pill.
@@ -613,6 +612,25 @@
       } else {
         setStatus('reconnecting', 'reconnecting');
       }
+    });
+  }
+
+  // ----- Render coalescing --------------------------------------------
+  // Stream handlers only mutate `state`; the table + sparkline repaint at
+  // most once per animation frame. A full `innerHTML` rebuild per event
+  // was O(events × MAX_ROWS) and, in a hidden tab, every buffered event
+  // replayed that rebuild back to back on return, so the page froze until
+  // the backlog drained. requestAnimationFrame does not fire while the
+  // tab is hidden, so a backlog now costs one repaint instead of N.
+  let renderPending = false;
+
+  function scheduleRender() {
+    if (renderPending) return;
+    renderPending = true;
+    window.requestAnimationFrame(() => {
+      renderPending = false;
+      renderTable();
+      drawSparkline();
     });
   }
 
@@ -860,7 +878,7 @@
     const stepX = w / state.rateBuckets.length;
 
     // Bars from left (oldest) to right (newest).
-    ctx.fillStyle = getCssVar('--accent', '#20964f');
+    ctx.fillStyle = accent();
     for (let i = 0; i < state.rateBuckets.length; i++) {
       const v = state.rateBuckets[i];
       const barH = (v / max) * h;
@@ -987,6 +1005,15 @@
   function getCssVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name);
     return (v && v.trim()) || fallback;
+  }
+
+  // The page theme is fixed server-side, so the accent never changes at
+  // runtime. Read it once: getComputedStyle right after an innerHTML
+  // rebuild forces a synchronous style recalc on every repaint.
+  let accentColor = null;
+  function accent() {
+    if (accentColor === null) accentColor = getCssVar('--accent', '#20964f');
+    return accentColor;
   }
 
   // Repaint the sparkline once per second even when no events arrive
@@ -1241,7 +1268,7 @@
 
     const max = Math.max(1, ...points);
     const stepX = w / points.length;
-    ctx.fillStyle = getCssVar('--accent', '#20964f');
+    ctx.fillStyle = accent();
     for (let i = 0; i < points.length; i++) {
       const v = points[i];
       const barH = (v / max) * h;
