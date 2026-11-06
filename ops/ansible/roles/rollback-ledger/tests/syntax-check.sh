@@ -14,4 +14,8 @@ echo "[rollback-ledger/syntax-check] governed-host variable shape"
 ansible-playbook -i 'localhost,' -c local playbook.yml --syntax-check \
   -e consistency_goatnet=zagros -e consistency_member_group=zagros_hosts
 
+# Not only parse: the row's source of record is one key (source_tree), checked
+# by running the role on localhost against a scratch ledger.
+bash ./source-tree.sh
+
 echo "[rollback-ledger/syntax-check] PASS"
