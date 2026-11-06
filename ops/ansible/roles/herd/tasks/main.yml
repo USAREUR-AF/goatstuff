@@ -14,9 +14,10 @@
       - herd_image is defined
       - herd_image != "PENDING"
     fail_msg: >-
-      herd_image is still the PENDING sentinel. Pin a multi-arch INDEX digest
-      (never a per-arch leaf — goatnets run on both amd64 and arm64) before
-      enabling this role.
+      herd_image is still the PENDING sentinel. The herd image is not public;
+      set herd_image to an operator-supplied image pinned to its multi-arch
+      INDEX digest (never a per-arch leaf — goatnets run on both amd64 and
+      arm64) before enabling this role. See the role README.
 
 # The secrets are the deploy's real preconditions. Asserting them here turns a
 # silent half-configured console into a refusal at the top of the play.
