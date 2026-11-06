@@ -906,6 +906,9 @@ async fn flush_batch(
 }
 
 #[cfg(test)]
+mod s3_tls_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

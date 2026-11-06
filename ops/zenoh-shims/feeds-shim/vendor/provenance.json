@@ -1,0 +1,68 @@
+{
+  "upstream": "https://github.com/eclipse-zenoh/zenoh",
+  "license": "EPL-2.0 OR Apache-2.0",
+  "packages": [
+    {
+      "package": "zenoh-link-commons",
+      "version": "1.0.4",
+      "archive_sha256": "c879010ef997d8397e91a8706281c811d7b3971f8b8642307961e8cb0008db12",
+      "upstream_git": "030afc154c33375b397089a1e4cbbb52a2a2d9bf",
+      "original_files_sha256": {
+        ".cargo_vcs_info.json": "2f23295fd186fab6c39de4aaf307af0e87ea6cc17b42716f4c89e06094801df6",
+        "Cargo.toml": "626c65187a0a28c7bf0c520c2a9d8258c5f785a431067e8444177fcf397c60a3",
+        "Cargo.toml.orig": "2508f1e7f924b01a401e7a24b8dd0029e9429de2b848e220a24f4d212d9685b0",
+        "README.md": "032a3ca22e5d8fdb11402e101eba55442bf280792176d6b6b7ded191b62eaf23",
+        "src/lib.rs": "95220e5d15696d251b6a4e0c978d84d9c660d4cdb108f8b6c279cd48c2e5babf",
+        "src/listener.rs": "b2ce19d4211ab705719f8fe09cbbedb605e4fdaccc786705de5f2fd2185318a4",
+        "src/multicast.rs": "f3b25dba196e8a79bdf9bf28420cd8ffcfe73a4542f2fa2944ed64937c2c64c8",
+        "src/tls.rs": "87f0419bd08405c9e5ff8f6a647d824eaabf3fa474ca2aabd0d7b1f6b243d04c",
+        "src/unicast.rs": "7eba586ab2f8a1461614b4754fb51e0a0c51bcbe14ffdd84fb54ebe7f0131db2"
+      },
+      "modified_files": [
+        "Cargo.toml"
+      ],
+      "change": "rustls-webpki dependency0.102.8 to exact0.103.16; Rust source unchanged",
+      "modified_manifest_sha256": "2deb1ce4a58eed72bf3f57c7d02d35e6228b98c944ee3c44d7f25a05ad8cb448"
+    },
+    {
+      "package": "zenoh-link-quic",
+      "version": "1.0.4",
+      "archive_sha256": "f58115f081937aac5ad1a4e0b35f993bec0cdd1cf57ac40f206242cd6427328b",
+      "upstream_git": "030afc154c33375b397089a1e4cbbb52a2a2d9bf",
+      "original_files_sha256": {
+        ".cargo_vcs_info.json": "de43d306bf8aa800c5210821d6711c0d057ccdcc5d152cba490b0830584725de",
+        "Cargo.toml": "7bab0d3e40ea02ad4e0eacb5c64317783e06e2dbd51f7b55e2d45a47dabb1209",
+        "Cargo.toml.orig": "257f95da432c11f5763a27417ea61c6b1b7824f05a8c1e4bb5bbfff891324db6",
+        "README.md": "032a3ca22e5d8fdb11402e101eba55442bf280792176d6b6b7ded191b62eaf23",
+        "src/lib.rs": "62d456eb6e7e71b46c4045331357107b49a2d3d7660917df5425c1720def285d",
+        "src/unicast.rs": "c501d0aa57b74e7e9208938e2475314edc454bf6e4e53106f45dd2ee5a5ce6e3",
+        "src/utils.rs": "2aef10a8ebeddd34c3ebe15c1e67efc6729093f40a20309f8f729184e7c94938"
+      },
+      "modified_files": [
+        "Cargo.toml"
+      ],
+      "change": "rustls-webpki dependency0.102.8 to exact0.103.16; Rust source unchanged",
+      "modified_manifest_sha256": "0f17ea0d2cf92fa3e8d35d10d8c61f1478b949192fbeeb9848428f71854ca516"
+    },
+    {
+      "package": "zenoh-link-tls",
+      "version": "1.0.4",
+      "archive_sha256": "2a353ea1b23adb5d41e41230fcf74fb871dd943314c6161416141da785d34a34",
+      "upstream_git": "030afc154c33375b397089a1e4cbbb52a2a2d9bf",
+      "original_files_sha256": {
+        ".cargo_vcs_info.json": "77c431d4cf3dd0f9f44cebec05dd08d018946935a75c5d4f1900fdf72e5e173c",
+        "Cargo.toml": "e7288af31b1d7106a226e3baf6a9a21da23f291ec4c2ef91908b35e78149b155",
+        "Cargo.toml.orig": "501a831a7d8fa0168656b0e85efb765ae52d5ce38a0afba5aef59adb918e98c3",
+        "README.md": "032a3ca22e5d8fdb11402e101eba55442bf280792176d6b6b7ded191b62eaf23",
+        "src/lib.rs": "66b9e87eb2ef3cc8fd8d5a8c79780541ea90e1b7c980bfdc004bc5e6171c33cd",
+        "src/unicast.rs": "55e346b5358fd5b8695ed918ea82a2862634839a471ccf42f2d52115fcce5a67",
+        "src/utils.rs": "1320b57dfab41b125bc9606a5f1dea654863a2a82979a2672e357e6a94c7607e"
+      },
+      "modified_files": [
+        "Cargo.toml"
+      ],
+      "change": "rustls-webpki dependency0.102.8 to exact0.103.16; Rust source unchanged",
+      "modified_manifest_sha256": "c62621b39f7fdac8fff989d40c56ebb59e25ba8555c9ab5d7ef8faa6659af933"
+    }
+  ]
+}
