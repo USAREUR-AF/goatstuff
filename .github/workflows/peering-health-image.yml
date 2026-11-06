@@ -1,0 +1,83 @@
+name: peering-health-image
+# Builds ops/zenoh-trial-peers/peering-health/Dockerfile — the goat-peering-health
+# meter (Rust + tokio + eclipse-zenoh + prost) — and publishes to
+# ghcr.io/usareur-af/goat-peering-health.
+#
+# Per docs/operations/peering-denial-observability.md + ADR 1036: the peering
+# domain of the environment-health surface, and gate G-6 of the cross-sovereign
+# federation plan. A normal mTLS Zenoh client peer that grades the peering-denial
+# snapshot (host-side peering-denials-snapshot timer, read-only bind mount) and
+# publishes ops/peering/health/<edge> as EnvHealthV1{domain:"peering"};
+# observation not enforcement, persists nothing.
+#
+# This repository carries the publisher only. The host-side collector that
+# writes the snapshot is not part of it, so the image builds from
+# ops/zenoh-trial-peers/peering-health/ alone. The publisher's tests carry
+# their snapshot fixtures inline (src/main.rs), and `cargo test` runs them
+# before any image is built.
+#
+# Per-arch native build + manifest combine, mirroring node-net-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# Tag scheme:
+#   - On main push:              :latest + :sha-<short>
+#   - On peering-health/v* tag:  :<tag-name>
+#   - On any build:              :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/peering-health/**'
+      - '.github/workflows/peering-health-image.yml'
+    tags: ['peering-health/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/peering-health/**'
+      - '.github/workflows/peering-health-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ops/zenoh-trial-peers/peering-health/target
+          key: ${{ runner.os }}-cargo-peering-health-${{ hashFiles('ops/zenoh-trial-peers/peering-health/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-peering-health-
+            ${{ runner.os }}-cargo-
+
+      - name: cargo test
+        working-directory: ops/zenoh-trial-peers/peering-health
+        run: cargo test --all-features
+
+  image:
+    needs: test
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-peering-health
+      tag_prefix: peering-health
+      context: ops/zenoh-trial-peers/peering-health
+      description: "Peering domain of the environment-health surface \u2014 ACL denial observability at a sovereign peering edge"

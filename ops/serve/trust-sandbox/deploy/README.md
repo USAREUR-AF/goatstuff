@@ -93,10 +93,14 @@ Re-running it is a no-op. It fails, saying so, on a goatnet with no sandbox clie
 Copy `ops/serve/trust-sandbox/` to the VM, then per instance set the env + bring up
 the base compose + the hosted overlay:
 
-First, log the VM in to ghcr (the images are private):
+All four images, the three `trust-sandbox-*` images and the `caddy-cloudflare`
+edge, are public and pull without a login. To build the edge yourself instead,
+use the public `deploy/Dockerfile.caddy` and point the overlay's `edge` service at
+the local tag:
 
 ```bash
-echo <ghcr-PAT-with-read:packages> | docker login ghcr.io -u <user> --password-stdin
+docker build -f deploy/Dockerfile.caddy -t caddy-cloudflare:local .
+# then in deploy/docker-compose.hosted.yml: edge.image: caddy-cloudflare:local
 ```
 
 ```bash
@@ -117,8 +121,9 @@ zenohd hydra hydra-init coredns target gate`), connect the edge to its network, 
 add a second site block to the Caddyfile. One shared instance is the default shape.
 
 > The Caddy edge needs the `caddy-dns/cloudflare` module (stock image lacks it) —
-> published at `ghcr.io/usareur-af/caddy-cloudflare:dev` (built from `Dockerfile.caddy`,
-> Caddy 2.10 + xcaddy; 2.8 hits a removed `zapslog` API).
+> published at `ghcr.io/usareur-af/caddy-cloudflare` by `trust-sandbox-image.yml`
+> (built from `Dockerfile.caddy`, Caddy 2.10 + xcaddy; 2.8 hits a removed `zapslog`
+> API).
 
 ## 5. Register DNS + isitup (additive, surgical)
 

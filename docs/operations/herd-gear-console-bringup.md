@@ -4,7 +4,7 @@
 |---|---|
 | Goal | Bring the bearer-gear console live on ZAGROS: the console on the mgmt host, and the connector on its own `NETWORK-JUMP` peer. |
 | Target | **ZAGROS first** (the goatnet's mgmt host). zagros-prod only after ZAGROS is re-probed. |
-| Status | ⛔ **Not done.** Everything below is written and unit-tested; **nothing has run against a device.** Both images are built and pinned (`v0.2.0`), both roles are default-OFF. |
+| Status | ⛔ **Not done.** Everything below is written and unit-tested; **nothing has run against a device.** Both roles are default-OFF. **The herd and herd-connector images are not public:** they are built from a repository that is not published, so both roles ship with `PENDING` image defaults and need operator-supplied images (`herd_image`, `herd_connector_image`). |
 | Scope | **A per-environment SERVICE bring-up, not a goatnet standup.** The one holistic path
 for standing a goatnet up is [goatnet-standup.md](https://github.com/usareur-af/goatcore/blob/main/docs/operations/goatnet-standup.md) and this does not fork it —
 it assumes a goatnet already stood up that way and adds one service onto it (doctrine P1,

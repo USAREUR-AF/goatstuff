@@ -7,7 +7,10 @@
   ansible.builtin.assert:
     that:
       - herd_connector_image != "PENDING"
-    fail_msg: "herd_connector_image is still PENDING. Pin a multi-arch INDEX digest first."
+    fail_msg: >-
+      herd_connector_image is still PENDING. The herd-connector image is not
+      public; set herd_connector_image to an operator-supplied image pinned to
+      its multi-arch INDEX digest first. See the role README.
 
 # A connector with no site registers for "" and is never selected — it looks
 # healthy in every check and can carry nothing. Refuse rather than deploy that.

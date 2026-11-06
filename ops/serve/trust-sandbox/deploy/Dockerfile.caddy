@@ -1,6 +1,7 @@
 # Caddy with the caddy-dns/cloudflare module — the stock image lacks it, and the
 # hosted trust-sandbox edge needs it for Let's Encrypt DNS-01 over the ZAGROS
-# Cloudflare zone. Published as ghcr.io/usareur-af/caddy-cloudflare:dev.
+# Cloudflare zone. Published as ghcr.io/usareur-af/caddy-cloudflare by
+# .github/workflows/trust-sandbox-image.yml (package not public).
 # (Built on 2.10 — 2.8.4 + current xcaddy deps hit a removed zapslog API.)
 FROM caddy:2.10-builder AS builder
 RUN xcaddy build --with github.com/caddy-dns/cloudflare

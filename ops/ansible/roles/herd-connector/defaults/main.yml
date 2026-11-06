@@ -18,10 +18,12 @@
 herd_connector_enabled: false
 
 herd_connector_dir: "/opt/herd-connector"
-# NOT YET MIRRORED into the goat-maintainer namespace — herd-connector still exists
-# only under usareur-af. Mirror it before the connector is first deployed, the
-# same way herd was, or this resolves to a path that does not exist.
-herd_connector_image: "ghcr.io/{{ ghcr_org }}/herd-connector:v0.2.0@sha256:b01060d5f63f8dc4f199d2d0bb3d64188085685f6840e8c548b36b3c7264f8b0"
+# THE HERD-CONNECTOR IMAGE IS NOT PUBLIC. It is built from a repository that is
+# not published, and no public image of it exists. This role therefore needs an
+# operator-supplied image: set `herd_connector_image` to an image you build or
+# are given, pinned to its multi-arch INDEX digest. PENDING is the fail-closed
+# sentinel: with it the role refuses to deploy.
+herd_connector_image: "PENDING"
 
 # The console it DIALS. Nothing initiates toward this peer, so there is no
 # listener here and no inbound rule anywhere for it.

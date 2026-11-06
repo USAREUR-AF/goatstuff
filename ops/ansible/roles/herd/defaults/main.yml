@@ -21,15 +21,14 @@ herd_enabled: false
 herd_dir: "/opt/herd"
 herd_hostname: "herd.{{ site_id }}.{{ site_dns_zone }}"
 
-# Multi-arch INDEX digest, never a per-arch leaf (hosts differ in arch — a leaf
-# digest deploys on one and not the other).
-#   docker buildx imagetools inspect ghcr.io/{{ ghcr_org }}/herd:sha-<short> --format '{{.Manifest.Digest}}'
-# PENDING is a deliberate fail-closed sentinel: the role refuses to deploy until
-# a real digest is pinned, so a half-configured env cannot start a stale image.
-# Superseded by the generated pins.yml; kept in step so it is not a trap.
-# The index is mirrored into BOTH ghcr namespaces at the same digest, so
-# {{ ghcr_org }} resolves on any goatnet (see ops/pins/fleet-pins.yaml).
-herd_image: "ghcr.io/{{ ghcr_org }}/herd:v0.2.1@sha256:f73a621e1905b4a35ca5071c48f85ff4c5dee2daedb87b48b8ea5cbbd06865ee"
+# THE HERD IMAGE IS NOT PUBLIC. It is built from a repository that is not
+# published, and no public image of it exists. This role therefore needs an
+# operator-supplied image: set `herd_image` (in your goatnet's group_vars or
+# pins) to an image you build or are given, pinned to its multi-arch INDEX
+# digest, never a per-arch leaf (hosts differ in arch):
+#   docker buildx imagetools inspect <registry>/herd:<tag> --format '{{.Manifest.Digest}}'
+# PENDING is the fail-closed sentinel: with it the role refuses to deploy.
+herd_image: "PENDING"
 herd_postgres_image: "postgres:16-alpine@sha256:6efd0df010dc3cb40d5e33e3ef84acecc5e73161bd3df06029ee8698e5e12c60"
 # 1.6.0, DIGEST-PINNED, and the bump is not cosmetic: guacamole/guacd:1.5.5 is a
 # SINGLE-PLATFORM amd64 manifest, so on an arm64 host it starts and dies with

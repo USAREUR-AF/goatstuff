@@ -17,22 +17,22 @@
 services:
   # owned services from ghcr (no build on the host)
   certs-init:
-    image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-64e4387@sha256:c255c95efcc72da5841e8ffdffae3e4e7c816013c51ce3f5182016e84d03e1ef
+    image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-43b99f2@sha256:120b168955e2112c7651bd208a890013fba431717f9d24a888441c98db87c394
     build: !reset null
   orchestrator:
-    image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-64e4387@sha256:c255c95efcc72da5841e8ffdffae3e4e7c816013c51ce3f5182016e84d03e1ef
+    image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-43b99f2@sha256:120b168955e2112c7651bd208a890013fba431717f9d24a888441c98db87c394
     build: !reset null
     environment:
       TS_GOATNET: "zagros"          # goatnet label in the URI-SAN of the leaves it mints (urn:goat:<goatnet>:…)
   web:
-    image: ghcr.io/usareur-af/trust-sandbox-web:sha-64e4387@sha256:07f52571305fea33159962cdd3169796680ff2e39593e7485d964604739516a5
+    image: ghcr.io/usareur-af/trust-sandbox-web:sha-43b99f2@sha256:7c1ae2b728f7aa70498e2e390b22e39a35867c8127acad1ea1838ee3ef132c98
     build: !reset null
     ports: !reset []            # not host-published; the gate fronts it
   spire-server:
-    image: ghcr.io/usareur-af/trust-sandbox-spire:sha-64e4387@sha256:b75001502b80b42f52e7ee21b0fcadbb4780f4d90c482cc79aa9e1ac61078aa8
+    image: ghcr.io/usareur-af/trust-sandbox-spire:sha-43b99f2@sha256:d81a4d081abd8ef18fc006b3d9f2ef17a4ba047b892aee9e8e13b8bdc4670a67
     build: !reset null
   spire-agent:
-    image: ghcr.io/usareur-af/trust-sandbox-spire:sha-64e4387@sha256:b75001502b80b42f52e7ee21b0fcadbb4780f4d90c482cc79aa9e1ac61078aa8
+    image: ghcr.io/usareur-af/trust-sandbox-spire:sha-43b99f2@sha256:d81a4d081abd8ef18fc006b3d9f2ef17a4ba047b892aee9e8e13b8bdc4670a67
 
   # --- Ory front gate: oauth2-proxy → the ZAGROS Hydra (ADMINS group) -----------
   gate:
@@ -68,7 +68,7 @@ services:
 
   # --- TLS terminator: Caddy, LE DNS-01 over Cloudflare (ZAGROS zone) ----------
   edge:
-    image: ghcr.io/usareur-af/caddy-cloudflare:sha-64e4387@sha256:8cf8dc9ddce3b67659d3cfe8f489050476c6b0e6f36d34fb92ca41904c9a435b   # stock caddy lacks the cloudflare DNS module
+    image: ghcr.io/usareur-af/caddy-cloudflare:sha-2c360bd@sha256:7016c6789e078973df6ba706a076e3411411e889e8d2d2dbf5dacc09c4222bed   # stock caddy lacks the cloudflare DNS module
     restart: unless-stopped
     depends_on:
       gate:
