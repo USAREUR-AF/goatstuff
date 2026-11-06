@@ -168,9 +168,24 @@
     _rbl_marker: "{{ lookup('file', rollback_assembled_marker) }}"
   when: rollback_assembled_marker is file
 
+# The tree carries pre-disclosure patches (the marker's
+# embargo=<id>/<kind>.patch:<sha256>,… line): the row names their ids, so the
+# ledger shows which deploys ran a fix that was not yet public. A marker without
+# the line leaves the row unchanged.
+- name: rollback-ledger | a run from a tree with pre-disclosure patches names them
+  ansible.builtin.set_fact:
+    _rbl_row: "{{ _rbl_row | combine({'embargo': _rbl_embargo}) }}"
+  vars:
+    _rbl_embargo_line: "{{ lookup('file', rollback_assembled_marker).splitlines() | select('match', 'embargo=') | map('regex_replace', '^embargo=', '') | map('trim') | first | default('', true) }}"
+    _rbl_embargo: "{{ _rbl_embargo_line.split(',') | map('trim') | select | map('regex_replace', '/.*$', '') | unique | sort }}"
+  when:
+    - rollback_assembled_marker is file
+    - _rbl_embargo_line | length > 0
+
 # The source of record the play rendered from, as ansible-preflight.sh exports
 # it: {"commit": <sha>} from a clone, or {"goatcore": <sha>, "goatcore_ref": …,
-# "overlay": <sha>, "goatstuff": <sha>?} from an assembled tree (ops/scripts/lib/source_of_record.py).
+# "overlay": <sha>, "goatstuff": <sha>?, "embargo": [<id>, …]?} from an assembled tree
+# (ops/scripts/lib/source_of_record.py).
 # Absent when the play did not go through the wrapper, so such a row is unchanged.
 - name: rollback-ledger | the row names the source tree it was rendered from
   ansible.builtin.set_fact:
