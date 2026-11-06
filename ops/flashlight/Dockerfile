@@ -120,7 +120,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/build/ops/flashlight/target,sharing=locked \
     cd ops/flashlight \
     && cargo build --release --locked \
-    && find target -maxdepth 4 -name '*flashlight*' -delete
+    && find target -maxdepth 4 -name '*flashlight*' -prune -exec rm -rf {} +
 
 # Real source + design-system CSS sources.
 COPY ops/flashlight/src/ ./ops/flashlight/src/

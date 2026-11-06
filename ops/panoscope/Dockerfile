@@ -69,7 +69,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/build/ops/panoscope/target,sharing=locked \
     cd ops/panoscope \
     && cargo build --release --locked \
-    && find target -maxdepth 4 -name '*panoscope*' -delete
+    && find target -maxdepth 4 -name '*panoscope*' -prune -exec rm -rf {} +
 # Real source + frontend dist from stage 1.
 COPY ops/panoscope/src/ ./ops/panoscope/src/
 COPY ops/panoscope/frontend/package.json ./ops/panoscope/frontend/package.json
