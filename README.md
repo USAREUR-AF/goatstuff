@@ -28,6 +28,10 @@ The inspection surfaces, demos and example applications that run on a goat data 
 
 The design documents published so far are under `docs/design/`; a surface without one is described by its role and code. A surface that deploys has an Ansible role and a playbook under `ops/ansible/` that assume a goatnet built from `goatcore`.
 
+## Base images
+
+Every image here builds on base images named by role, `ops/base-images/<role>/Dockerfile`: `rust-build`, `node-build` and `runtime-cc`. The defaults are images anyone may redistribute (Debian official images and distroless Debian 13). To build on your own bases, such as a hardened catalogue, put your own role files at the same paths in your environment repository and copy it over this checkout before building: [build goat images on your own base images](https://github.com/usareur-af/goatcore/blob/main/docs/operations/build-on-your-own-base-images.md). `ops/base-images/base-images.py` is the same file as goatcore's.
+
 Each surface's status, what you bring and what needs your configuration: [docs/RELEASE-CONTENTS.md](docs/RELEASE-CONTENTS.md).
 
 ## Building

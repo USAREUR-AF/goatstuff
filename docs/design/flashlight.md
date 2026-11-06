@@ -249,7 +249,7 @@ CI matrix:
 
 flashlight ships as a standalone service following the canonical mgmt-host service pattern (panoscope is the immediate precedent).
 
-- **Image:** `ghcr.io/<org>/flashlight` (Chainguard Rust → static distroless, multi-arch arm64+amd64), built by `.github/workflows/flashlight-image.yml` on every merge that touches the flashlight crate or its assets.
+- **Image:** `ghcr.io/<org>/flashlight` (Rust → distroless runtime-cc, multi-arch arm64+amd64), built by `.github/workflows/flashlight-image.yml` on every merge that touches the flashlight crate or its assets.
 - **Ansible role:** `ops/ansible/roles/flashlight/` — image pin + runtime ledger (per ADR 0859) + compose overlay + env-var threading for Zenoh cert paths, portal API key, MinIO replay creds.
 - **Compose:** `ops/compose/mgmt-host/docker-compose.flashlight.yml`. Single container; reuses the existing flashlight bind mounts for offline-CA root + per-instance leaf cert.
 - **Traefik router:** mesh-only allowlist matching the panoscope shape. Adds `flashlight.nova.netbird.goat.example` SAN to the mesh-only certificate.

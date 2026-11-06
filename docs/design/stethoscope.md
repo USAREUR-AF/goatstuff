@@ -234,7 +234,7 @@ Stethoscope-specific surface code lives in the stethoscope crate alone: HTML/CSS
 
 stethoscope ships as a standalone service following the canonical mgmt-host pattern. Same shape as panoscope and flashlight.
 
-- **Image:** `ghcr.io/usareur-af/stethoscope` (Chainguard Rust → static distroless, multi-arch arm64+amd64), built by `.github/workflows/stethoscope-image.yml` on every merge that touches the crate or assets.
+- **Image:** `ghcr.io/usareur-af/stethoscope` (Rust → distroless runtime-cc, multi-arch arm64+amd64), built by `.github/workflows/stethoscope-image.yml` on every merge that touches the crate or assets.
 - **Ansible role:** `ops/ansible/roles/stethoscope/` — image pin + runtime ledger (per ADR 0859) + compose overlay + env-var threading for portal API key, MinIO read-only creds, panoscope snapshot URL, netbird PAT, and (when active probes are provisioned) `stethoscope` Zenoh cert paths.
 - **Compose:** `ops/compose/mgmt-host/docker-compose.stethoscope.yml`. Single container. Reuses existing bind mounts for offline-CA root + the `stethoscope` leaf cert (when present).
 - **Traefik router:** mesh-only allowlist matching the panoscope shape. Adds `stethoscope.nova.netbird.nova.example` SAN to the mesh-only certificate.

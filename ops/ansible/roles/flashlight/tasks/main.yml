@@ -55,7 +55,7 @@
     label: "{{ item.item | default('?') }}"
 
 # Normalize mode on the cert files so the non-root container user
-# (Chainguard distroless `nonroot`, uid 65532) can read them.
+# (distroless `nonroot`, uid 65532) can read them.
 # Without this, Zenoh's TLS layer silently fails to load the key file
 # with permission-denied → no wire connection → SSE clients see
 # 503 "live subscription not running". Same fix panoscope uses.
@@ -207,7 +207,7 @@
     pull: missing
   become: true
 
-# /healthz lives inside the binary. Chainguard glibc-dynamic has no
+# /healthz lives inside the binary. The distroless runtime-cc base has no
 # shell, so we only verify the container is Running here; the
 # operator runbook does the end-to-end curl.
 - name: flashlight | wait for container to be Running

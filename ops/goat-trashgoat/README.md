@@ -211,7 +211,7 @@ extracted repo will need:
 ops/goat-trashgoat/
 ├── Cargo.toml      # standalone workspace
 ├── Cargo.lock      # pinned dependencies
-├── Dockerfile      # Chainguard rust → glibc-dynamic distroless
+├── Dockerfile      # rust-build → runtime-cc (ops/base-images/)
 ├── LICENSE         # Apache-2.0
 ├── README.md       # this file
 ├── assets/

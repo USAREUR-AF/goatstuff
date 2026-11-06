@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 # SPDX-License-Identifier: Apache-2.0
 #
-# netvis container image. Single-stage Rust build → Chainguard
-# glibc-dynamic distroless runtime per ADR 0700, mirroring
+# netvis container image. Single-stage Rust build → the distroless
+# runtime-cc base (ops/base-images/, goatcore ADR 1220), mirroring
 # crates/microscope/Dockerfile.
 #
 # Build context is the repo root, because the binary include_str!s several
@@ -13,10 +13,15 @@
 #
 #   docker build -f crates/netvis/Dockerfile -t netvis .
 
+# Base images are build arguments named for their role; the defaults are
+# the public images in ops/base-images/ (goatcore docs/design/base-images.md).
+ARG BASE_RUST_BUILD=docker.io/library/rust:1.92-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2
+ARG BASE_RUNTIME_CC=gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
+
 # -----------------------------------------------------------------
 # Stage 1: rust binary
 # -----------------------------------------------------------------
-FROM cgr.dev/chainguard/rust:latest-dev AS rust-builder
+FROM ${BASE_RUST_BUILD} AS rust-builder
 USER root
 WORKDIR /build
 
@@ -41,9 +46,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && ls -la /build/netvis
 
 # -----------------------------------------------------------------
-# Stage 2: runtime — Chainguard glibc-dynamic distroless
+# Stage 2: runtime — the distroless runtime-cc base (ops/base-images/)
 # -----------------------------------------------------------------
-FROM cgr.dev/chainguard/glibc-dynamic:latest
+FROM ${BASE_RUNTIME_CC}
 COPY --from=rust-builder /build/netvis /usr/local/bin/netvis
 EXPOSE 9760
 ENTRYPOINT ["/usr/local/bin/netvis"]

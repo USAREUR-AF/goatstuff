@@ -23,22 +23,27 @@
 #      design-system CSS + flashlight.css + app.js are include_str!'d
 #      and the wasm-builder's output is rust-embed'd so no separate
 #      node toolchain or asset-bundling step is needed.
-#   3. Runtime: Chainguard glibc-dynamic per ADR 0700 — single static
+#   3. Runtime: the runtime-cc base (ops/base-images/, goatcore ADR 1220) — single static
 #      binary on a minimal distroless base.
+
+# Base images are build arguments named for their role; the defaults are
+# the public images in ops/base-images/ (goatcore docs/design/base-images.md).
+ARG BASE_RUST_BUILD=docker.io/library/rust:1.92-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2
+ARG BASE_RUNTIME_CC=gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
 
 # -----------------------------------------------------------------
 # WASM builder — Tier 2 module (browser-side flashlight-analytics)
 # -----------------------------------------------------------------
-# Single-stage exception to the Chainguard-first rule (ADR 0700): the
-# wasm-builder uses the official `rust` Debian image because
-# Chainguard's `rust:latest-dev` ships a wolfi-packaged rustc on
+# The wasm-builder stays on the official `rust` Debian image whatever
+# the rust-build role names, because a Wolfi-packaged rustc (Chainguard's
+# `rust:latest-dev`) ships a wolfi-packaged rustc on
 # PATH that bypasses rustup, so `rustup target add wasm32-unknown-
 # unknown` reports success but cargo still hits `E0463: can't find
 # crate for std` at build time. The official Rust image is
 # rustup-managed end-to-end and handles `target add` as documented.
 # Justified because the produced artifact (WASM bytes + JS glue) is
-# COPYed into the rust-builder + runtime stages — the runtime image
-# stays Chainguard-only.
+# COPYed into the rust-builder + runtime stages; the runtime image
+# is the runtime-cc role.
 FROM rust:1-bookworm AS wasm-builder
 WORKDIR /build
 RUN rustup target add wasm32-unknown-unknown
@@ -81,7 +86,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 # Rust builder — flashlight server binary (links flashlight-analytics
 # native rlib + embeds the wasm-builder's Tier 2 output via rust-embed).
 # -----------------------------------------------------------------
-FROM cgr.dev/chainguard/rust:latest-dev AS rust-builder
+FROM ${BASE_RUST_BUILD} AS rust-builder
 USER root
 WORKDIR /build
 
@@ -138,7 +143,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 # -----------------------------------------------------------------
 # Runtime
 # -----------------------------------------------------------------
-FROM cgr.dev/chainguard/glibc-dynamic:latest
+FROM ${BASE_RUNTIME_CC}
 
 USER nonroot
 WORKDIR /app
@@ -146,7 +151,7 @@ COPY --from=rust-builder /build/flashlight /app/flashlight
 
 EXPOSE 8080
 
-# Healthcheck lives at /healthz inside the binary. Chainguard
-# glibc-dynamic ships no shell/wget/curl; the compose layer's
+# Healthcheck lives at /healthz inside the binary. The runtime-cc
+# base ships no shell/wget/curl; the compose layer's
 # `healthcheck:` is what runs the probe.
 ENTRYPOINT ["/app/flashlight"]

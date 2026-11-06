@@ -17,16 +17,21 @@
 #   2. rust-builder: `cargo build --release` produces the binary; the
 #      build.rs picks up the dist/ from stage 1 and rust-embed inlines
 #      it into the binary.
-#   3. Runtime: Chainguard glibc-dynamic per ADR 0700 — single static
+#   3. Runtime: the runtime-cc base (ops/base-images/, goatcore ADR 1220) — single static
 #      binary on a minimal distroless base.
+
+# Base images are build arguments named for their role; the defaults are
+# the public images in ops/base-images/ (goatcore docs/design/base-images.md).
+ARG BASE_NODE_BUILD=docker.io/library/node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+ARG BASE_RUST_BUILD=docker.io/library/rust:1.92-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2
+ARG BASE_RUNTIME_CC=gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
 
 # -----------------------------------------------------------------
 # Stage 1: frontend bundle
 # -----------------------------------------------------------------
-# Use the `:latest-dev` variant which runs as root + ships a shell —
-# needed because `npm ci` writes node_modules into the workdir and the
-# default Chainguard `:latest` image's non-root user can't mkdir there.
-FROM cgr.dev/chainguard/node:latest-dev AS node-builder
+# The stage switches to root: `npm ci` writes node_modules into the
+# workdir, which a base whose default user is non-root cannot create.
+FROM ${BASE_NODE_BUILD} AS node-builder
 USER root
 WORKDIR /build
 COPY ops/panoscope/frontend/package.json ops/panoscope/frontend/package-lock.json ./frontend/
@@ -38,7 +43,7 @@ RUN cd frontend && npm run build
 # Stage 2: rust binary (with embedded frontend)
 # -----------------------------------------------------------------
 # Same dev-variant rationale: cargo writes to /build/.../target.
-FROM cgr.dev/chainguard/rust:latest-dev AS rust-builder
+FROM ${BASE_RUST_BUILD} AS rust-builder
 USER root
 WORKDIR /build
 
@@ -83,7 +88,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 # -----------------------------------------------------------------
 # Stage 3: runtime
 # -----------------------------------------------------------------
-FROM cgr.dev/chainguard/glibc-dynamic:latest
+FROM ${BASE_RUNTIME_CC}
 
 # Non-root user comes from the base image (`nonroot`, uid 65532).
 USER nonroot

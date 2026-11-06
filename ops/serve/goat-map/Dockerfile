@@ -3,8 +3,8 @@
 # goat-map -- CoT -> GeoTrackV1 transform + the map that renders it.
 #
 # DEBT (deliberate, see README): this is a stock python base built on-box, not
-# a Chainguard-first CI-built digest-pinned image per
-# docs/design/os-supply-chain-security.md + ADR 0859. First-light shape only.
+# a CI-built digest-pinned image on the role bases in ops/base-images/
+# (goatcore ADR 1220) + ADR 0859. First-light shape only.
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
