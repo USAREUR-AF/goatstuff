@@ -153,44 +153,46 @@
     _rbl_row: "{{ _rbl_row | combine({'source': 'offline'}) }}"
   when: lookup('env', 'GOAT_DEPLOY_OFFLINE') == '1'
 
-# A play run from an assembled tree (goatcore at the overlay's goatcore.ref, the
-# overlay copied over it; ops/goatprivate/assemble.sh) records the two commits
-# it was built from, read from the tree's .goat-assembled marker on the
-# controller. A play from a plain checkout writes the row unchanged.
-- name: rollback-ledger | a run from an assembled tree records goatcore and overlay commits
-  ansible.builtin.set_fact:
-    _rbl_row: >-
-      {{ _rbl_row | combine({
-           'goatcore_ref': (_rbl_marker.splitlines() | select('match', 'goatcore_ref=') | map('regex_replace', '^goatcore_ref=', '') | map('trim') | first | default('', true)),
-           'overlay_commit': (_rbl_marker.splitlines() | select('match', 'overlay_commit=') | map('regex_replace', '^overlay_commit=', '') | map('trim') | first | default('', true))
-         }) }}
-  vars:
-    _rbl_marker: "{{ lookup('file', rollback_assembled_marker) }}"
-  when: rollback_assembled_marker is file
-
-# The tree carries pre-disclosure patches (the marker's
-# embargo=<id>/<kind>.patch:<sha256>,… line): the row names their ids, so the
-# ledger shows which deploys ran a fix that was not yet public. A marker without
-# the line leaves the row unchanged.
-- name: rollback-ledger | a run from a tree with pre-disclosure patches names them
-  ansible.builtin.set_fact:
-    _rbl_row: "{{ _rbl_row | combine({'embargo': _rbl_embargo}) }}"
-  vars:
-    _rbl_embargo_line: "{{ lookup('file', rollback_assembled_marker).splitlines() | select('match', 'embargo=') | map('regex_replace', '^embargo=', '') | map('trim') | first | default('', true) }}"
-    _rbl_embargo: "{{ _rbl_embargo_line.split(',') | map('trim') | select | map('regex_replace', '/.*$', '') | unique | sort }}"
-  when:
-    - rollback_assembled_marker is file
-    - _rbl_embargo_line | length > 0
-
-# The source of record the play rendered from, as ansible-preflight.sh exports
-# it: {"commit": <sha>} from a clone, or {"goatcore": <sha>, "goatcore_ref": …,
-# "overlay": <sha>, "goatstuff": <sha>?, "embargo": [<id>, …]?} from an assembled tree
-# (ops/scripts/lib/source_of_record.py).
-# Absent when the play did not go through the wrapper, so such a row is unchanged.
+# The source of record the play rendered from, in one key: `source_tree`.
+# {"commit": <sha>} from a clone; {"goatcore": <sha>, "goatcore_ref": …,
+# "overlay": <sha>, "goatcore_export_of": <sha>?, "goatstuff": <sha>?,
+# "goatstuff_ref": …?, "embargo": [<id>, …]?} from an assembled tree
+# (ops/scripts/lib/source_of_record.py describe). ansible-preflight.sh exports it
+# as GOAT_DEPLOY_SOURCE_TREE on every play of both avenues, and that value wins.
+#
+# A play from an assembled tree that did not go through the wrapper gets the
+# same object built from the tree's .goat-assembled marker on the controller
+# (ops/goatprivate/assemble.sh): goatcore, overlay, goatstuff when the marker
+# names it, and the ids of the pre-disclosure patches (the marker's
+# embargo=<id>/<kind>.patch:<sha256>,… line), so the ledger shows which deploys
+# ran a fix that was not yet public. A plain checkout outside the wrapper writes
+# no source_tree.
+#
+# Rows written before this carried the marker's commits a second time at the top
+# level (goatcore_ref, overlay_commit, embargo). Nothing reads those keys; the
+# rows stay valid and every ledger reader takes them as before.
 - name: rollback-ledger | the row names the source tree it was rendered from
   ansible.builtin.set_fact:
     _rbl_row: "{{ _rbl_row | combine({'source_tree': lookup('env', 'GOAT_DEPLOY_SOURCE_TREE') | from_json}) }}"
   when: (lookup('env', 'GOAT_DEPLOY_SOURCE_TREE') | trim) is match('[{].+[}]$')
+
+- name: rollback-ledger | outside the wrapper, an assembled tree's row names it from the marker
+  ansible.builtin.set_fact:
+    _rbl_row: >-
+      {{ _rbl_row | combine({'source_tree': dict(
+           [('goatcore', _rbl_m_goatcore), ('overlay', _rbl_m_overlay)]
+           + ([('goatstuff', _rbl_m_goatstuff)] if (_rbl_m_goatstuff | length > 0) else [])
+           + ([('embargo', _rbl_m_embargo)] if (_rbl_m_embargo | length > 0) else []))}) }}
+  vars:
+    _rbl_marker_lines: "{{ lookup('file', rollback_assembled_marker).splitlines() | map('trim') | list }}"
+    _rbl_m_goatcore: "{{ _rbl_marker_lines | select('match', 'goatcore_ref=') | map('regex_replace', '^goatcore_ref=', '') | first | default('', true) }}"
+    _rbl_m_overlay: "{{ _rbl_marker_lines | select('match', 'overlay_commit=') | map('regex_replace', '^overlay_commit=', '') | first | default('', true) }}"
+    _rbl_m_goatstuff: "{{ _rbl_marker_lines | select('match', 'goatstuff_ref=') | map('regex_replace', '^goatstuff_ref=', '') | first | default('', true) }}"
+    _rbl_m_embargo_line: "{{ _rbl_marker_lines | select('match', 'embargo=') | map('regex_replace', '^embargo=', '') | first | default('', true) }}"
+    _rbl_m_embargo: "{{ _rbl_m_embargo_line.split(',') | map('trim') | select | map('regex_replace', '/.*$', '') | unique | sort }}"
+  when:
+    - _rbl_row.source_tree is not defined
+    - rollback_assembled_marker is file
 
 # The rollout preflight's accepted risk (ADR 1211): when a deploy of a `none`
 # or `restore-required` rollout proceeded with --ack, the deploy driver passed
