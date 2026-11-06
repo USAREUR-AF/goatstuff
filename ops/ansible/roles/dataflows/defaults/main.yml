@@ -9,7 +9,7 @@
 # require an append to deploy-history.yml (CI checks via
 # .github/workflows/deploy-history-check.yml). Built by
 # .github/workflows/dataflows-image.yml.
-dataflows_image: "ghcr.io/{{ ghcr_org }}/dataflows:sha-06060e3"
+dataflows_image: "ghcr.io/{{ ghcr_org }}/dataflows:sha-6e6c0c6@sha256:15c928b328fd740d2daa03a8b676bd6bd6987f31e3603d948c778d13a2d80943"
 
 # Public hostname for browser-facing access. Site convention is
 # `dataflows.<site_id>.<site_dns_zone>`; override per site.
