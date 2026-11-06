@@ -572,3 +572,6 @@ mod tests {
         std::fs::remove_file(&p).ok();
     }
 }
+
+#[cfg(test)]
+mod tls_tests;

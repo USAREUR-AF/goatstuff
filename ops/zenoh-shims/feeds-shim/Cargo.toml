@@ -37,3 +37,14 @@ zenoh-buffers = "=1.0.4"
 [profile.release]
 lto = true
 codegen-units = 1
+
+[dev-dependencies]
+rcgen = { version = "0.14", features = ["x509-parser"] }
+tempfile = "3"
+zenoh-link-commons = { version = "=1.0.4", features = ["tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[patch.crates-io]
+zenoh-link-commons = { path = "vendor/zenoh-link-commons" }
+zenoh-link-quic = { path = "vendor/zenoh-link-quic" }
+zenoh-link-tls = { path = "vendor/zenoh-link-tls" }

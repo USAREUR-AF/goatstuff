@@ -46,7 +46,27 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ops/zenoh-trial-peers/audit-subscriber
+      - name: S3 HTTPS and verifier regression tests
+        run: cargo test --locked
+        working-directory: ops/zenoh-trial-peers/audit-subscriber
   image:
+    needs: test
     uses: ./.github/workflows/_image-build.yml
     permissions:
       contents: read

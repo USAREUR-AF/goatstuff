@@ -32,10 +32,13 @@ zenoh = { version = "=1.9.0", features = ["unstable"] }
 # crate resolved fresh picks a newer rustls that cannot complete this fleet's
 # handshake (the router negotiates a post-quantum hybrid group). The failure is
 # `zenoh::open failed: Unable to connect`, which reads as a dead router or a bad
-# cert; openssl s_client with the SAME credentials connects fine. These two
-# versions are what every working peer runs. Do not float them.
+# cert; openssl s_client with the SAME credentials connects fine. rustls stays
+# at what every working peer runs; do not float it. rustls-webpki moves only to
+# 0.103.16, the release that refuses the distrusted emSign intermediates
+# (RUSTSEC-2026-0382); src/tls_tests.rs proves the real Zenoh verifier, mTLS
+# publication to a Zenoh 1.9 router, and the hybrid and classical handshakes.
 rustls = "=0.23.40"
-rustls-webpki = "=0.103.13"
+rustls-webpki = "=0.103.16"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync", "fs", "io-util"] }
 clap = { version = "4", features = ["derive", "env"] }
 prost = "0.13"
@@ -49,3 +52,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # and cannot read back what it writes.
 age = { version = "0.11", default-features = false }
 chrono = "0.4"
+
+[dev-dependencies]
+rcgen = { version = "0.14", features = ["x509-parser"] }
+tempfile = "3"
+zenoh-link-commons = { version = "=1.9.0", features = ["tls"] }

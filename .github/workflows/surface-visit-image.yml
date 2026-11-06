@@ -76,7 +76,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: cargo test
-        run: cargo test --all-features
+        run: cargo test --locked --all-features
 
   image:
     needs: test

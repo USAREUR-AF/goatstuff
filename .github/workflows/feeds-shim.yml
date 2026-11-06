@@ -1,0 +1,69 @@
+name: feeds-shim
+
+# Build, test and clippy for ops/zenoh-shims/feeds-shim, a standalone Rust
+# crate. It also checks that the three zenoh-link adapters under vendor/ are
+# the published 1.0.4 source with only their rustls-webpki requirement
+# changed, and runs the TLS, QUIC and compression compatibility cells against
+# an upstream Zenoh 1.0.4 router built without those patches.
+
+on:
+  # A guard, not a publisher: it gates the pull request only.
+  pull_request:
+    paths:
+      - 'ops/zenoh-shims/feeds-shim/**'
+      - '.github/workflows/feeds-shim.yml'
+
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same ref. A push during review used to
+# leave the previous run going to completion, so a branch pushed three
+# times paid three times for an answer only the last one needed. Keyed on
+# the workflow plus the ref, and NEVER cancels on main — a merge-commit run
+# is the one whose result is recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ops/zenoh-shims/feeds-shim/target
+          key: ${{ runner.os }}-cargo-feeds-shim-${{ hashFiles('ops/zenoh-shims/feeds-shim/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-feeds-shim-
+            ${{ runner.os }}-cargo-
+
+      - name: cargo build
+        working-directory: ops/zenoh-shims/feeds-shim
+        run: cargo build --locked --tests
+
+      - name: Verify adapter source provenance
+        working-directory: ops/zenoh-shims/feeds-shim
+        run: |
+          python3 tests/check_vendor_provenance.py --self-test
+          python3 tests/check_vendor_provenance.py
+
+      - name: cargo test
+        working-directory: ops/zenoh-shims/feeds-shim
+        run: cargo test --locked
+
+      - name: Upstream Zenoh 1.0.4 TLS, QUIC and compression compatibility
+        working-directory: ops/zenoh-shims/feeds-shim
+        run: python3 tests/transport_compatibility.py
+
+      - name: cargo clippy (deny warnings)
+        working-directory: ops/zenoh-shims/feeds-shim
+        run: cargo clippy --locked --all-targets -- -D warnings
