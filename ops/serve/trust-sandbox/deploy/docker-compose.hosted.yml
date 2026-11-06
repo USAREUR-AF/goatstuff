@@ -68,7 +68,7 @@ services:
 
   # --- TLS terminator: Caddy, LE DNS-01 over Cloudflare (ZAGROS zone) ----------
   edge:
-    image: ghcr.io/usareur-af/caddy-cloudflare:sha-43b99f2@sha256:40b3cc0bad127b873f2109057415041bc576af0862b967307bb1ee80f894f72b   # stock caddy lacks the cloudflare DNS module; this package is not public, see deploy/README.md §4
+    image: ghcr.io/usareur-af/caddy-cloudflare:sha-2c360bd@sha256:7016c6789e078973df6ba706a076e3411411e889e8d2d2dbf5dacc09c4222bed   # stock caddy lacks the cloudflare DNS module
     restart: unless-stopped
     depends_on:
       gate:
