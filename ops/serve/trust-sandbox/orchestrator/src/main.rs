@@ -85,6 +85,16 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+/// The URI-SAN identity grammar this sandbox stamps on the leaves it mints:
+/// `urn:goat:<goatnet>:org=<org>,role=OPERATOR`. The goatnet label comes from
+/// `TS_GOATNET` (default `zagros`, the example goatnet).
+fn operator_uri_san(org: &str) -> String {
+    format!(
+        "urn:goat:{}:org={org},role=OPERATOR",
+        env_or("TS_GOATNET", "zagros")
+    )
+}
+
 fn default_roster() -> Vec<Identity> {
     vec![
         Identity {
@@ -119,7 +129,7 @@ fn default_roster() -> Vec<Identity> {
             kind: IdentityKind::OrgSystem,
             anchor: Some("acme-sensors".into()),
             role: None,
-            uri_san: Some("urn:goat:zagros:org=acme-sensors,role=OPERATOR".into()),
+            uri_san: Some(operator_uri_san("acme-sensors")),
             revoked: false,
             blurb: "An external organization's system — gets a portal/CA-issued certificate (we can't run software inside their environment). Publishes under its own anchor.".into(),
         },
@@ -137,7 +147,7 @@ fn default_roster() -> Vec<Identity> {
             kind: IdentityKind::Backing,
             anchor: Some("sensor-gw".into()),
             role: None,
-            uri_san: Some("urn:goat:zagros:org=sensor-gw,role=OPERATOR".into()),
+            uri_san: Some(operator_uri_san("sensor-gw")),
             revoked: false,
             blurb: "The disposable backing service behind the mesh name sensor-gw.trust.local — used for burn-&-respawn.".into(),
         },
@@ -570,7 +580,7 @@ async fn h_mint(State(st): State<Shared>, Json(req): Json<MintReq>) -> impl Into
             "message": format!("{} is signed in as {:?} — only an ADMIN role may authorize issuance. Ory authenticates the human + role; the CA does the minting. This is the human-authority gate.", claims.sub, claims.groups)
         }))).into_response();
     }
-    let uri = format!("urn:goat:zagros:org={},role=OPERATOR", req.anchor);
+    let uri = operator_uri_san(&req.anchor);
     match st.signer.mint(&req.anchor, Some(&uri), false) {
         Ok(m) => {
             let _ = st.tx.send(WsEvent::Lifecycle {
@@ -695,7 +705,7 @@ async fn h_burn(State(st): State<Shared>, Json(req): Json<BurnReq>) -> impl Into
     let root_ca = format!("{}/ca-root.pem", st.cfg.certs_dir);
     let tmp = std::env::temp_dir().join(format!("ts-burn-{nonce}"));
     let _ = std::fs::create_dir_all(&tmp);
-    let leaf = match st.signer.mint(cn, Some(&format!("urn:goat:zagros:org={cn},role=OPERATOR")), false) {
+    let leaf = match st.signer.mint(cn, Some(&operator_uri_san(cn)), false) {
         Ok(m) => m,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"ok":false,"error":e.to_string()}))).into_response(),
     };

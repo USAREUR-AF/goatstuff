@@ -219,13 +219,14 @@
     # ==================================================================
     # Mesh DNS registration
     # ==================================================================
-    - name: Register TAK DNS on NETHOST
-      delegate_to: nethost-01
+    # tak_mesh_dns_host: the inventory host that serves the mesh DNS zone.
+    - name: Register TAK DNS on the mesh DNS host
+      delegate_to: "{{ tak_mesh_dns_host | mandatory('set tak_mesh_dns_host in the tak_servers group: the inventory host that serves the mesh DNS zone') }}"
       tags: dns
       block:
         - name: Add TAK to mesh-hosts
           ansible.builtin.lineinfile:
-            path: /opt/goat/dns/mesh-hosts
+            path: "{{ goat_host_opt_dir | default('/opt/goat') }}/dns/mesh-hosts"
             line: "{{ tak_mesh_ip }}  tak.{{ netbird_domain }} tak"
             regexp: "tak\\.{{ netbird_domain }}"
             insertafter: "# Custom entries"
@@ -233,7 +234,7 @@
 
         - name: Add WebTAK to mesh-hosts
           ansible.builtin.lineinfile:
-            path: /opt/goat/dns/mesh-hosts
+            path: "{{ goat_host_opt_dir | default('/opt/goat') }}/dns/mesh-hosts"
             line: "{{ tak_mesh_ip }}  webtak.{{ netbird_domain }} webtak"
             regexp: "webtak\\.{{ netbird_domain }}"
             insertafter: "# Custom entries"
@@ -267,6 +268,6 @@
         chdir: "{{ tak_config_dir }}"
 
     - name: Reload coredns
-      delegate_to: nethost-01
+      delegate_to: "{{ tak_mesh_dns_host }}"
       ansible.builtin.command:
         cmd: docker exec mesh-dns kill -HUP 1

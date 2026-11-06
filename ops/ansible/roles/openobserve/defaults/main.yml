@@ -42,10 +42,11 @@ openobserve_grpc_port: 5081
 
 # -- Root credentials --------------------------------------------------------
 # .envrc.local convention:
-#   VEGA_C_OPENOBSERVE_ROOT_EMAIL    → openobserve_root_email
-#   VEGA_C_OPENOBSERVE_ROOT_PASSWORD → openobserve_root_password
-openobserve_root_email: "{{ lookup('env', 'VEGA_C_OPENOBSERVE_ROOT_EMAIL') | default('', true) }}"
-openobserve_root_password: "{{ lookup('env', 'VEGA_C_OPENOBSERVE_ROOT_PASSWORD') | default('', true) }}"
+#   OPENOBSERVE_ROOT_EMAIL    → openobserve_root_email
+#   OPENOBSERVE_ROOT_PASSWORD → openobserve_root_password
+# A deployment that keeps them under other names sets the two variables.
+openobserve_root_email: "{{ lookup('env', 'OPENOBSERVE_ROOT_EMAIL') | default('', true) }}"
+openobserve_root_password: "{{ lookup('env', 'OPENOBSERVE_ROOT_PASSWORD') | default('', true) }}"
 
 # -- S3 (MinIO) backend ------------------------------------------------------
 # Cross-service comms: OpenObserve in its own compose project reaches
@@ -59,8 +60,8 @@ openobserve_root_password: "{{ lookup('env', 'VEGA_C_OPENOBSERVE_ROOT_PASSWORD')
 openobserve_s3_endpoint: "http://host.docker.internal:9000"
 openobserve_s3_region: "us-east-1"
 openobserve_s3_bucket: "telemetry-otlp"
-openobserve_s3_access_key: "{{ lookup('env', 'VEGA_C_MINIO_ROOT_USER') | default('', true) }}"
-openobserve_s3_secret_key: "{{ lookup('env', 'VEGA_C_MINIO_ROOT_PASSWORD') | default('', true) }}"
+openobserve_s3_access_key: "{{ lookup('env', 'OPENOBSERVE_S3_ACCESS_KEY') | default('', true) }}"
+openobserve_s3_secret_key: "{{ lookup('env', 'OPENOBSERVE_S3_SECRET_KEY') | default('', true) }}"
 
 # -- Healthcheck timing ------------------------------------------------------
 openobserve_health_retries: 60

@@ -31,9 +31,11 @@ dataflows_traefik_network: "mgmt"
 dataflows_traefik_dynamic_dir: "/etc/traefik/dynamic"
 dataflows_traefik_dynamic_filename: "dataflows.yml"
 
-# The pre-rename filename, removed from the host on deploy. Leaving it
-# behind would give Traefik two routers on the same Host() rule.
-dataflows_traefik_dynamic_filename_legacy: "nova-dataflows.yml"
+# A filename an earlier deploy wrote the route under, removed from the host on
+# deploy. Leaving it behind would give Traefik two routers on the same Host()
+# rule. Empty: this goatnet never used another name, and nothing is removed.
+# A goatnet that did sets the old name in its group_vars.
+dataflows_traefik_dynamic_filename_legacy: ""
 dataflows_traefik_cert_resolver: "le"
 dataflows_traefik_router_name: "dataflows"
 
@@ -61,7 +63,9 @@ dataflows_cloudflare_a_record_ips: []
 # docs/design/ghcr-private-pull.md.
 dataflows_pull_auth_enabled: false
 dataflows_pull_registry: "ghcr.io"
-dataflows_pull_username: "goat-maintainer"
+# The registry account the pull token belongs to; set it in group_vars beside
+# dataflows_pull_auth_enabled.
+dataflows_pull_username: ""
 dataflows_pull_password: ""
 
 # ----- Authenticated door (ADR 1073) ---------------------------

@@ -35,7 +35,7 @@
           flashlight_image is still set to "{{ flashlight_image }}".
           The defaults/main.yml carries a sha-placeholder sentinel that
           must NEVER reach an apply. Bump it off the sentinel in
-          group_vars/nova_hosts/flashlight.yml to a real
+          group_vars/<site>_hosts/flashlight.yml to a real
           ghcr.io/{{ ghcr_org }}/flashlight:sha-<short> tag produced by the
           flashlight-image workflow on main. Append the new row to
           ops/ansible/roles/flashlight/deploy-history.yml in the same

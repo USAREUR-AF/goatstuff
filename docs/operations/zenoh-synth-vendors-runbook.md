@@ -17,7 +17,7 @@ export PORTAL_URL=https://portal.nova.netbird.nova.example
 # PORTAL_OPERATOR_API_KEY should already be in your direnv via
 # .envrc.local.d/30-site-services.envrc. If it's missing, fish the
 # value from the live portal compose env:
-#   ssh goat@100.127.0.193 \
+#   ssh goat@100.127.0.189 \
 #     'sudo grep ^PORTAL_OPERATOR_API_KEY /opt/goat-zenoh-portal/.env'
 # (and append the export line to your .envrc.local.d so the next
 # session doesn't have to repeat the lookup.) 1Password has the same
@@ -46,7 +46,7 @@ Effects:
    - `homemade-sensors/garage/door-state/v1` (json, intra-vendor sub to the sibling temperature topic)
    - `homemade-sensors/yard/soil-moisture/v1` (**cbor**)
    - `pangolin/observer/heartbeat/v1` (json, observer subscribes to `**`)
-4. SCPs `./synth-vendor-certs/<vendor>/` to `goat@100.127.0.193:/opt/synth-vendors/certs/<vendor>/` so the docker-compose role can mount it read-only.
+4. SCPs `./synth-vendor-certs/<vendor>/` to `goat@100.127.0.189:/opt/synth-vendors/certs/<vendor>/` so the docker-compose role can mount it read-only.
 
 Override `SCP_TARGET=""` to skip the SCP step (e.g. if the certs already live on the target).
 
@@ -68,13 +68,13 @@ Effects:
 ## Verify
 
 ```bash
-ssh goat@100.127.0.193 'cd /opt/synth-vendors && docker compose ps'
+ssh goat@100.127.0.189 'cd /opt/synth-vendors && docker compose ps'
 ```
 
 Expect seven `Up` services. Tail logs:
 
 ```bash
-ssh goat@100.127.0.193 'for s in tracks-demo power-demo beacon-demo garage-temp garage-door yard-soil pangolin-observer; do echo "--- synth-$s ---"; docker logs --tail 5 synth-$s; done'
+ssh goat@100.127.0.189 'for s in tracks-demo power-demo beacon-demo garage-temp garage-door yard-soil pangolin-observer; do echo "--- synth-$s ---"; docker logs --tail 5 synth-$s; done'
 ```
 
 Expect each to log `session open` with a distinct `zid=`.
@@ -82,17 +82,17 @@ Expect each to log `session open` with a distinct `zid=`.
 Verify via Zenoh REST (one sample per vendor):
 
 ```bash
-ssh goat@100.127.0.193 \
+ssh goat@100.127.0.189 \
   'curl -s http://goat-zenoh-router:8088/caracal/tracks-demo/entity/v1?_t=raw | jq .'
 
-ssh goat@100.127.0.193 \
+ssh goat@100.127.0.189 \
   'curl -s http://goat-zenoh-router:8088/homemade-sensors/garage/door-state/v1?_t=raw | jq .'
 
 # yard-soil is CBOR-encoded — inspect raw bytes / decode in panoscope's inspector
-ssh goat@100.127.0.193 \
+ssh goat@100.127.0.189 \
   'curl -s http://goat-zenoh-router:8088/homemade-sensors/yard/soil-moisture/v1 | xxd | head -5'
 
-ssh goat@100.127.0.193 \
+ssh goat@100.127.0.189 \
   'curl -s http://goat-zenoh-router:8088/pangolin/observer/heartbeat/v1?_t=raw | jq .'
 ```
 
@@ -121,7 +121,7 @@ to clean up by hand:
    doesn't have it):
 
    ```bash
-   ssh goat@100.127.0.193 \
+   ssh goat@100.127.0.189 \
      'sudo sqlite3 /opt/goat-zenoh-portal/registry.db \
        "DELETE FROM topics WHERE vendor_prefix=\"homemade-sensors\"; \
         DELETE FROM vendors WHERE prefix=\"homemade-sensors\";"'
@@ -137,7 +137,7 @@ to clean up by hand:
    time, not via PATCH. Fix is one SQL update:
 
    ```bash
-   ssh goat@100.127.0.193 \
+   ssh goat@100.127.0.189 \
      'sudo sqlite3 /opt/goat-zenoh-portal/registry.db \
        "UPDATE vendors SET synthetic=1 WHERE prefix IN (\"caracal\", \"community\");"'
    ```
@@ -159,8 +159,8 @@ to render the compose with `--schema-dir` pointing at the mounted
 For trial sunset or rebuild-from-scratch:
 
 ```bash
-ssh goat@100.127.0.193 'cd /opt/synth-vendors && docker compose down -v'
-ssh goat@100.127.0.193 'sudo rm -rf /opt/synth-vendors/certs/'
+ssh goat@100.127.0.189 'cd /opt/synth-vendors && docker compose down -v'
+ssh goat@100.127.0.189 'sudo rm -rf /opt/synth-vendors/certs/'
 ```
 
 Then via portal UI (or `DELETE /api/vendors/{v}` once that endpoint exists) drop the four synthetic vendor rows. The corresponding ACL allowlist entries get re-rendered out by the goat-zenoh role on next run.

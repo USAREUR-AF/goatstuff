@@ -30,7 +30,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "Apache-2.0"
-description = "Synthetic vendor peer for the nova Zenoh trial fabric demo. Block 82Q per docs/design/zenoh-trial-fabric-synth-vendors.md."
+description = "Synthetic vendor peer for the Zenoh trial fabric demo. Block 82Q per docs/design/zenoh-trial-fabric-synth-vendors.md."
 repository = "https://github.com/usareur-af/goatcore"
 
 [dependencies]

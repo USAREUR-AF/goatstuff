@@ -45,8 +45,8 @@
       portal_identity_model is per-uuid-slot-pool but synth topic
       '{{ item.topic }}' ({{ item.id }}) is not anchored to a slot_id.
       This goatnet needs the per-peer slot-onboard path —
-      run zagros-zenoh-synth-vendors-deploy.yml (it onboards each peer and
-      rewrites topics to <anchor>/…), NOT the flat nova/notional path.
+      run the goatnet's <goatnet>-zenoh-synth-vendors-deploy.yml (it onboards
+      each peer and rewrites topics to <anchor>/…), NOT the flat notional path.
   loop: "{{ synth_vendors | default([]) }}"
   loop_control:
     label: "{{ item.id | default('?') }}"
@@ -96,7 +96,7 @@
 - name: synth-vendors | fail on missing CA root
   ansible.builtin.fail:
     msg: >-
-      synth-vendors: nova CA root cert missing at
+      synth-vendors: CA root cert missing at
       {{ synth_vendor_ca_root_src }} — this is the same file the
       goat-zenoh router uses, so its absence means the router
       itself isn't deployed. Re-run zenoh-deploy.yml first.

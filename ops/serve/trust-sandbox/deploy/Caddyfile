@@ -7,7 +7,7 @@
 # (the stock caddy image lacks it) — e.g. build with xcaddy, or use a prebuilt
 # caddy-cloudflare image. See deploy/README.md.
 {
-	email person-9@example.org
+	email person-6@example.org
 }
 
 {$TS_PUBLIC_HOST} {

@@ -24,6 +24,15 @@
 # This role is idempotent — re-running on a healthy host is a no-op
 # beyond a `docker compose pull` if the image tag changed.
 
+- name: panoscope | the image pin is set
+  ansible.builtin.assert:
+    that:
+      - panoscope_image | length > 0
+    fail_msg: >-
+      panoscope_image is empty. The role carries no pin: set it in the
+      goatnet's pin table (ops/pins/fleet-pins.yaml) or in its group_vars.
+    quiet: true
+
 - name: panoscope | pre-flight assert mTLS cert files present (when enabled)
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -38,10 +47,10 @@
   ansible.builtin.fail:
     msg: >-
       panoscope: required cert file missing at {{ item.item }}.
-      Mint it per docs/operations/nova-cert-issuance.md before
+      Mint it per the goatnet's cert-issuance runbook before
       running this role, or set panoscope_zenoh_mtls_enabled: false
-      (only valid for a plain-TCP Zenoh router; nova's router is
-      mTLS-required, so disabling produces a broken deploy).
+      (only valid for a plain-TCP Zenoh router; against an
+      mTLS-required router, disabling produces a broken deploy).
   loop: "{{ panoscope_cert_stats.results | default([]) }}"
   when:
     - panoscope_zenoh_mtls_enabled | bool

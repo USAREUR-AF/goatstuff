@@ -7,10 +7,11 @@
 #
 # Run from a host that can reach OpenObserve + OTel Collector + MinIO:
 #   OPENOBSERVE_URL=http://192.168.1.253:5080 \
-#   OPENOBSERVE_USER=$VEGA_C_OPENOBSERVE_ROOT_EMAIL \
-#   OPENOBSERVE_PASS=$VEGA_C_OPENOBSERVE_ROOT_PASSWORD \
+#   OPENOBSERVE_USER=<root email> \
+#   OPENOBSERVE_PASS=<root password> \
 #   OTEL_HTTP_URL=http://192.168.1.253:4318 \
 #   MINIO_HOST=192.168.1.253 \
+#   MINIO_SSH_USER=<login on MINIO_HOST> \
 #   ops/ansible/roles/openobserve/tests/soak/run-2h-validation.sh
 #
 # What this validates beyond the spike:
@@ -35,7 +36,7 @@ SOAK_DURATION="${SOAK_DURATION:-2h}"
 TICK_INTERVAL=30
 TODAY="$(date -u +%Y-%m-%d)"
 # EVIDENCE override env var lets the soak run from any directory (e.g.
-# /tmp on a remote host like NETHOST) where the repo isn't checked out.
+# /tmp on a remote host) where the repo isn't checked out.
 EVIDENCE="${EVIDENCE:-$REPO_ROOT/docs/reports/${TODAY}-openobserve-soak-evidence.jsonl}"
 
 OPENOBSERVE_URL="${OPENOBSERVE_URL:-http://192.168.1.253:5080}"
@@ -43,6 +44,8 @@ OPENOBSERVE_USER="${OPENOBSERVE_USER:-}"
 OPENOBSERVE_PASS="${OPENOBSERVE_PASS:-}"
 OTEL_HTTP_URL="${OTEL_HTTP_URL:-http://192.168.1.253:4318}"
 MINIO_HOST="${MINIO_HOST:-192.168.1.253}"
+# The SSH login on MINIO_HOST that may run `sudo docker compose`.
+MINIO_SSH_USER="${MINIO_SSH_USER:?set MINIO_SSH_USER to the SSH login on MINIO_HOST}"
 
 if [ -z "$OPENOBSERVE_USER" ] || [ -z "$OPENOBSERVE_PASS" ]; then
   echo "ERROR: set OPENOBSERVE_USER + OPENOBSERVE_PASS" >&2
@@ -68,7 +71,7 @@ emit() {
 
 # Snapshot starting Parquet count in MinIO so we can verify rotation.
 PARQUET_START=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
-  "goat@$MINIO_HOST" \
+  "$MINIO_SSH_USER@$MINIO_HOST" \
   "sudo docker compose -f /opt/minio/docker-compose.yml run --rm --no-deps --entrypoint /bin/sh mc-init -c 'mc --json ls --recursive local/telemetry-otlp/' 2>/dev/null | grep -c '\"type\":\"file\"' || true" \
   2>/dev/null || echo 0)
 
@@ -127,7 +130,7 @@ done
 
 # End-of-soak Parquet check.
 PARQUET_END=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
-  "goat@$MINIO_HOST" \
+  "$MINIO_SSH_USER@$MINIO_HOST" \
   "sudo docker compose -f /opt/minio/docker-compose.yml run --rm --no-deps --entrypoint /bin/sh mc-init -c 'mc --json ls --recursive local/telemetry-otlp/' 2>/dev/null | grep -c '\"type\":\"file\"' || true" \
   2>/dev/null || echo 0)
 

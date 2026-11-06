@@ -1,0 +1,94 @@
+---
+# authenticated-doors-routes.yml — point each surface's Traefik route at the
+# door authenticated-doors.yml put in front of it.
+#
+# RUN IT SECOND, with the same `-l`:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES aws-vault exec <profile> --no-session -- \
+#     ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts.ini \
+#       -i inventory/mgmt-hosts-mesh.ini authenticated-doors-routes.yml -l <console host>
+#
+# A door that is running but not routed to changes nothing, and a route pointed
+# at a door that is not running takes the surface down — so the doors go up
+# first (authenticated-doors.yml, which also verifies each door's Hydra
+# registration) and this playbook refuses a surface whose door is switched on
+# but has no running container.
+#
+# Each surface's route is rendered by its OWN role, which is why the roles are
+# re-run here rather than the template being copied into this repo twice. The
+# roles are idempotent; the only thing that changes is the upstream, because
+# `<surface>_oauth2_proxy_enabled` is now true.
+#
+# The roles live beside this playbook, which is why it is a separate file from
+# authenticated-doors.yml: that one needs only the door role.
+- name: Swing the routes onto the doors
+  hosts: all
+  # `become: true` at play level: these roles talk to the Docker socket, and the
+  # deploy account is not in the docker group. Without it the role fails at
+  # its first handler with "permission denied while trying to connect to the
+  # Docker API", after having already rendered the route file — which leaves the
+  # route pointing at a door whose container was never reconciled.
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Guard — this play is scoped by `-l <host>`, never by `-e target=`
+      ansible.builtin.assert:
+        that:
+          - target is not defined
+        fail_msg: >-
+          REFUSING: pass `-l <the console host>`. `-e target=` would widen this
+          to every host in the loaded inventory.
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Read which door containers are running
+      ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}'{% endraw %}
+      register: authenticated_doors_running
+      changed_when: false
+
+    - name: Refuse to route a surface at a door that is not running
+      ansible.builtin.assert:
+        that:
+          - ('oauth2-proxy-' ~ item.door) in authenticated_doors_running.stdout_lines
+        fail_msg: >-
+          REFUSING: {{ item.door }}_oauth2_proxy_enabled is true but no
+          oauth2-proxy-{{ item.door }} container is running on this host, so
+          the route would point at nothing and the surface would go dark. Run
+          authenticated-doors.yml first.
+      when: item.enabled | bool
+      loop:
+        - {door: dataflows, enabled: "{{ dataflows_oauth2_proxy_enabled | default(false) }}"}
+        - {door: help, enabled: "{{ (help_oauth2_proxy_enabled | default(false)) and ((help_desk_upstream_host | default('')) | length > 0) }}"}
+      loop_control:
+        label: "{{ item.door }}"
+
+  tasks:
+    # NOT gated on dataflows_oauth2_proxy_enabled. The role picks its upstream from
+    # that flag, so it must run in BOTH directions: gating the render on "on"
+    # means turning a door off leaves the route pointed at a sidecar that is
+    # about to be removed, and the surface goes dark. Found while reverting.
+    - name: dataflows | render the route for the current door state
+      ansible.builtin.include_role:
+        name: dataflows
+
+    # NOT gated on help_oauth2_proxy_enabled, for the same reason as dataflows: the
+    # role picks its upstream from that flag and must run in both directions.
+    # Gated instead on the goatnet declaring a help desk at all — one with no
+    # help_desk_upstream_host has no route to render.
+    - name: help | render the route for the current door state
+      ansible.builtin.include_role:
+        name: help-desk
+      when: (help_desk_upstream_host | default('')) | length > 0
+
+  post_tasks:
+    - name: What is now attributable
+      ansible.builtin.debug:
+        msg: >-
+          Each visitor now produces a Hydra consent grant per surface, readable
+          in microscope (hydra-consents adapter) as "reached this, last at
+          <handled_at>". A surface listed in authenticated_doors_site_surfaces
+          has its route rendered by its own deploy playbook, which must be
+          re-run separately — its template is not in a role this play runs.
+      run_once: true

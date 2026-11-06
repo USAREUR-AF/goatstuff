@@ -18,8 +18,8 @@
     fail_msg: >-
       goat gym is not enabled for {{ inventory_hostname }}. This is a DECLARED
       DECISION, not an oversight — a goatnet hosts the training surface by
-      setting gym_enabled in its own group_vars. zagros-prod deliberately does
-      not host it (ADR 1132 A7, and the exclusion is recorded in
+      setting gym_enabled in its own group_vars. A production goatnet
+      deliberately does not host it (ADR 1132 A7; the exclusion is recorded in
       group_vars/.groupvars-parity.yaml). If a new goatnet should host it, add
       its own gym.yml rather than overriding this on the command line.
     success_msg: "gym enabled for {{ inventory_hostname }}"

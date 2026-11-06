@@ -36,7 +36,7 @@ export const LEX: Lexicon = {
   orgs: "vendors",
   orgUpper: "VENDOR",
   orgsUpper: "VENDORS",
-  fabricLabel: "nova fabric",
+  fabricLabel: "Zenoh fabric",
 };
 
 /** Update `LEX` in place from a legend payload + re-apply title/subtitle.

@@ -4,11 +4,12 @@
 # Defaults for the panoscope role.
 # Override in group_vars or by passing -e via the playbook.
 
-# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps to this value
-# require an append to deploy-history.yml (CI checks this via
-# .github/workflows/deploy-history-check.yml). The :latest tag is no
-# longer used because it erases the rollback target.
-panoscope_image: "ghcr.io/{{ ghcr_org }}/panoscope@sha256:8f8f61b3f6090b3a37db94e5dea525d7fb67e521eda1861e5f226a2c9dd1eefe"  # Design-system foundation (PR #571): the shared two-tier shell and generated design canon adopted fleet-wide, the goat emblem as the brand mark on the masthead and home hero, a hamburger that collapses the masthead below 1200px, and panoscope Top/Who/Access on the full-page layout with the live COP wording preserved. Presentation-only for panoscope: no route, API, or fabric-probe change, so the ADR 1123 client-probe budget from the previous pin is unchanged. ROLLBACK: sha-426789c@sha256:051ed048ec756c4f07ec5807e0df68eac99efc33572160d3818bd87858c1d47b, the ONBOARDING-column pin this replaces (#2486). multi-arch INDEX digest.
+# Image — digest-pinned per ADR 0859 (easy rollback). The role carries no
+# pin: a goatnet's pin table (ops/pins/fleet-pins.yaml, component `panoscope`,
+# rendered into group_vars/<group>/pins.yml) or its group_vars set it, and the
+# role refuses an empty value. The :latest tag is not used because it erases
+# the rollback target.
+panoscope_image: ""
 
 # Platform selector for the multi-arch LIST-digest pin above. Docker
 # selecting a manifest-list digest does NOT reliably pick the host arch
@@ -91,7 +92,7 @@ panoscope_portal_schemas_url: "https://portal.{{ site_id | mandatory }}.{{ site_
 # mgmt-host's mesh IP. The pinned IP is mesh_ip_a by default (single-
 # host sites); override per-site for multi-host sites where VRRP
 # floats a virtual IP.
-panoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.193') }}"
+panoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | mandatory }}"
 
 # Resolver refresh + sampling tuning.
 panoscope_portal_refresh_secs: 60
@@ -145,6 +146,10 @@ panoscope_cert_dir: "/etc/panoscope"
 panoscope_zenoh_client_cert: "{{ panoscope_cert_dir }}/zenoh-client-cert.pem"
 panoscope_zenoh_client_key: "{{ panoscope_cert_dir }}/zenoh-client-key.pem"
 panoscope_ca_root: "{{ panoscope_cert_dir }}/{{ site_id }}-ca-root.pem"   # REQUIRED per goatnet; a shared role must not default to one
+# Where the CA root is mounted INSIDE the container; env.j2 hands the same path
+# to the binary, so the two always agree. A goatnet whose running container was
+# rendered with another in-container path keeps it by setting this.
+panoscope_ca_root_container_path: "/etc/panoscope/ca-root.pem"
 
 # Compose state.
 panoscope_compose_dir: "/opt/panoscope"
@@ -160,9 +165,11 @@ panoscope_traefik_network: "mgmt"
 panoscope_traefik_dynamic_dir: "/etc/traefik/dynamic"
 panoscope_traefik_dynamic_filename: "panoscope.yml"
 
-# The pre-rename filename, removed from the host on deploy. Leaving it
-# behind would give Traefik two routers on the same Host() rule.
-panoscope_traefik_dynamic_filename_legacy: "nova-panoscope.yml"
+# A pre-rename filename to remove from the host on deploy. Leaving one
+# behind would give Traefik two routers on the same Host() rule. Empty =
+# this goatnet never carried the route under another filename; a goatnet
+# that did names it in its group_vars.
+panoscope_traefik_dynamic_filename_legacy: ""
 panoscope_traefik_cert_resolver: "le"
 panoscope_traefik_router_name: "panoscope"
 
@@ -220,8 +227,9 @@ panoscope_minio_bucket: "audit-integrity"
 # audit-subscriber's --audit-subscriber-id (it writes
 # audit-integrity/<id>/<YYYY>/<MM>/<DD>/<HH>/...ndjson). Derived from the
 # per-site audit_subscriber_id SoT so a forked goatnet can't read another's
-# prefix and see nothing; the fallback is legacy back-compat.
-panoscope_minio_key_prefix: "{{ audit_subscriber_id | default('nova-a') }}/"
+# prefix and see nothing. No fallback: a goatnet that replays without an
+# audit_subscriber_id sets this prefix itself.
+panoscope_minio_key_prefix: "{{ audit_subscriber_id | mandatory }}/"
 panoscope_minio_access_key: ""
 panoscope_minio_secret_key: ""
 # Replay window. Retention is commonly 7d (168h); default 24h to keep boot
@@ -338,7 +346,7 @@ panoscope_oauth2_proxy_cookie_secret: ""
 # Issuer trailing slash NOT optional (Hydra emits it; string-exact compare).
 panoscope_oauth2_proxy_oidc_issuer_url: "https://oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}/"
 # On-host DNS override for the OIDC issuer.
-panoscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.193') }}"
+panoscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | mandatory }}"
 
 # Door policy, declared rather than implied. "" = any authenticated identity
 # may reach the surface; authorization lives INSIDE the app. Stated as a

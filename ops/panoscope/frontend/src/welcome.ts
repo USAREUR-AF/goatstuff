@@ -83,7 +83,7 @@ export class WelcomePanel {
       <header class="welcome-header">
         <h1>panoscope</h1>
         <p class="welcome-subtitle">
-          Live visualization of the nova Zenoh fabric.
+          Live visualization of the Zenoh fabric.
         </p>
         <button class="welcome-dismiss" type="button" aria-label="Hide welcome panel">×</button>
       </header>

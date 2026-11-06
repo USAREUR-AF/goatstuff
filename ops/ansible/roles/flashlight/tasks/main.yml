@@ -17,6 +17,16 @@
 # Idempotent — re-running on a healthy host is a no-op beyond a
 # `docker compose pull` when the image tag changes.
 
+- name: flashlight | refuse a deploy with no image pinned
+  ansible.builtin.assert:
+    that:
+      - flashlight_image | default('') | length > 0
+    fail_msg: >-
+      flashlight_image is empty. The role carries no default image: the pin
+      comes from the `flashlight` row of ops/pins/fleet-pins.yaml, rendered
+      into group_vars/<group>/pins.yml, or from the goatnet's own group_vars
+      (ghcr.io/<org>/flashlight@sha256:...).
+
 - name: flashlight | pre-flight assert mTLS cert files present (when enabled)
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -31,10 +41,11 @@
   ansible.builtin.fail:
     msg: >-
       flashlight: required cert file missing at {{ item.item }}.
-      Mint it per docs/operations/nova-cert-issuance.md before
-      running this role, or set flashlight_zenoh_mtls_enabled: false
-      (only valid for a plain-TCP Zenoh router; nova's router is
-      mTLS-required, so disabling produces a broken deploy).
+      Mint it with the goatnet's offline CA (the cert-issuance runbook
+      under docs/operations/) before running this role, or set
+      flashlight_zenoh_mtls_enabled: false (only valid for a plain-TCP
+      Zenoh router; against a router that requires mTLS, disabling
+      produces a broken deploy).
   loop: "{{ flashlight_cert_stats.results | default([]) }}"
   when:
     - flashlight_zenoh_mtls_enabled | bool

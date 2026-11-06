@@ -153,6 +153,30 @@
     _rbl_row: "{{ _rbl_row | combine({'source': 'offline'}) }}"
   when: lookup('env', 'GOAT_DEPLOY_OFFLINE') == '1'
 
+# A play run from an assembled tree (goatcore at the overlay's goatcore.ref, the
+# overlay copied over it; ops/goatprivate/assemble.sh) records the two commits
+# it was built from, read from the tree's .goat-assembled marker on the
+# controller. A play from a plain checkout writes the row unchanged.
+- name: rollback-ledger | a run from an assembled tree records goatcore and overlay commits
+  ansible.builtin.set_fact:
+    _rbl_row: >-
+      {{ _rbl_row | combine({
+           'goatcore_ref': (_rbl_marker.splitlines() | select('match', 'goatcore_ref=') | map('regex_replace', '^goatcore_ref=', '') | map('trim') | first | default('', true)),
+           'overlay_commit': (_rbl_marker.splitlines() | select('match', 'overlay_commit=') | map('regex_replace', '^overlay_commit=', '') | map('trim') | first | default('', true))
+         }) }}
+  vars:
+    _rbl_marker: "{{ lookup('file', rollback_assembled_marker) }}"
+  when: rollback_assembled_marker is file
+
+# The source of record the play rendered from, as ansible-preflight.sh exports
+# it: {"commit": <sha>} from a clone, or {"goatcore": <sha>, "goatcore_ref": …,
+# "overlay": <sha>, "goatstuff": <sha>?} from an assembled tree (ops/scripts/lib/source_of_record.py).
+# Absent when the play did not go through the wrapper, so such a row is unchanged.
+- name: rollback-ledger | the row names the source tree it was rendered from
+  ansible.builtin.set_fact:
+    _rbl_row: "{{ _rbl_row | combine({'source_tree': lookup('env', 'GOAT_DEPLOY_SOURCE_TREE') | from_json}) }}"
+  when: (lookup('env', 'GOAT_DEPLOY_SOURCE_TREE') | trim) is match('[{].+[}]$')
+
 # The rollout preflight's accepted risk (ADR 1211): when a deploy of a `none`
 # or `restore-required` rollout proceeded with --ack, the deploy driver passed
 # rollback_preflight_accept, and the row records what was knowingly accepted and

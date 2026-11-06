@@ -167,9 +167,9 @@ fn nearest_rank_index(n: usize, p: u32) -> Option<usize> {
     if n == 0 {
         return None;
     }
-    // ceil((p * n) / 100) without floats: (p * n + 99) / 100.
+    // ceil((p * n) / 100) without floats.
     let numerator = (p as u64).saturating_mul(n as u64);
-    let raw = (numerator + 99) / 100;
+    let raw = numerator.div_ceil(100);
     let idx = raw.saturating_sub(1) as usize;
     Some(idx.min(n - 1))
 }

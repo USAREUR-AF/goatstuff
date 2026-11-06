@@ -17,8 +17,9 @@
       - openobserve_root_email | length > 0
       - openobserve_root_password | length >= 8
     fail_msg: |
-      VEGA_C_OPENOBSERVE_ROOT_EMAIL / _PASSWORD must be exported.
-      Set in .envrc.local; password must be ≥8 chars.
+      openobserve_root_email / openobserve_root_password are empty or too
+      short. Export the environment variables defaults/main.yml reads them
+      from; the password must be ≥8 chars.
 
 - name: Pre-flight — S3 creds set (consume MinIO root for v1)
   ansible.builtin.assert:
@@ -27,7 +28,8 @@
       - openobserve_s3_secret_key | length > 0
     fail_msg: |
       OpenObserve S3 backend needs MinIO credentials. v1 reuses the
-      MinIO root creds via VEGA_C_MINIO_ROOT_USER / _PASSWORD.
+      MinIO root creds (openobserve_s3_access_key / _secret_key, read from
+      the environment variables named in defaults/main.yml).
       Block 27D will replace with a dedicated IAM service-account.
 
 - name: Pre-flight — telemetry-otlp bucket present in MinIO
@@ -131,6 +133,5 @@
   ansible.builtin.debug:
     msg: |
       OpenObserve up at http://{{ ansible_host }}:{{ openobserve_http_port }}/
-      Login: {{ openobserve_root_email }} / (VEGA_C_OPENOBSERVE_ROOT_PASSWORD)
-      Spike harness: ops/ansible/vega-obs-bootstrap.yml Phase 6.5,
-      or run ops/observability/wide-events/spike/run-spike.sh manually.
+      Login: {{ openobserve_root_email }} / (openobserve_root_password)
+      Spike harness: run ops/observability/wide-events/spike/run-spike.sh.

@@ -4,11 +4,13 @@
 # Defaults for the stethoscope role (Block 90 Phase B).
 # Override in group_vars or by passing -e via the playbook.
 
-# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps require an
-# append to deploy-history.yml; CI gate at
-# .github/workflows/deploy-history-check.yml refuses image-pin changes
-# without a matching ledger row.
-stethoscope_image: "ghcr.io/{{ ghcr_org }}/stethoscope@sha256:66b41440561660adff5024ccd679aad6b16779c50b81458207011bfbd47c2b31"
+# Image — the role carries no pin. The pin of record is the
+# `stethoscope` row of ops/pins/fleet-pins.yaml, rendered into
+# group_vars/<member>/pins.yml for every goatnet that runs the surface
+# (SHA-pinned per ADR 0859, easy rollback); a goatnet outside the pin table
+# sets stethoscope_image in its own group_vars. tasks/preflight.yml refuses
+# a deploy without it.
+stethoscope_image: ""
 
 # Public hostname for browser-facing access. Pattern is
 # `<surface>.<site_id>.<site_dns_zone>`, the canonical naming. The
@@ -37,7 +39,7 @@ stethoscope_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | re
 # hostname is in mesh-DNS only; Docker's embedded resolver can't see
 # CoreDNS on :5353, so the public name is statically pinned to the
 # mgmt-host's mesh IP.
-stethoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.193') }}"
+stethoscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | mandatory }}"
 
 # Audit-tail (flow-rate check) data source — MinIO. Disabled by default
 # so hosts ship the role without the credential dependency. A site's
@@ -49,8 +51,8 @@ stethoscope_audit_bucket: "audit-integrity"
 # Per-site key prefix in audit-integrity (e.g. `site-a/`). Audit-subscriber
 # writes audit-integrity/<id>/<YYYY>/<MM>/<DD>/<HH>/... — derived from the
 # per-site audit_subscriber_id SoT so a fork can't read another's prefix;
-# the fallback is legacy back-compat.
-stethoscope_audit_key_prefix: "{{ audit_subscriber_id | default('nova-a') }}/"
+# a site that declares none falls back to its site id.
+stethoscope_audit_key_prefix: "{{ audit_subscriber_id | default(site_id | mandatory) }}/"
 stethoscope_audit_access_key: ""
 stethoscope_audit_secret_key: ""
 stethoscope_audit_request_timeout_s: 30
@@ -74,8 +76,9 @@ stethoscope_traefik_dynamic_dir: "/etc/traefik/dynamic"
 stethoscope_traefik_dynamic_filename: "stethoscope.yml"
 
 # The pre-rename filename, removed from the host on deploy. Leaving it
-# behind would give Traefik two routers on the same Host() rule.
-stethoscope_traefik_dynamic_filename_legacy: "nova-stethoscope.yml"
+# behind would give Traefik two routers on the same Host() rule. Empty =
+# the host never carried one; a goatnet that did names it in group_vars.
+stethoscope_traefik_dynamic_filename_legacy: ""
 stethoscope_traefik_cert_resolver: "le"
 stethoscope_traefik_router_name: "stethoscope"
 

@@ -52,7 +52,7 @@ microscope_portal_key_id: microscope
 microscope_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_MICROSCOPE_PORTAL_KEY') | default('', true) }}"
 # Same F-126 shape as panoscope/stethoscope: portal name pinned to the
 # mgmt-host mesh IP for Docker's embedded resolver.
-microscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.193') }}"
+microscope_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | mandatory }}"
 # Kratos admin API — loopback via the docker bridge gateway on the mgmt
 # host (NEVER exposed on the mesh; see F-198 for the extra_hosts shape).
 microscope_kratos_admin_url: ""
@@ -109,7 +109,7 @@ microscope_oauth2_proxy_cookie_secret: ""
 # On-container OIDC-discovery resolution for the issuer's mesh-DNS name
 # (F-126 pattern; mesh_ip_a is bind-safe at boot per F-182 — the same live
 # relay-health shape, NOT the MinIO bridge-gateway variant).
-microscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ public_mgmt_fqdn | default(site_dns_zone | mandatory) }}:{{ mesh_ip_a | default('100.127.0.193') }}"
+microscope_oauth2_proxy_oidc_host_entry: "oauth2.{{ site_id | mandatory }}.{{ public_mgmt_fqdn | default(site_dns_zone | mandatory) }}:{{ mesh_ip_a | mandatory }}"
 # Ory groups admitted at the fence. Same set as the in-app gate.
 # Literal (not templated) — the ADR 1073 parity ratchet reads this value
 # and asserts it equals the matrix grant set exactly.

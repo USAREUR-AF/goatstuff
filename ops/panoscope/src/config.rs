@@ -136,7 +136,7 @@ impl Default for Lexicon {
             orgs: "vendors".to_string(),
             org_upper: "VENDOR".to_string(),
             orgs_upper: "VENDORS".to_string(),
-            fabric_label: "nova fabric".to_string(),
+            fabric_label: "Zenoh fabric".to_string(),
         }
     }
 }
@@ -159,7 +159,7 @@ impl Lexicon {
             self.orgs_upper = self.orgs.to_uppercase();
         }
         if self.fabric_label.is_empty() {
-            self.fabric_label = "nova fabric".to_string();
+            self.fabric_label = "Zenoh fabric".to_string();
         }
     }
 
@@ -208,8 +208,7 @@ impl Default for Config {
             bind: "0.0.0.0:8080".parse().expect("default bind parses"),
             zenoh_endpoint: "tcp/127.0.0.1:7447".to_string(),
             zenoh_tls: TlsConfig::default(),
-            portal_schemas_url: "https://portal.nova.netbird.nova.example/api/schemas"
-                .to_string(),
+            portal_schemas_url: "https://portal.goat.example/api/schemas".to_string(),
             portal_refresh_secs: 60,
             portal_api_key: String::new(),
             sampling_per_topic_eps: 50,
@@ -502,7 +501,7 @@ mod tests {
         let resolved = c.resolved_siblings();
         assert_eq!(
             resolved.portal.as_deref(),
-            Some("https://portal.nova.netbird.nova.example"),
+            Some("https://portal.goat.example"),
         );
         assert!(resolved.stethoscope.is_none());
         assert!(resolved.flashlight.is_none());

@@ -33,6 +33,11 @@ rollback_restore_pointer: ""
 # risk was knowingly accepted, and by whom. Empty (the default) adds nothing.
 rollback_preflight_accept: {}
 
+# The marker an assembled tree carries at its root (ops/goatprivate/assemble.sh:
+# goatcore_ref=, overlay_commit=). When it is there, the row records both
+# commits; a plain checkout has none and the row is unchanged.
+rollback_assembled_marker: "{{ role_path }}/../../../../.goat-assembled"
+
 rollback_ledger_dir: "/var/lib/goat/{{ rollback_component }}"
 rollback_ledger_path: "{{ rollback_ledger_dir }}/deploy-history.jsonl"
 

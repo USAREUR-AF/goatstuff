@@ -249,7 +249,7 @@ class TestDemand(unittest.TestCase):
     def setUpClass(cls):
         cls.classes, _ = pv.load_classes(
             os.path.join(HERE, "peerview-service-classes.yaml"))
-        cls.peers = [{"name": "peer-a-zagros-2026-08-01-X", "ip": "100.127.0.45",
+        cls.peers = [{"name": "peer-a-zagros-2026-08-01-X", "ip": "100.127.0.41",
                       "role": "DEVELOPER", "scope": "ZAGROS", "os": "Ubuntu 24.04",
                       "version": "0.76.3", "handle": "a"}]
 
@@ -261,7 +261,7 @@ class TestDemand(unittest.TestCase):
 
     def test_probes_are_removed_before_anything_is_counted(self):
         rows = ([self._row("172.18.0.1", "netvis@file", "/healthz")] * 40 +
-                [self._row("100.127.0.45", "nova-panoscope@file", "/api/stats")] * 3)
+                [self._row("100.127.0.41", "nova-panoscope@file", "/api/stats")] * 3)
         d = pv.build_demand(rows, self.peers, self.classes, 300, False)
         self.assertEqual(d["requests_probe"], 40)
         self.assertEqual(d["requests_total"], 3)
@@ -269,7 +269,7 @@ class TestDemand(unittest.TestCase):
         self.assertNotIn("netvis", [s["name"] for s in d["services"]])
 
     def test_the_mesh_ip_join(self):
-        rows = ([self._row("100.127.0.45", "nova-panoscope@file", "/x")] * 5 +
+        rows = ([self._row("100.127.0.41", "nova-panoscope@file", "/x")] * 5 +
                 [self._row("172.18.0.1", "signal@file", "/y")] * 95)
         d = pv.build_demand(rows, self.peers, self.classes, 300, False)
         self.assertEqual(d["requests_attributable"], 5)
@@ -281,8 +281,8 @@ class TestDemand(unittest.TestCase):
     def test_top_service_is_the_peers_own_busiest_not_the_goatnets(self):
         # The peer touched panoscope once and the map four times, while signal
         # dominates the goatnet. Its row must say goat-map.
-        rows = ([self._row("100.127.0.45", "nova-panoscope@file", "/x")] * 1 +
-                [self._row("100.127.0.45", "goat-map@file", "/y")] * 4 +
+        rows = ([self._row("100.127.0.41", "nova-panoscope@file", "/x")] * 1 +
+                [self._row("100.127.0.41", "goat-map@file", "/y")] * 4 +
                 [self._row("172.18.0.1", "signal@file", "/z")] * 900)
         d = pv.build_demand(rows, self.peers, self.classes, 300, False)
         self.assertEqual(d["peers"][0]["top_service"], "goat-map")
@@ -317,7 +317,7 @@ class TestDemand(unittest.TestCase):
         for i in range(9):
             m = "2026-08-15T10:%02d" % i
             for _ in range(i * 4):
-                rows.append(self._row("100.127.0.45", "nova-panoscope@file", "/x", minute=m))
+                rows.append(self._row("100.127.0.41", "nova-panoscope@file", "/x", minute=m))
             # Every minute clears MIN_CORE_PER_MINUTE so every minute is
             # rankable — otherwise the quiet minutes are dropped before the
             # thirds are cut and the earlier "too few minutes" guard answers
@@ -334,7 +334,7 @@ class TestDemand(unittest.TestCase):
             m = "2026-08-15T10:%02d" % i
             # busy browsing in the later minutes, and core slower there too
             for _ in range(i * 4):
-                rows.append(self._row("100.127.0.45", "nova-panoscope@file", "/x", minute=m))
+                rows.append(self._row("100.127.0.41", "nova-panoscope@file", "/x", minute=m))
             for _ in range(40):
                 rows.append(self._row("172.18.0.1", "mgmt@file", "/z",
                                       dur_ms=1.0 + i, minute=m))

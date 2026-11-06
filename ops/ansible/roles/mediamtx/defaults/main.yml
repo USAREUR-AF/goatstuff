@@ -17,7 +17,7 @@ mediamtx_bind_address: "{{ keepalived_vip | default(ansible_default_ipv4.address
 
 # Mesh hostname for this site's MediaMTX (DNS round-robin if A+B on shared VIP).
 # Used by viewers / shims / TAK CoT URLs to reach the substrate.
-mediamtx_hostname: "video.{{ site_name | default('local') }}.netbird.legacy.example"
+mediamtx_hostname: "video.{{ site_name | default('local') }}.{{ site_dns_zone | mandatory }}"
 
 # Ports — defaults match upstream + Spike B verified set.
 mediamtx_port_rtsp: 8554

@@ -15,7 +15,7 @@
       - herd_image != "PENDING"
     fail_msg: >-
       herd_image is still the PENDING sentinel. Pin a multi-arch INDEX digest
-      (never a per-arch leaf — zagros is amd64 and zagros-prod is arm64) before
+      (never a per-arch leaf — goatnets run on both amd64 and arm64) before
       enabling this role.
 
 # The secrets are the deploy's real preconditions. Asserting them here turns a

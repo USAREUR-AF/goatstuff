@@ -3,11 +3,14 @@
 #
 # Defaults for the flashlight role. Override in group_vars or via -e.
 
-# Image — SHA-pinned per ADR 0859 (easy rollback). Bumps require an
-# append to deploy-history.yml (CI guard at
-# .github/workflows/deploy-history-check.yml). The :latest tag is
-# never used here because it erases the rollback target.
-flashlight_image: "ghcr.io/{{ ghcr_org }}/flashlight@sha256:3042df91b7f2c5846719a5ef12862cf27da49ff125dccc211161187ce6f78af5"
+# Image — no role default. `flashlight_image` is a pin: it is declared once, as
+# the `flashlight` component of the fleet pin table
+# (ops/pins/fleet-pins.yaml), and rendered into group_vars/<group>/pins.yml for
+# every group that runs this role; a goatnet outside the pin table sets it in
+# its own group_vars. Digest-pinned per ADR 0859 (easy rollback); the :latest
+# tag is never used because it erases the rollback target. Empty means the
+# role refuses rather than pulling an image nobody chose for the goatnet.
+flashlight_image: ""
 
 # Public hostname for browser-facing access. Pattern is
 # `<surface>.<site_id>.<site_dns_zone>`. Omitting the <site_id> segment makes
@@ -55,7 +58,7 @@ flashlight_portal_key_file: /etc/goat/flashlight-portal.key
 flashlight_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
 flashlight_portal_key_id: flashlight
 flashlight_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_FLASHLIGHT_PORTAL_KEY') | default('', true) }}"
-flashlight_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | default('100.127.0.193') }}"
+flashlight_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | mandatory }}"
 
 # Logging.
 flashlight_rust_log: "flashlight=info,axum=info,tower_http=info"
@@ -69,6 +72,10 @@ flashlight_cert_dir: "/etc/flashlight"
 flashlight_zenoh_client_cert: "{{ flashlight_cert_dir }}/zenoh-client-cert.pem"
 flashlight_zenoh_client_key: "{{ flashlight_cert_dir }}/zenoh-client-key.pem"
 flashlight_ca_root: "{{ flashlight_cert_dir }}/{{ site_id }}-ca-root.pem"   # a shared role must not name a goatnet
+# Where the CA root is mounted inside the container, and the path
+# FLASHLIGHT_ZENOH_TLS_ROOT_CA names. One variable so the mount and the
+# environment line cannot disagree.
+flashlight_ca_root_container_path: "/etc/flashlight/ca-root.pem"
 
 # Compose state.
 flashlight_compose_dir: "/opt/flashlight"
@@ -81,8 +88,10 @@ flashlight_traefik_dynamic_dir: "/etc/traefik/dynamic"
 flashlight_traefik_dynamic_filename: "flashlight.yml"
 
 # The pre-rename filename, removed from the host on deploy. Leaving it
-# behind would give Traefik two routers on the same Host() rule.
-flashlight_traefik_dynamic_filename_legacy: "nova-flashlight.yml"
+# behind would give Traefik two routers on the same Host() rule. Empty (the
+# default) removes nothing; a goatnet whose hosts once carried the route under
+# another name sets that name in its group_vars.
+flashlight_traefik_dynamic_filename_legacy: ""
 flashlight_traefik_cert_resolver: "le"
 flashlight_traefik_router_name: "flashlight"
 

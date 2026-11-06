@@ -1933,7 +1933,7 @@ mod tests {
         // frontend to relex JS-generated labels.
         assert_eq!(l["lexicon"]["org"], "vendor");
         assert_eq!(l["lexicon"]["orgs"], "vendors");
-        assert_eq!(l["lexicon"]["fabric_label"], "nova fabric");
+        assert_eq!(l["lexicon"]["fabric_label"], "Zenoh fabric");
     }
 
     #[tokio::test]

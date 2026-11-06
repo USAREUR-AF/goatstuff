@@ -89,7 +89,9 @@ zenoh_sandbox_web_image: "ghcr.io/{{ ghcr_org }}/zenoh-sandbox:sha-4b4084b@sha25
 # Private-registry pull auth (off by default; ghcr package is public).
 zenoh_sandbox_pull_auth_enabled: false
 zenoh_sandbox_pull_registry: "ghcr.io"
-zenoh_sandbox_pull_username: "goat-maintainer"
+# The account that owns the pull token; set with the password in the
+# goatnet's group_vars when pull auth is enabled.
+zenoh_sandbox_pull_username: ""
 zenoh_sandbox_pull_password: ""
 
 # -- Traefik wiring (file provider, same shape as dataflows) -----------------
@@ -97,9 +99,11 @@ zenoh_sandbox_traefik_network: "mgmt"
 zenoh_sandbox_traefik_dynamic_dir: "/etc/traefik/dynamic"
 zenoh_sandbox_traefik_dynamic_filename: "zenoh-sandbox.yml"
 
-# The pre-rename filename, removed from the host on deploy. Leaving it
-# behind would give Traefik two routers on the same Host() rule.
-zenoh_sandbox_traefik_dynamic_filename_legacy: "nova-zenoh-sandbox.yml"
+# A pre-rename filename to remove from the host on deploy. Leaving one
+# behind would give Traefik two routers on the same Host() rule. Empty:
+# nothing to remove. A goatnet whose hosts once carried the route under
+# another filename names it in its group_vars.
+zenoh_sandbox_traefik_dynamic_filename_legacy: ""
 zenoh_sandbox_traefik_cert_resolver: "le"
 zenoh_sandbox_traefik_router_name: "zenoh-sandbox"
 

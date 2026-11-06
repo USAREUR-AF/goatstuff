@@ -152,7 +152,7 @@ mod tests {
         // The default lexicon must render the historical wording verbatim.
         let src = b"<title>panoscope \xE2\x80\x94 __LEX_FABRIC__</title> __LEX_ORGS__";
         let out = String::from_utf8(substitute(src, &Lexicon::default())).unwrap();
-        assert_eq!(out, "<title>panoscope — nova fabric</title> vendors");
+        assert_eq!(out, "<title>panoscope — Zenoh fabric</title> vendors");
     }
 
     #[test]
@@ -163,7 +163,7 @@ mod tests {
 
     // End-to-end against the actual embedded dist: an org lexicon must
     // resolve every token in the served index.html — no `__LEX_` leaks,
-    // "org" wording present, "nova fabric" gone. Guards against a
+    // "org" wording present, "Zenoh fabric" gone. Guards against a
     // future index.html edit that introduces an unmatched token.
     #[tokio::test]
     async fn served_index_html_substitutes_zagros_lexicon() {
@@ -187,7 +187,7 @@ mod tests {
                 "unresolved lexicon token in served index.html"
             );
             assert!(html.contains("panoscope — ZAGROS Fabric"));
-            assert!(!html.contains("nova fabric"));
+            assert!(!html.contains("Zenoh fabric"));
         }
     }
 }

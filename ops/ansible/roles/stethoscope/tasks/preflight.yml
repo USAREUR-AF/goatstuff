@@ -17,6 +17,17 @@
 # Every variable carries a default because in pre_tasks the role's
 # defaults/main.yml has not loaded yet; the site group_vars supply the values
 # that matter.
+- name: stethoscope | refuse a deploy with no image pin
+  ansible.builtin.assert:
+    that:
+      - stethoscope_image | default('') | length > 0
+    fail_msg: >-
+      stethoscope_image is not set and the role carries no default. The pin of
+      record is the stethoscope row of ops/pins/fleet-pins.yaml, rendered into
+      group_vars/<member>/pins.yml; a goatnet outside the pin table sets
+      stethoscope_image in its own group_vars. Nothing was rendered.
+    quiet: true
+
 - name: stethoscope | refuse an audit tail declared enabled without its credentials
   ansible.builtin.assert:
     that:

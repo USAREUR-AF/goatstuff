@@ -22,6 +22,8 @@ services:
   orchestrator:
     image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-64e4387@sha256:c255c95efcc72da5841e8ffdffae3e4e7c816013c51ce3f5182016e84d03e1ef
     build: !reset null
+    environment:
+      TS_GOATNET: "zagros"          # goatnet label in the URI-SAN of the leaves it mints (urn:goat:<goatnet>:…)
   web:
     image: ghcr.io/usareur-af/trust-sandbox-web:sha-64e4387@sha256:07f52571305fea33159962cdd3169796680ff2e39593e7485d964604739516a5
     build: !reset null

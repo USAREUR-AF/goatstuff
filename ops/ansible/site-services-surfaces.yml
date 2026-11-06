@@ -1,0 +1,68 @@
+---
+# site-services-surfaces.yml — the peripheral surfaces of the service tier, for
+# ANY goatnet, from one file.
+#
+# site-services.yml deploys the service tier a goatnet cannot do without. The
+# surfaces here are the ones that ship with their own roles beside this file.
+# Run it after site-services.yml, with the same contract:
+#   -e target=<host group>     which hosts (e.g. <site>_hosts)
+#   -e site_id=<site>          which goatnet
+#
+# Usage:
+#   cd ops/ansible
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES aws-vault exec <profile> --no-session -- \
+#     ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts.ini site-services-surfaces.yml \
+#       -e target=<site>_hosts -e site_id=<site>
+#
+# Every one of these has its own playbook already and every one takes `target`;
+# this list is what stops a new goatnet from depending on an operator knowing
+# which playbook to run. Each is skipped when the goatnet does not declare it,
+# so a smaller goatnet runs the same file and gets a smaller site.
+#
+# Ordered so a surface never comes up before what it reads: the operator
+# inspection surfaces, then content and demo surfaces.
+#
+# Idempotent, like every playbook it composes. Re-runnable.
+
+- name: "site-services-surfaces: pre-flight — the two things every play below assumes"
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: site_id and target are both provided
+      ansible.builtin.assert:
+        that:
+          - site_id is defined and site_id | length > 0
+          - target is defined and target | length > 0
+        fail_msg: >
+          site-services-surfaces.yml needs BOTH -e site_id=<site> and
+          -e target=<group>, the same pair site-services.yml takes.
+
+    - name: Refuse to run against anything but the named group
+      ansible.builtin.assert:
+        that:
+          - target != "all"
+          - target in groups
+        fail_msg: >-
+          target must be a real inventory GROUP, never "all": an unguarded run
+          reaches every host in the inventory.
+
+- name: "site-services-surfaces: operator inspection surfaces"
+  ansible.builtin.import_playbook: panoscope.yml
+- name: "site-services-surfaces: stethoscope"
+  ansible.builtin.import_playbook: stethoscope.yml
+- name: "site-services-surfaces: flashlight"
+  ansible.builtin.import_playbook: flashlight.yml
+- name: "site-services-surfaces: netvis"
+  ansible.builtin.import_playbook: netvis-deploy.yml
+- name: "site-services-surfaces: microscope"
+  ansible.builtin.import_playbook: microscope-deploy.yml
+
+- name: "site-services-surfaces: gym"
+  ansible.builtin.import_playbook: gym-deploy.yml
+- name: "site-services-surfaces: dataflows"
+  ansible.builtin.import_playbook: dataflows-deploy.yml
+- name: "site-services-surfaces: zenoh sandbox"
+  ansible.builtin.import_playbook: zenoh-sandbox-deploy.yml
+- name: "site-services-surfaces: herd (bearer-gear console)"
+  ansible.builtin.import_playbook: herd-deploy.yml
