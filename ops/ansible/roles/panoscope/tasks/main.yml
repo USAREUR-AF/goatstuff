@@ -60,14 +60,14 @@
     label: "{{ item.item | default('?') }}"
 
 # Normalize mode + ownership on the cert files so the non-root container
-# user (Chainguard distroless = uid 65532, panoscope image uses User:
+# user (distroless nonroot = uid 65532, panoscope image uses User:
 # nonroot) can read them. Without this, an operator scp + `install -m 600`
 # leaves the key file readable only by root, and Zenoh's TLS layer
 # silently fails the load with "Invalid TLS private key file: Permission
 # denied" → no wire connection → no samples flowing → looks identical to
 # every other "no flow" symptom.
 # The snapshot is written by the CONTAINER, which runs as `nonroot` (uid 65532
-# in the Chainguard base — the same uid already owning the files these
+# in the distroless base — the same uid already owning the files these
 # containers write on the host). A root-owned bind mount therefore fails every
 # write with EACCES.
 #

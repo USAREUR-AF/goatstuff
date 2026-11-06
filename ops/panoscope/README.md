@@ -64,9 +64,9 @@ v0.0.1-alpha — backend complete; frontend + deployment pending:
   the right Content-Type, unknown paths fall back to index.html for
   client-side routing.
 - [`Dockerfile`](Dockerfile) + [`docker-compose.dev.yml`](docker-compose.dev.yml)
-  — multi-stage container build (Chainguard node-builder for the
-  frontend bundle → Chainguard rust-builder for the binary → Chainguard
-  glibc-dynamic runtime) and a local-dev compose that pairs panoscope
+  — multi-stage container build (node-build stage for the
+  frontend bundle → rust-build stage for the binary → distroless
+  runtime-cc; bases by role in `ops/base-images/`) and a local-dev compose that pairs panoscope
   with an upstream `eclipse/zenoh:1.9.0` router on the loopback. Run
   `docker compose -f docker-compose.dev.yml up --build` to see
   panoscope render against synthetic traffic.

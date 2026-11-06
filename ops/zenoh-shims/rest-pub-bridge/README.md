@@ -62,7 +62,7 @@ cargo build --release --locked
 ```
 
 Image: `ghcr.io/usareur-af/rest-pub-bridge` (built by
-`.github/workflows/rest-pub-bridge-image.yml`, multi-arch, Chainguard base).
+`.github/workflows/rest-pub-bridge-image.yml`, multi-arch, base images by role, ops/base-images/).
 The Ansible role mounts the cert tree read-only; the image carries no
 identity material.
 

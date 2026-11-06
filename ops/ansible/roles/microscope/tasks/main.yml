@@ -67,7 +67,7 @@
   become: true
 
 - name: microscope | view-audit dir
-  # Owned by the container's distroless uid (65532, Chainguard nonroot) so
+  # Owned by the container's distroless uid (65532, distroless nonroot) so
   # the app can append; root-owned 0750 silently breaks the trail
   # ('view-audit append failed').
   ansible.builtin.file:

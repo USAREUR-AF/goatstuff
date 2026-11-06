@@ -52,7 +52,7 @@
     label: "{{ item.id | default('?') }}"
   when: (portal_identity_model | default('per-vendor')) == 'per-uuid-slot-pool'
 
-- name: synth-vendors | normalize cert dir ownership so non-root container uid 65532 (Chainguard default) can read
+- name: synth-vendors | normalize cert dir ownership so non-root container uid 65532 (the distroless nonroot default) can read
   ansible.builtin.file:
     path: "{{ synth_vendor_cert_dir }}/{{ item.vendor }}"
     owner: "65532"

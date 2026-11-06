@@ -24,8 +24,8 @@ fn main() {
     println!("cargo:rerun-if-changed={proto_dir}");
 
     // Tell prost-build where to find protoc. We bundle one via
-    // `protoc-bin-vendored` so the build is hermetic — Chainguard's
-    // rust image doesn't ship protoc, and we'd rather avoid an
+    // `protoc-bin-vendored` so the build is hermetic — not every
+    // rust-build base ships protoc, and we'd rather avoid an
     // apk-add per-arch in the Dockerfile.
     std::env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path().unwrap());
 

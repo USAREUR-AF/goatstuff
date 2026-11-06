@@ -6,7 +6,7 @@
 #
 # Same two-stage shape as ops/zenoh-trial-peers/time-health/Dockerfile:
 #   1. rust-builder: cargo build --release --locked
-#   2. Runtime: Chainguard glibc-dynamic per ADR 0700.
+#   2. Runtime: the runtime-cc base (ops/base-images/, goatcore ADR 1220).
 #
 # No embedded identity material — the leaf cert + key + CA root are bind-mounted
 # at deploy time by the fabric-crawler Ansible role. A normal mTLS Zenoh client
@@ -22,12 +22,14 @@
 # only: a crawler censusing rocksdb with a dead zenoh session is healthy, since
 # router state belongs on the data surface, not on container health.
 
-# Builder is debian rust, NOT the chainguard rust:latest-dev the sibling
-# services use: librocksdb-sys (the rocksdb-direct census source) runs bindgen
-# at build time, which needs libclang — absent from the chainguard dev image
-# (CI-verified). Precedent for a non-chainguard BUILDER stage when
-# the C/C++ toolchain demands it: ops/zenoh/pqc-image/Dockerfile (rust:alpine).
-# Chainguard-first (ADR 0700) governs the SHIPPED runtime stage, unchanged below.
+# Base images are build arguments named for their role; the defaults are
+# the public images in ops/base-images/ (goatcore docs/design/base-images.md).
+ARG BASE_RUNTIME_CC=gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
+
+# Builder is debian rust with clang installed, not the rust-build role:
+# librocksdb-sys (the rocksdb-direct census source) runs bindgen at build
+# time, which needs libclang, and Wolfi rust images (one overlay choice for
+# rust-build) do not ship it. The SHIPPED runtime stage is the runtime-cc role.
 FROM rust:1-bookworm AS rust-builder
 RUN apt-get update && apt-get install -y --no-install-recommends clang libclang-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
@@ -37,7 +39,7 @@ COPY src/ ./src/
 COPY proto/ ./proto/
 RUN cargo build --release --locked
 
-FROM cgr.dev/chainguard/glibc-dynamic:latest
+FROM ${BASE_RUNTIME_CC}
 WORKDIR /
 COPY --from=rust-builder /build/target/release/goat-fabric-crawler /usr/local/bin/goat-fabric-crawler
 ENTRYPOINT ["/usr/local/bin/goat-fabric-crawler"]

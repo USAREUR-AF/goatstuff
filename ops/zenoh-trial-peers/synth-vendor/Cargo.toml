@@ -61,8 +61,8 @@ rand = "0.8"
 [build-dependencies]
 prost-build = "0.13"
 # Bundles a static protoc binary so the build doesn't depend on protoc
-# being installed in the build environment (Chainguard rust image
-# doesn't have it; this is faster than apk add + multi-arch wrangling
+# being installed in the build environment (not every rust-build base
+# has it; this is faster than apk add + multi-arch wrangling
 # in the Dockerfile, and keeps the build hermetic).
 protoc-bin-vendored = "3"
 

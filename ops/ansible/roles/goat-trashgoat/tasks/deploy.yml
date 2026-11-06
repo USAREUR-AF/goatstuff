@@ -52,7 +52,7 @@
     - goat_trashgoat_ca_root_stat is not skipped
     - not (goat_trashgoat_ca_root_stat.stat.exists | default(false))
 
-- name: goat-trashgoat | normalize cert dir ownership for non-root container uid 65532 (Chainguard default)
+- name: goat-trashgoat | normalize cert dir ownership for non-root container uid 65532 (the distroless nonroot default)
   ansible.builtin.file:
     path: "{{ goat_trashgoat_cert_dir }}"
     owner: "65532"

@@ -128,7 +128,7 @@ Online learning, drift-aware baselines, seasonality, classifier-conditioned base
 |---|---|
 | `ops/agents/tipper/` | Rust crate — agent peer binary |
 | `ops/agents/tipper/Cargo.toml` | Pinned dependencies, built under the same supply-chain pipeline as the audit-logger interceptor (per ADR [`0708`](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0708-build-zenoh-from-source.md)) |
-| `ops/agents/tipper/Dockerfile` | Distroless / Chainguard-shaped final stage |
+| `ops/agents/tipper/Dockerfile` | Distroless final stage (runtime-cc role) |
 | `ops/agents/tipper/schema/` | `attest/schema/...` source-of-truth for Tipper's published schemas |
 | `ops/ansible/roles/tipper/` | Deploy role |
 | `docs/operations/tipper-runbook.md` | Operator runbook (created when Tipper deploys) |
