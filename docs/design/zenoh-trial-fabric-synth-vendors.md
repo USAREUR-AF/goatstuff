@@ -46,7 +46,7 @@ The nova-a shape above is **flat-vendor**: all 22 peers share one `notional` cer
 
 The first ZAGROS standup reused the nova flat automation, so the fleet published under pool slots it had minted out-of-band but was **never onboarded in the portal** — zero vendor/alias/topic/schema rows. panoscope's decoder (`panoscope-core` `PortalClient::find_topic_by_key`/`fetch_fds`) splits the leading anchor segment as the vendor, 404s, and reports `no_schema` ("No schema uploaded …"); the fleet also rendered as raw UUIDs (no alias). F-189 root-causes it.
 
-The fix is `ops/ansible/zagros-zenoh-synth-vendors-deploy.yml`, which onboards each peer and deploys in one idempotent run:
+The fix is [`ops/ansible/zenoh-synth-vendors-slot-pool-deploy.yml`](../../ops/ansible/zenoh-synth-vendors-slot-pool-deploy.yml), which onboards each peer and deploys in one idempotent run:
 
 1. **Onboard (pre_tasks).** For each `synth_vendors` entry whose handle (`id`) has no anchor yet, `POST /api/vendors {prefix: ‹id›, synthetic: true}` — in slot mode the portal allocates a free slot, mints a `CN=anchor` cert, and writes the vendor + alias rows. The one-time bundle tarball is fetched + extracted into `certs/‹anchor›/` (the tarball's `‹anchor›-cert.pem` lands exactly where the role expects `{cert_dir}/{vendor}/{vendor}-cert.pem` with `vendor=‹anchor›`). Idempotency state = the portal's own `/api/aliases` ⊕ a durable `synth-anchors.json` on the host; an already-anchored handle is skipped (no re-onboard, no churn).
 2. **Resolve.** Each base entry is rewritten to `vendor: ‹anchor›` (drives the cert path), `logical_vendor: ‹animal›` (keeps panoscope's vendor grouping human despite the UUID anchor), and `topic: ‹anchor›/‹topic-suffix›`.

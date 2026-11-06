@@ -1,0 +1,384 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# zenoh-synth-vendors-slot-pool-deploy.yml — deploy the synthetic publisher
+# fleet on a goatnet whose portal runs the per-uuid slot pool (ADR 1025),
+# ONBOARDING each peer into the pool so the portal carries a real identity
+# (vendor row + alias + slot) for it. A fleet deployed without that step has
+# no portal identity: panoscope cannot decode it ("No schema uploaded …") and
+# it renders as raw UUID anchors.
+#
+# WHAT THIS DOES THAT zenoh-synth-vendors-deploy.yml DOES NOT
+# --------------------------------------------------------------------
+# In flat-vendor mode all synth peers share one `notional` cert and publish
+# under `notional/<animal>/…`; the portal vendor is created once by
+# ops/zenoh-trial-peers/bootstrap-notional-portal.sh. In per-uuid-slot-pool
+# mode a system's write anchor = its cert CN = an allocated slot_id. So each
+# synth PEER must be onboarded individually (one slot + one cert + one alias).
+# This playbook's pre_tasks do exactly that against the portal's
+# POST /api/vendors (which, in slot mode, allocates a free slot, mints a
+# CN=anchor cert, and writes the vendor + alias rows), then it renders the
+# synth compose so each container publishes under its assigned anchor with its
+# own cert — and the zenoh-synth-vendors role runs UNCHANGED on the resolved
+# fleet.
+#
+# IDEMPOTENT. Onboarding state is the durable handle→anchor map at
+# {{ synth_vendor_compose_dir }}/synth-anchors.json on the target host — the
+# authoritative record the one-time cert bundle is keyed to (the portal
+# api_key + cert tarball are one-time, so the map, co-located with the
+# placed certs, is what re-runs trust). A handle already carrying an anchor
+# is skipped (no re-onboard, no churn).
+#
+# AFTER THIS RUNS — register topics + upload schemas so the Decoded view
+# lights up (the wire is already protobuf): run the synth-decode bootstrap
+# script in ops/zenoh-trial-peers/synth-vendor-schemas/ with the same
+# operator API key.
+#
+# PRE-FLIGHT (operator-side, one-time):
+#   1. the goatnet's zenoh router + goat-zenoh-portal Healthy on the mgmt
+#      host (the zenoh deploy play + portal-deploy.yml -e target=<group>).
+#   2. The portal operator API key in the controller env, under the name
+#      synth_portal_operator_api_key_env holds; a group that sets none reads
+#      <SITE>_PORTAL_OPERATOR_API_KEY (site_id upper-cased, `-` as `_`).
+#   3. ghcr.io/{{ ghcr_org }}/synth-vendor image pin reachable (role default).
+#
+# RUN:
+#   cd ops/ansible
+#   ../scripts/ansible-preflight.sh \
+#     -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#     zenoh-synth-vendors-slot-pool-deploy.yml -e target=<group>
+
+- name: deploy + slot-onboard the synthetic publisher fleet
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: true
+
+  vars:
+    # Portal the onboard POSTs hit. The portal-facing tasks are
+    # delegate_to: localhost — they run from the CONTROLLER (a mesh peer
+    # that resolves the portal's name via mesh CoreDNS), NOT from the mgmt
+    # host, which cannot reach its own portal by mesh hostname.
+    synth_portal_url: "{{ portal_public_url }}"
+    # Reach the portal by IP + Host header instead of by mesh hostname, so the
+    # delegate_to: localhost portal calls run over ANY transport (an env-door,
+    # tailscale) without the controller being on THIS goatnet's mesh DNS — the
+    # one thing they otherwise require. Set synth_portal_resolve_ip to a
+    # reachable IP of the mgmt host (e.g. its tailscale IP); leave it empty to
+    # keep the original behaviour (controller on-mesh, resolves portal.<site>
+    # itself). Auth is a Bearer token, not mTLS, so IP + Host + token is enough;
+    # SNI is then the IP, so Traefik serves its default cert and validate_certs
+    # must be off in that mode only (routing is by the Host header).
+    synth_portal_resolve_ip: ""
+    _synth_portal_host: "{{ synth_portal_url | urlsplit('hostname') }}"
+    _synth_portal_base: "{{ ('https://' ~ synth_portal_resolve_ip) if synth_portal_resolve_ip else synth_portal_url }}"
+    _synth_portal_validate_certs: "{{ not synth_portal_resolve_ip }}"
+    # Where the durable handle→anchor map lives on the target host.
+    synth_anchors_path: "{{ synth_vendor_compose_dir }}/synth-anchors.json"
+    # The controller environment variable that holds the portal operator API
+    # key: synth_portal_operator_api_key_env where the goatnet's group_vars
+    # name one, else <SITE>_PORTAL_OPERATOR_API_KEY, the rule
+    # rotate-synth-certs.yml follows.
+    _synth_portal_operator_api_key_env: >-
+      {{ synth_portal_operator_api_key_env
+         | default((site_id | upper | replace('-', '_')) ~ '_PORTAL_OPERATOR_API_KEY', true) }}
+
+  pre_tasks:
+    # Optional per-goatnet choice: notional publishers/subscribers are synthetic
+    # demo traffic — a dev/demo goatnet opts in with synth_vendors_enabled: true;
+    # a real goatnet leaves it off and this play ends cleanly, deploying nothing.
+    - name: synth-onboard | skip unless notional pub/sub is enabled for this goatnet
+      ansible.builtin.meta: end_play
+      when: not (synth_vendors_enabled | default(false) | bool)
+
+    - name: synth-onboard | assert per-uuid-slot-pool mode (this playbook onboards into the slot pool)
+      ansible.builtin.assert:
+        that:
+          - (portal_identity_model | default('per-vendor')) == 'per-uuid-slot-pool'
+        fail_msg: >-
+          This playbook onboards each synth peer into the per-uuid slot pool.
+          The target site is not in slot-pool mode
+          (portal_identity_model={{ portal_identity_model | default('per-vendor') }}).
+          For a flat-vendor goatnet use zenoh-synth-vendors-deploy.yml
+          + ops/zenoh-trial-peers/bootstrap-notional-portal.sh instead.
+
+    - name: synth-onboard | assert operator API key present (controller env)
+      ansible.builtin.assert:
+        that:
+          - lookup('env', _synth_portal_operator_api_key_env) | length > 0
+        fail_msg: >-
+          {{ _synth_portal_operator_api_key_env }} is unset in the controller
+          environment. Add its reference to .envrc.local.d, then re-run.
+
+    - name: synth-onboard | normalize base fleet (handle / animal / topic-suffix)
+      ansible.builtin.set_fact:
+        synth_base: >-
+          {{
+            synth_base | default([]) + [
+              item | combine({
+                'handle': item.id,
+                'animal': (item.topic.split('/')[1]),
+                'topic_suffix': (item.topic.split('/')[1:] | join('/')),
+              })
+            ]
+          }}
+      loop: "{{ synth_vendors }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    # ---- discover existing onboarding state (idempotency) -------------
+    # The on-host synth-anchors.json is the authoritative record: it is
+    # co-located with the one-time certs this playbook fetched, on the same
+    # single target host. We do NOT seed from /api/aliases — an alias can
+    # exist in the portal while its one-time cert is absent locally (e.g.
+    # the json was lost); seeding from aliases would then skip onboarding
+    # and let the role fail at cert-preflight with a misleading remedy.
+    # Seeding from the json only means a lost map re-attempts onboarding and
+    # surfaces the portal's 409 with the correct "revoke + re-run" guidance.
+    - name: synth-onboard | slurp the durable handle→anchor map if present
+      ansible.builtin.slurp:
+        src: "{{ synth_anchors_path }}"
+      register: synth_anchors_slurp
+      failed_when: false
+      check_mode: false
+
+    - name: synth-onboard | seed anchor map from the on-host json (authoritative)
+      ansible.builtin.set_fact:
+        synth_anchor_map: >-
+          {{
+            (synth_anchors_slurp.content | default('') | length > 0)
+            | ternary((synth_anchors_slurp.content | default('') | b64decode | from_yaml), {})
+          }}
+
+    - name: synth-onboard | compute handles still needing a slot
+      ansible.builtin.set_fact:
+        synth_to_onboard: >-
+          {{ synth_base | rejectattr('handle', 'in', synth_anchor_map | list) | list }}
+
+    - name: synth-onboard | report onboarding plan
+      ansible.builtin.debug:
+        msg: >-
+          {{ synth_anchor_map | length }} handle(s) already onboarded;
+          {{ synth_to_onboard | length }} to onboard now:
+          {{ synth_to_onboard | map(attribute='handle') | list }}
+
+    # ---- onboard the missing peers (slot allocate + cert mint) --------
+    - name: synth-onboard | POST /api/vendors to allocate slot + mint CN=anchor cert
+      ansible.builtin.uri:
+        url: "{{ _synth_portal_base }}/api/vendors"
+        method: POST
+        validate_certs: "{{ _synth_portal_validate_certs }}"
+        headers:
+          Host: "{{ _synth_portal_host }}"
+          Authorization: "Bearer {{ lookup('env', _synth_portal_operator_api_key_env) }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          prefix: "{{ item.handle }}"     # in slot mode `prefix` is the requested ALIAS
+          display_name: "{{ item.id }} (synthetic)"
+          synthetic: true
+        # 201 = onboarded; 409 = alias already taken but absent from our
+        # map (cert unrecoverable — fail with remedy in the next task).
+        status_code: [201, 409]
+        return_content: true
+        timeout: 60
+      register: synth_onboard_results
+      loop: "{{ synth_to_onboard }}"
+      loop_control:
+        label: "{{ item.handle }}"
+      # Portal calls run from the CONTROLLER (the operator laptop / mesh
+      # peer), NOT the target host: the mgmt host cannot resolve/reach its own
+      # portal by mesh hostname (DNS is served to mesh PEERS, the host hits
+      # HTTP=000 instantly), which silently wedged the in-host uri task.
+      # Mirrors operator-onboard.yml, which runs all portal calls locally.
+      delegate_to: localhost
+      become: false
+      when: not ansible_check_mode
+
+    - name: synth-onboard | fail loudly on 409 (alias taken, anchor/cert not recoverable)
+      ansible.builtin.fail:
+        msg: >-
+          Portal returned 409 for alias '{{ item.item.handle }}' — it is
+          already assigned to a slot, but {{ synth_anchors_path }} did not
+          carry its anchor, so the one-time cert cannot be re-fetched.
+          Either restore synth-anchors.json from backup, or revoke the stale
+          slot and re-run: look up its anchor in /api/aliases, then
+          DELETE /api/vendors/<anchor> (or goat admin onboard --revoke).
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 409
+
+    - name: synth-onboard | fold freshly-minted anchors into the map
+      ansible.builtin.set_fact:
+        synth_anchor_map: >-
+          {{
+            synth_anchor_map | combine({
+              item.item.handle: (item.json.slot_id | default(item.json.prefix))
+            })
+          }}
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }} → {{ item.json.slot_id | default('?') }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 201
+
+    # ---- fetch + place the one-time cert bundles ----------------------
+    - name: synth-onboard | per-anchor cert dir
+      ansible.builtin.file:
+        path: "{{ synth_vendor_cert_dir }}/{{ item.json.slot_id | default(item.json.prefix) }}"
+        state: directory
+        owner: "65532"
+        group: "65532"
+        mode: "0750"
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 201
+
+    - name: synth-onboard | download the one-time vendor bundle tarball (on controller)
+      # Runs on the controller (reaches the portal); the tarball lands on
+      # the controller and is shipped to the mgmt host by the unarchive below.
+      ansible.builtin.get_url:
+        url: "{{ _synth_portal_base }}{{ item.json.bundle_url }}"
+        validate_certs: "{{ _synth_portal_validate_certs }}"
+        headers:
+          Host: "{{ _synth_portal_host }}"
+        dest: "/tmp/synth-bundle-{{ item.item.handle }}.tar.gz"
+        mode: "0600"
+        force: true
+        timeout: 60
+      delegate_to: localhost
+      become: false
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 201
+
+    # Cert placement is a deliberate TWO step: copy the tarball to the host,
+    # then extract it host-LOCAL (remote_src: true). Do NOT collapse this
+    # into a single `unarchive` with `remote_src: false` — that path (copy +
+    # remote change-detection in one module, per item) WEDGED hard over the
+    # mesh tunnel (0/22 extracted, no error, ~15 min), 2026-06-11. `copy`
+    # then a local `tar` are each simple, fast, and reliable.
+    - name: synth-onboard | copy the cert bundle to the host
+      ansible.builtin.copy:
+        src: "/tmp/synth-bundle-{{ item.item.handle }}.tar.gz"
+        dest: "/tmp/synth-bundle-{{ item.item.handle }}.tar.gz"
+        mode: "0600"
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 201
+
+    - name: synth-onboard | extract cert+key into the anchor's cert dir (host-local)
+      # Tarball holds <anchor>-cert.pem / <anchor>-key.pem (prefix=anchor in
+      # slot mode), so certs/<anchor>/ yields exactly the {cert_dir}/{vendor}/
+      # {vendor}-cert.pem layout the role expects with the resolved entry's
+      # vendor=<anchor>.
+      ansible.builtin.unarchive:
+        src: "/tmp/synth-bundle-{{ item.item.handle }}.tar.gz"
+        dest: "{{ synth_vendor_cert_dir }}/{{ item.json.slot_id | default(item.json.prefix) }}/"
+        remote_src: true
+        owner: "65532"
+        group: "65532"
+        include:
+          - "{{ item.json.slot_id | default(item.json.prefix) }}-cert.pem"
+          - "{{ item.json.slot_id | default(item.json.prefix) }}-key.pem"
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 201
+
+    - name: synth-onboard | scrub the one-time bundle tarball on the host
+      ansible.builtin.file:
+        path: "/tmp/synth-bundle-{{ item.item.handle }}.tar.gz"
+        state: absent
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 201
+
+    - name: synth-onboard | scrub the one-time bundle tarball on the controller
+      ansible.builtin.file:
+        path: "/tmp/synth-bundle-{{ item.item.handle }}.tar.gz"
+        state: absent
+      delegate_to: localhost
+      become: false
+      loop: "{{ synth_onboard_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.handle }}"
+      when:
+        - not ansible_check_mode
+        - item.status == 201
+
+    # ---- persist the durable map + assert completeness ----------------
+    - name: synth-onboard | write the durable handle→anchor map
+      ansible.builtin.copy:
+        content: "{{ synth_anchor_map | to_nice_json }}\n"
+        dest: "{{ synth_anchors_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: not ansible_check_mode
+
+    - name: synth-onboard | assert every peer now carries an anchor
+      ansible.builtin.assert:
+        that:
+          - synth_base | map(attribute='handle') | reject('in', synth_anchor_map | list) | list | length == 0
+        fail_msg: >-
+          Some synth handles still have no anchor after onboarding:
+          {{ synth_base | map(attribute='handle') | reject('in', synth_anchor_map | list) | list }}
+      when: not ansible_check_mode
+
+    # ---- resolve the fleet onto its anchors (role input) --------------
+    # vendor=<anchor> → cert path certs/<anchor>/<anchor>-cert.pem (matches
+    # the extracted bundle). logical_vendor=<animal> keeps panoscope's
+    # vendor grouping human even though the cert/anchor is a UUID. topic
+    # gets its leading `notional`/`caracal`/`community` segment replaced
+    # with the anchor so the write lands in the slot the cert authorizes.
+    - name: synth-onboard | build the resolved (anchored) synth fleet
+      ansible.builtin.set_fact:
+        synth_vendors_resolved: >-
+          {{
+            synth_vendors_resolved | default([]) + [
+              item | combine({
+                'vendor': synth_anchor_map[item.handle],
+                'logical_vendor': item.animal,
+                'topic': (synth_anchor_map[item.handle] ~ '/' ~ item.topic_suffix),
+              })
+            ]
+          }}
+      loop: "{{ synth_base }}"
+      loop_control:
+        label: "{{ item.handle }} → {{ synth_anchor_map[item.handle] | default('?') }}/{{ item.topic_suffix }}"
+      when: not ansible_check_mode
+
+    - name: synth-onboard | hand the resolved fleet to the role
+      ansible.builtin.set_fact:
+        synth_vendors: "{{ synth_vendors_resolved }}"
+      when: not ansible_check_mode
+
+  roles:
+    - role: zenoh-synth-vendors
+
+  post_tasks:
+    - name: synth-onboard | next step reminder
+      ansible.builtin.debug:
+        msg: >-
+          Fleet deployed under per-peer slot anchors. Now register topics +
+          upload schemas so panoscope decodes them: run the synth-decode
+          bootstrap script in ops/zenoh-trial-peers/synth-vendor-schemas/
+          with {{ _synth_portal_operator_api_key_env }} in the environment.
