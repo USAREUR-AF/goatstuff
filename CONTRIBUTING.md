@@ -49,7 +49,7 @@ Reviewers look for: the change does what its subject says and nothing else; the 
 
 ## Merging
 
-Until development moves to these repositories, the source of record is a private upstream repository, and each release here is exported from it. A maintainer who merges a pull request here carries it into the upstream before the next export; the export refuses to publish over a merged commit it has not been told was carried, so an uncarried merge holds every later release rather than being overwritten.
+Development happens in this repository. A pull request merged to `main` is the change; there is no other upstream. A deployment picks it up by moving the commit it pins, in its own overlay repository.
 
 ## Reporting a bug or proposing a feature
 

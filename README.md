@@ -9,7 +9,7 @@
 </p>
 
 > [!NOTE]
-> goat is pre-1.0: interfaces can still change between releases. This repository is generated from goat's source tree; each update arrives as a new commit on `main`.
+> goat is pre-1.0: interfaces can still change between releases.
 
 The inspection surfaces, demos and example applications that run on a goat data fabric. Everything here sits beside [`goatcore`](https://github.com/usareur-af/goatcore) — the mesh, the fabric, identity, the build tool and the operator CLI — and none of it is needed to run a goatnet.
 
