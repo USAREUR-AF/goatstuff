@@ -57,6 +57,12 @@ flashlight_portal_api_key: ""            # set in tasks from the persisted file
 flashlight_portal_key_file: /etc/goat/flashlight-portal.key
 flashlight_portal_keystore_dir: /opt/goat-zenoh-portal/operator-keys.d
 flashlight_portal_key_id: flashlight
+# The inventory host whose portal holds the service-key store, when it is not
+# this host. A node that runs no portal of its own (a passive node, a joining
+# site) writes its key into the portal host's store instead of a directory
+# nothing reads. Each such node sets its own flashlight_portal_key_id, so its
+# key never replaces the portal host's own flashlight key.
+flashlight_portal_keystore_host: ""
 flashlight_portal_key_seed: "{{ lookup('env', (site_id | mandatory | upper | replace('-', '_')) + '_FLASHLIGHT_PORTAL_KEY') | default('', true) }}"
 flashlight_portal_host_entry: "portal.{{ site_id | mandatory }}.{{ site_dns_zone | mandatory }}:{{ mesh_ip_a | mandatory }}"
 
@@ -106,3 +112,7 @@ flashlight_traefik_ratelimit_middleware: "goat-ratelimit@file"
 # Zenoh router Docker network — flashlight joins this so it can reach
 # `zenoh-router` by container name on the plain-TCP listener.
 flashlight_zenoh_network: "zenoh_default"
+# false on a host with no local Zenoh router (a passive node whose router copy
+# is stopped): flashlight then joins no router network and
+# flashlight_zenoh_endpoint names the active router over the mesh.
+flashlight_join_zenoh_network: true
