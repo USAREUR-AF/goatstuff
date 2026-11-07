@@ -24,7 +24,7 @@
 
 # Base images are build arguments named for their role; the defaults are
 # the public images in ops/base-images/ (goatcore docs/design/base-images.md).
-ARG BASE_RUNTIME_CC=gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
+ARG BASE_RUNTIME_CC=cgr.dev/chainguard/glibc-dynamic:latest@sha256:671a621016fb33812136dea6182b1db957996d3c8c618187aaf86abd9b14af53
 
 # Builder is debian rust with clang installed, not the rust-build role:
 # librocksdb-sys (the rocksdb-direct census source) runs bindgen at build
