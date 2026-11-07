@@ -1,0 +1,70 @@
+name: goatmap-scope-guard
+
+# goat-map must never read the forgeable groups header.
+#
+# oauth2-proxy runs as a reverse proxy: it strips client-supplied
+# `X-Forwarded-*` and injects its own from the validated session, but it does
+# NOT strip a client-supplied `X-Auth-Request-*` from the upstream request.
+# Reading that family is therefore a privilege-escalation hole — a logged-in
+# floor viewer sends `X-Auth-Request-Groups: ADMINS` and becomes full scope.
+#
+# This guard exists so goat-map cannot grow the same bug independently, because the two services
+# share the threat but not the code.
+
+on:
+  # A guard, not a publisher: it runs on the pull request, and a squash merge puts
+  # the reviewed diff on main unchanged.
+  pull_request:
+    paths:
+      - 'ops/serve/goat-map/**'
+      - 'ops/ci/check-goatmap-groups-header.py'
+      - '.github/workflows/goatmap-scope-guard.yml'
+
+concurrency:
+  group: goatmap-scope-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scope-guard:
+    name: forgeable-header guard + scope tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Parses the AST rather than grepping: the code that MUST mention the
+      # header is the code explaining why it is dangerous, and a guard that
+      # cries wolf on its own documentation gets disabled.
+      - name: Forgeable-header guard
+        run: python3 ops/ci/check-goatmap-groups-header.py
+
+      # A basemap filename and a map centre are both site names. Config carries
+      # site names; code must not.
+      - name: No hardcoded site in goat-map code
+        run: bash ops/ci/check-goatmap-no-hardcoded-site.sh
+
+      # The whole suite, not a hand-listed subset. The list drifted the moment
+      # new suites were added — provenance, view composition and attestation
+      # tests all existed while gating nothing, which is worse than having no
+      # tests because it looks covered. Adding a file must be enough to gate on
+      # it. Requirements are installed so nothing skips itself quietly: a suite
+      # that vanishes on a missing import is the same failure in another coat.
+      - name: goat-map tests
+        working-directory: ops/serve/goat-map
+        run: |
+          python3 -m pip install --quiet pytest -r requirements.txt
+          python3 -m pytest tests-public/ -q
+          if [ -d tests ]; then python3 -m pytest tests/ -q; fi
+
+      # The Python suite cannot reach web/, and the browser code is where the
+      # surface decides what to CLAIM. A dashed selection box nobody drew
+      # shipped and sat on the map for weeks precisely because no check here
+      # could see it: it parsed, and the assertion it broke was a sentence in a
+      # comment. Runs on plain node, no dependencies, no browser — a driver
+      # suite for one file would cost more to keep alive than the file.
+      - name: goat-map lasso behaviour
+        working-directory: ops/serve/goat-map
+        run: node tests-public/lasso_behaviour.test.js
