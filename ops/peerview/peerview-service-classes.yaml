@@ -95,7 +95,7 @@ classes:
       - "brief"
       - "isitup.*"
       - "dataflows"
-      - "demogame"
+      - "airdefenders"
       - "goat-docs"
       - "gym"
       - "zenoh-sandbox-web"
