@@ -1,0 +1,46 @@
+name: netvis-client
+
+# Check browser rendering and Rust consumers when their source or ACL inputs change.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/netvis/**'
+      - 'crates/panoscope-core/**'
+      - 'ops/ansible/netbird_acl_taxonomy.yml'
+      - 'ops/ansible/netbird_acl_matrix.yml'
+      - 'ops/ci/check-netvis-short-names.js'
+      - 'ops/ci/check-netvis-client.js'
+      - '.github/workflows/netvis-client.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  client:
+    name: client checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: short names are unique, stable and view-independent
+        run: node ops/ci/check-netvis-short-names.js
+      - name: the levels draw, and draw what they claim
+        run: node ops/ci/check-netvis-client.js
+
+  crate:
+    # The crate reads both ACL files, including taxonomy gear annotations.
+    name: crate tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: netvis crate tests
+        working-directory: crates
+        run: cargo test -p netvis
