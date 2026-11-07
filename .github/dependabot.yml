@@ -19,3 +19,77 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: npm
+    directories:
+      - /ops/panoscope/frontend
+      - /ops/serve/trust-sandbox/app
+      - /ops/serve/zenoh-sandbox/app
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: pip
+    directories:
+      - /ops/serve/goat-map
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pip:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: cargo
+    directories:
+      - /crates
+      - /ops/flashlight
+      - /ops/goat-topology
+      - /ops/goat-trashgoat
+      - /ops/panoscope
+      - /ops/serve/trust-sandbox/orchestrator
+      - /ops/zenoh-shims/feeds-shim
+      - /ops/zenoh-shims/rest-pub-bridge
+      - /ops/zenoh-trial-peers/audit-subscriber
+      - /ops/zenoh-trial-peers/crypto-posture
+      - /ops/zenoh-trial-peers/fabric-crawler
+      - /ops/zenoh-trial-peers/fabric-health
+      - /ops/zenoh-trial-peers/loadgen
+      - /ops/zenoh-trial-peers/mesh-health
+      - /ops/zenoh-trial-peers/node-net-health
+      - /ops/zenoh-trial-peers/ntp-health-pub
+      - /ops/zenoh-trial-peers/peering-health
+      - /ops/zenoh-trial-peers/presence-health
+      - /ops/zenoh-trial-peers/surface-visit-audit
+      - /ops/zenoh-trial-peers/synth-vendor
+      - /ops/zenoh-trial-peers/time-health
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
