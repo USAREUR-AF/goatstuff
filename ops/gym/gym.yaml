@@ -1206,7 +1206,7 @@ modules:
   level: working
   minutes: 20
   surface:
-  - demogame
+  - airdefenders
   quirks:
   - claim: It is a demonstration workload, not a load test. The load-test path is separate and deliberately
       so.
@@ -1219,9 +1219,9 @@ modules:
     safety: read-only
     needs: mesh
   deeper:
-  - doc: docs/operations/demogame-zenoh-demo.md
+  - doc: docs/operations/airdefenders-zenoh-demo.md
     why: Running the multiplayer demo against a real router — the runbook.
-  - doc: docs/design/demogame-multiplayer.md
+  - doc: docs/design/airdefenders-multiplayer.md
     why: What it demonstrates about the fabric, and what it does not.
   status: written
   summary: A multiplayer demo driven by the real fabric. It is the cheapest way to watch traffic you
