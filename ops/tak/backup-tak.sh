@@ -30,8 +30,19 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
+# A deployment that exports other names (the network host's password as
+# NETHOST_PASS, ...) keeps them through its ops/env-aliases.d/*.sh, sourced by
+# goatcore's ops/scripts/lib/env-aliases.sh in an assembled tree.
+if [ -f "$REPO_DIR/ops/scripts/lib/env-aliases.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$REPO_DIR/ops/scripts/lib/env-aliases.sh"
+fi
+# The SSH account defaults to the deployment's deploy.ssh_user
+# (ops/goatbuilder/project.yml, read by ops/scripts/goatnet-facts.py).
+DEPLOY_SSH_USER="$(python3 "$REPO_DIR/ops/scripts/goatnet-facts.py" deploy ssh_user 2>/dev/null || true)"
+
 TAK_HOST="${TAK_HOST:?TAK_HOST not set — set in ops/tak/.env}"
-TAK_USER="${TAK_USER:-goat}"
+TAK_USER="${TAK_USER:-${DEPLOY_SSH_USER:-goat}}"
 TAK_PG_PASSWORD="${TAK_PG_PASSWORD:?TAK_PG_PASSWORD not set}"
 
 SSH_TARGET="$TAK_USER@$TAK_HOST"

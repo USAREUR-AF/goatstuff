@@ -6,8 +6,12 @@
 # NOTE: requires a Caddy image built with the caddy-dns/cloudflare module
 # (the stock caddy image lacks it) — e.g. build with xcaddy, or use a prebuilt
 # caddy-cloudflare image. See deploy/README.md.
+#
+# The ACME account email is TS_ACME_EMAIL, which a deployment sets in
+# deploy/edge.env (read by docker-compose.hosted.yml when present); the
+# address below is the example default.
 {
-	email person-6@example.org
+	email {$TS_ACME_EMAIL:person-6@example.org}
 }
 
 {$TS_PUBLIC_HOST} {

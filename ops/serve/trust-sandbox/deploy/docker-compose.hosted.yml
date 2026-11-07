@@ -76,6 +76,9 @@ services:
     ports:
       - "443:443"
       - "80:80"
+    env_file:
+      - path: ./deploy/edge.env     # a deployment's own edge values (TS_ACME_EMAIL); goat ships none
+        required: false
     environment:
       TS_PUBLIC_HOST: "${TS_PUBLIC_HOST}"
       CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN_ZAGROS}"
