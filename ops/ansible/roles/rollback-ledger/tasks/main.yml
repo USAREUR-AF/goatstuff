@@ -103,7 +103,7 @@
 - name: rollback-ledger | derive prior ref + compare key
   ansible.builtin.set_fact:
     _rbl_prior_ref: "{{ _rbl_prev.ref | default(_rbl_prev.image | default('')) }}"
-    _rbl_changed: >-
+    _rbl_ref_changed: >-
       {{
         (_rbl_prev.ref | default(_rbl_prev.image | default(''))) != rollback_ref
         or (_rbl_prev.artifact_type | default('')) != rollback_artifact_type
@@ -198,6 +198,29 @@
 # or `restore-required` rollout proceeded with --ack, the deploy driver passed
 # rollback_preflight_accept, and the row records what was knowingly accepted and
 # by whom. Empty by default, so every other deploy's row is unchanged.
+# A deploy from an assembled tree whose overlay commit or pre-disclosure patch
+# set differs from the prior row's is a change even when the ref is the same: a
+# patch or an overlay change that touches only role files leaves the image as it
+# was, and without a row the ledger would not show which tree the host was last
+# converged from. Compared only when this row has a source_tree (an assembled
+# tree, or any play through ansible-preflight.sh); a prior row without one counts
+# as an empty tree. A plain checkout outside the wrapper writes no source_tree and
+# keeps the ref-only comparison.
+- name: rollback-ledger | a change of overlay commit or patch set is a change
+  ansible.builtin.set_fact:
+    _rbl_tree_changed: >-
+      {{
+        (_rbl_row.source_tree is defined)
+        and (
+          ((_rbl_prev.source_tree | default({})).overlay | default('')) != (_rbl_row.source_tree.overlay | default(''))
+          or (((_rbl_prev.source_tree | default({})).embargo | default([])) | sort) != ((_rbl_row.source_tree.embargo | default([])) | sort)
+        )
+      }}
+
+- name: rollback-ledger | compare key
+  ansible.builtin.set_fact:
+    _rbl_changed: "{{ (_rbl_ref_changed | bool) or (_rbl_tree_changed | bool) }}"
+
 - name: rollback-ledger | a preflight-acknowledged rollout records the accepted risk
   ansible.builtin.set_fact:
     _rbl_row: "{{ _rbl_row | combine({'accepted': rollback_preflight_accept}) }}"
@@ -240,7 +263,8 @@
   notify: rollback-ledger promote
   when: _rbl_changed | bool
 
-# The dedup above compares only the REF. So a re-run after a refused deploy
+# The dedup above compares the ref (and, for an assembled tree, the overlay
+# commit and patch set). So a re-run after a refused deploy
 # finds its own `pending` row already naming this ref, skips the append, and
 # notifies nothing -- leaving the row reading `pending` on a host that then
 # deployed successfully. A ledger that hides a deploy that happened is as wrong
