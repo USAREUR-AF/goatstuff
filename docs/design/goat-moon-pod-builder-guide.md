@@ -6,7 +6,7 @@
 |---|---|
 | Status | Proposed (Phase 2D-late / Phase 3 commitment) |
 | ADR anchor | [`../adr/0223-goat-moon-pod-repo-containment.md`](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-goat-moon-pod-repo-containment.md) |
-| Companions | [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md), [`goat-moon-pod.md`](goat-moon-pod.md) |
+| Companions | [`moon-pod-conformance.md`](moon-pod-conformance.md), [`goat-moon-pod.md`](goat-moon-pod.md) |
 | Audience | Vendors with a data platform or sensor product; partners with engineering capacity who want to build their own moon-pod |
 | Reference implementation | [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) (worked example, Apache 2.0; private during MVP, public at GA) |
 
@@ -20,7 +20,7 @@ This guide is intentionally lightweight. Per "don't overdo preoptimization": we 
 
 ## Three things you need to read first
 
-1. **The contract**: [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) — the seven requirements your moon-pod must meet at the boundary. Includes the moon-metaphor definition, the sovereignty-floor edge cases, and the conformance criteria.
+1. **The contract**: [`moon-pod-conformance.md`](moon-pod-conformance.md) — the seven requirements your moon-pod must meet at the boundary. Includes the moon-metaphor definition, the sovereignty-floor edge cases, and the conformance criteria.
 2. **The architectural shape**: [`goat-moon-pod.md`](goat-moon-pod.md) — the abstract spec for what a moon-pod looks like. Six pieces, multiple acceptable implementations of each.
 3. **The repo-containment decision**: [ADR 0223](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-goat-moon-pod-repo-containment.md) — naming pattern (`goat-moon-<provider>-pod`), where each kind of moon-pod's code lives, why the contract is in trunk and the implementation in a separate repo.
 
@@ -40,12 +40,12 @@ Use this convention so partners and operators can find your moon-pod through the
 
 A conformant goat-moon-pod must:
 
-1. **Meet all seven requirements** at the boundary (see [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md)).
+1. **Meet all seven requirements** at the boundary (see [`moon-pod-conformance.md`](moon-pod-conformance.md)).
 2. **Pass the conformance smoke-test suite** at [`../../tests/moon-pod-conformance/`](https://github.com/usareur-af/goatcore/tree/main/tests/moon-pod-conformance) when run against a fresh deployment.
 3. **Document the partner-facing 24-hour deployment path** in your README.
 4. **Document your moon-pod's mapping** of the six required architectural pieces (per [`goat-moon-pod.md`](goat-moon-pod.md) §"Required pieces") to your specific implementation choices. Partners need to know what they're getting.
 5. **Use the naming convention** above so your moon-pod is discoverable.
-6. **Cite the contract by version**. Pin the trunk commit / git tag of [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) you target. When trunk advances the contract, your moon-pod tracks the bump on its own cadence.
+6. **Cite the contract by version**. Pin the trunk commit / git tag of [`moon-pod-conformance.md`](moon-pod-conformance.md) you target. When trunk advances the contract, your moon-pod tracks the bump on its own cadence.
 
 ## What you don't have to provide
 
@@ -98,7 +98,7 @@ We do not issue conformance certifications today. Your conformance claim is what
 
 ## Where to ask questions
 
-- **Contract clarifications**: open an issue against this repo referencing [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md). We treat contract-clarification issues as priority because they affect every conformant implementation.
+- **Contract clarifications**: open an issue against this repo referencing [`moon-pod-conformance.md`](moon-pod-conformance.md). We treat contract-clarification issues as priority because they affect every conformant implementation.
 - **Cookbook contributions**: PR against `../integrations/moon-pods/`. We merge cookbooks for any vendor product with a public API surface; we do not require the vendor to be a goat partner to merge a cookbook.
 - **Reference-implementation issues**: open against [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod). Our pod is the worked example; bugs there are bugs in goat.
 - **Partnership inquiries**: contact channels in the [Partner Data Sharing Charter](https://github.com/usareur-af/goatdocs/blob/main/docs/partner-templates/data-sharing-charter.md). The charter is a precondition for actual data flow regardless of which moon-pod the partner uses.
@@ -113,7 +113,7 @@ If you build something here you would like to upstream, open an issue first to d
 
 ## References
 
-- [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) — the seven-requirement contract
+- [`moon-pod-conformance.md`](moon-pod-conformance.md) — the seven-requirement contract
 - [`goat-moon-pod.md`](goat-moon-pod.md) — abstract spec
 - [ADR 0223](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-goat-moon-pod-repo-containment.md) — repo-containment + naming-pattern decision
 - [ADR 0821](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0821-mission-partner-sharing-pattern.md) — mission-partner-sharing anchor
