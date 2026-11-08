@@ -32,11 +32,32 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
+# A deployment that exports other names (the network host's password as
+# NETHOST_PASS, ...) keeps them through its ops/env-aliases.d/*.sh, sourced by
+# goatcore's ops/scripts/lib/env-aliases.sh in an assembled tree.
+if [ -f "$REPO_DIR/ops/scripts/lib/env-aliases.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$REPO_DIR/ops/scripts/lib/env-aliases.sh"
+fi
+# The SSH account defaults to the deployment's deploy.ssh_user
+# (ops/goatbuilder/project.yml, read by ops/scripts/goatnet-facts.py).
+DEPLOY_SSH_USER="$(python3 "$REPO_DIR/ops/scripts/goatnet-facts.py" deploy ssh_user 2>/dev/null || true)"
+
 USERNAME="${1:?Usage: enroll-client.sh <username>}"
 
 TAK_HOST="${TAK_HOST:?TAK_HOST not set — set in ops/tak/.env}"
-TAK_USER="${TAK_USER:-goat}"
-TAK_HOSTNAME="${TAK_HOSTNAME:-tak.netbird.legacy.example}"
+TAK_USER="${TAK_USER:-${DEPLOY_SSH_USER:-goat}}"
+TAK_HOSTNAME="${TAK_HOSTNAME:-tak.${NETBIRD_DOMAIN:-netbird.legacy.example}}"
+# The CA truststore's name and the organisation the data package is labelled
+# with: tak_ca_name and goat_cert_organization in ops/ansible/group_vars/all.yml.
+all_yml_var() {
+  python3 -c 'import sys, yaml; v = (yaml.safe_load(open(sys.argv[1])) or {}).get(sys.argv[2]); print(v if isinstance(v, str) else "")' \
+    "$REPO_DIR/ops/ansible/group_vars/all.yml" "$1" 2>/dev/null || true
+}
+TAK_CA_NAME="${TAK_CA_NAME:-$(all_yml_var tak_ca_name)}"
+TAK_CA_NAME="${TAK_CA_NAME:-goatCA}"
+TAK_ORG="${TAK_ORG:-$(all_yml_var goat_cert_organization)}"
+TAK_ORG="${TAK_ORG:-goat}"
 
 SSH_TARGET="$TAK_USER@$TAK_HOST"
 
@@ -89,13 +110,13 @@ ssh_cmd "sudo bash -c '
 <preferences>
   <preference version=\"1\" name=\"cot_streams\">
     <entry key=\"count\" class=\"class java.lang.Integer\">1</entry>
-    <entry key=\"description0\" class=\"class java.lang.String\">goat TAK</entry>
+    <entry key=\"description0\" class=\"class java.lang.String\">$TAK_ORG TAK</entry>
     <entry key=\"enabled0\" class=\"class java.lang.Boolean\">true</entry>
     <entry key=\"connectString0\" class=\"class java.lang.String\">$TAK_HOST:8089:ssl</entry>
   </preference>
   <preference version=\"1\" name=\"com.atakmap.app_preferences\">
     <entry key=\"displayServerConnectionWidget\" class=\"class java.lang.Boolean\">true</entry>
-    <entry key=\"caLocation\" class=\"class java.lang.String\">/cert/truststore-goatCA.p12</entry>
+    <entry key=\"caLocation\" class=\"class java.lang.String\">/cert/truststore-$TAK_CA_NAME.p12</entry>
     <entry key=\"clientPassword\" class=\"class java.lang.String\">atakatak</entry>
     <entry key=\"certificateLocation\" class=\"class java.lang.String\">/cert/$USERNAME.p12</entry>
   </preference>
@@ -110,7 +131,7 @@ PREF
 <MissionPackageManifest version=\"2\">
   <Configuration>
     <Parameter name=\"uid\" value=\"$USERNAME-dp\"/>
-    <Parameter name=\"name\" value=\"goat TAK — $USERNAME\"/>
+    <Parameter name=\"name\" value=\"$TAK_ORG TAK — $USERNAME\"/>
   </Configuration>
   <Contents>
     <Content ignore=\"false\" zipEntry=\"certs/$USERNAME.p12\"/>
