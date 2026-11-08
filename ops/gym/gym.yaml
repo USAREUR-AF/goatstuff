@@ -3692,8 +3692,8 @@ modules:
   deeper:
   - doc: docs/adr/0006-multi-agent-human-concurrency-governance.md
     why: The concurrency model — opt-in coordination, not a tax on every keystroke.
-  - doc: ops/work/main.go
-    why: The work CLI itself — pickup, update, release, bus. The behaviour is the documentation here.
+  - doc: ops/work/README.md
+    why: Where the work CLI (pickup, update, release, bus) comes from, and what this repo keeps beside it.
   status: written
   summary: Coordination here is opt-in. Most work needs none; the work that needs it is long, shared,
     or touching something others are also touching.
