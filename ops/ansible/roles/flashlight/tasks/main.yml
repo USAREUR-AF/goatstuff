@@ -109,6 +109,18 @@
     flashlight_portal_api_key: "{{ flashlight_keyfile.content | b64decode | trim }}"
   no_log: true
 
+- name: flashlight | portal key — a key written to another host's store needs its own id
+  ansible.builtin.assert:
+    that:
+      - flashlight_portal_key_id != 'flashlight'
+    fail_msg: >-
+      flashlight_portal_keystore_host is {{ flashlight_portal_keystore_host }},
+      so this host's key goes into that host's portal key store. With the
+      default id "flashlight" it would replace that host's own flashlight key.
+      Set flashlight_portal_key_id for this host (for example flashlight-b).
+    quiet: true
+  when: flashlight_portal_keystore_host | default('') | length > 0
+
 - name: flashlight | portal key — register it in the portal service-key store
   ansible.builtin.copy:
     content: "{{ flashlight_portal_key_id }}:{{ flashlight_portal_api_key }}\n"
@@ -120,6 +132,7 @@
   no_log: true
   become: true
   failed_when: false
+  delegate_to: "{{ flashlight_portal_keystore_host if (flashlight_portal_keystore_host | default('') | length > 0) else inventory_hostname }}"
   when: flashlight_portal_keystore_dir | length > 0
 
 

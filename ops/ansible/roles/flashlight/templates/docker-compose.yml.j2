@@ -14,8 +14,10 @@ services:
     networks:
       # `mgmt` — Traefik resolves flashlight:8080 over this network.
       - "{{ flashlight_traefik_network }}"
+{% if flashlight_join_zenoh_network | bool %}
       # `zenoh_default` — flashlight reaches zenoh-router:7447 over this.
       - "{{ flashlight_zenoh_network }}"
+{% endif %}
     expose:
       - "8080"
 {% if flashlight_portal_url | default('') %}
@@ -42,6 +44,8 @@ networks:
   "{{ flashlight_traefik_network }}":
     external: true
     name: "{{ flashlight_traefik_network }}"
+{% if flashlight_join_zenoh_network | bool %}
   "{{ flashlight_zenoh_network }}":
     external: true
     name: "{{ flashlight_zenoh_network }}"
+{% endif %}
