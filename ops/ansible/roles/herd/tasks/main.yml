@@ -30,11 +30,15 @@
       # than as a restart loop with a correct-looking config.
       - herd_admin_override_secret | length >= 32
       - (not herd_oauth2_proxy_enabled) or (herd_oauth2_proxy_client_secret | length > 0)
-      - (not herd_oauth2_proxy_enabled) or (herd_oauth2_proxy_cookie_secret | length > 0)
+      # oauth2-proxy starts only with a cookie secret of exactly 16, 24 or 32
+      # characters; any other length crash-loops it behind a green play.
+      - (not herd_oauth2_proxy_enabled) or ((herd_oauth2_proxy_cookie_secret | length) in [16, 24, 32])
     fail_msg: >-
       Missing one of HERD_POSTGRES_PASSWORD / HERD_PORTAL_KEY /
       HERD_OAUTH2_CLIENT_SECRET / HERD_OAUTH2_COOKIE_SECRET /
-      HERD_ADMIN_OVERRIDE_SECRET (>=32 chars) in the environment.
+      HERD_ADMIN_OVERRIDE_SECRET (>=32 chars) in the environment, or
+      HERD_OAUTH2_COOKIE_SECRET is not 16, 24 or 32 characters
+      (`openssl rand -hex 16` gives 32).
 
 # ADR 1131's load-bearing invariant, asserted rather than trusted: turning the
 # entitlement gate or the node-class check off leaves a console that opens
