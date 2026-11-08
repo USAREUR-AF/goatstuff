@@ -207,7 +207,7 @@ function fmtTime(t: number) { return new Date(t).toLocaleTimeString() }
         </div>
         <div>
           <h1>ZERO-TRUST&nbsp;SANDBOX</h1>
-          <p class="sub">The zero-trust foundation of the ZAGROS Backbone — made hands-on.</p>
+          <p class="sub">The zero-trust foundation of the __GOATNET__ Backbone — made hands-on.</p>
         </div>
       </div>
       <span class="spacer" />
@@ -220,7 +220,7 @@ function fmtTime(t: number) { return new Date(t).toLocaleTimeString() }
 
     <section class="hero">
       <h2>There's no <span class="accent">"inside"</span> to get into.</h2>
-      <p class="lede">The zero-trust foundation of the <b>ZAGROS Backbone</b> — notional and ephemeral here, but every layer mirrors the real design. Don't take our word for it:</p>
+      <p class="lede">The zero-trust foundation of the <b>__GOATNET__ Backbone</b> — notional and ephemeral here, but every layer mirrors the real design. Don't take our word for it:</p>
       <ul class="hero-do">
         <li><span class="hd-k">Be someone, act for real</span> — pick a principal, run a true end-to-end action, watch which aspects apply.</li>
         <li><span class="hd-k">Break something</span> — go stale, flood, write out of your lane, drop enrollment — and watch the right aspect catch it and name what it protected.</li>

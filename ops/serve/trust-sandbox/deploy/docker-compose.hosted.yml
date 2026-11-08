@@ -1,9 +1,9 @@
 # trust-sandbox — HOSTED overlay (cloud VM, mesh-joined, Ory-gated).
 #
 # Runs the sandbox from PUBLISHED images (ghcr.io/usareur-af/trust-sandbox-*) plus a
-# front gate: oauth2-proxy (OIDC → the ZAGROS Ory/Hydra) + Caddy (TLS via Let's
-# Encrypt DNS-01 over the ZAGROS Cloudflare zone). The VM is a NetBird peer on the
-# ZAGROS mesh; the service is reachable ONLY at its mesh name behind the Ory gate.
+# front gate: oauth2-proxy (OIDC → the goatnet's Ory/Hydra) + Caddy (TLS via Let's
+# Encrypt DNS-01 over the goatnet's Cloudflare zone). The VM is a NetBird peer on the
+# goatnet's mesh; the service is reachable ONLY at its mesh name behind the Ory gate.
 #
 # Used with the base compose:
 #   docker compose -f ../docker-compose.yml -f docker-compose.hosted.yml up -d
@@ -22,19 +22,26 @@ services:
   orchestrator:
     image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-43b99f2@sha256:120b168955e2112c7651bd208a890013fba431717f9d24a888441c98db87c394
     build: !reset null
-    environment:
-      TS_GOATNET: "zagros"          # goatnet label in the URI-SAN of the leaves it mints (urn:goat:<goatnet>:…)
+    # TS_GOATNET: the goatnet label in the URI-SAN of the leaves it mints
+    # (urn:goat:<goatnet>:…); unset, the example goatnet.
+    env_file:
+      - path: ./deploy/edge.env     # a deployment's own values; goat ships none
+        required: false
   web:
     image: ghcr.io/usareur-af/trust-sandbox-web:sha-43b99f2@sha256:7c1ae2b728f7aa70498e2e390b22e39a35867c8127acad1ea1838ee3ef132c98
     build: !reset null
     ports: !reset []            # not host-published; the gate fronts it
+    # TS_GOATNET from edge.env names the goatnet the pages describe.
+    env_file:
+      - path: ./deploy/edge.env
+        required: false
   spire-server:
     image: ghcr.io/usareur-af/trust-sandbox-spire:sha-43b99f2@sha256:d81a4d081abd8ef18fc006b3d9f2ef17a4ba047b892aee9e8e13b8bdc4670a67
     build: !reset null
   spire-agent:
     image: ghcr.io/usareur-af/trust-sandbox-spire:sha-43b99f2@sha256:d81a4d081abd8ef18fc006b3d9f2ef17a4ba047b892aee9e8e13b8bdc4670a67
 
-  # --- Ory front gate: oauth2-proxy → the ZAGROS Hydra (ADMINS group) -----------
+  # --- Ory front gate: oauth2-proxy → the goatnet's Hydra (ADMINS group) -----------
   gate:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
     restart: unless-stopped
@@ -44,7 +51,7 @@ services:
     environment:
       OAUTH2_PROXY_PROVIDER: oidc
       # OIDC issuer of the goatnet's Ory/Hydra (reached over the mesh from this VM).
-      OAUTH2_PROXY_OIDC_ISSUER_URL: "${TS_ZAGROS_OIDC_ISSUER}"          # e.g. https://oauth2.<site>.<zone>/  (trailing slash must match the discovery doc)
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "${TS_OIDC_ISSUER}"          # e.g. https://oauth2.<site>.<zone>/  (trailing slash must match the discovery doc)
       OAUTH2_PROXY_CLIENT_ID: "${TS_GATE_CLIENT_ID}"                  # the Ory client created for this instance
       OAUTH2_PROXY_CLIENT_SECRET: "${TS_GATE_CLIENT_SECRET}"
       OAUTH2_PROXY_COOKIE_SECRET: "${TS_GATE_COOKIE_SECRET}"          # MUST decode to 16/24/32 bytes — e.g. `openssl rand -hex 16`
@@ -66,7 +73,7 @@ services:
       OAUTH2_PROXY_COOKIE_SECURE: "true"
     networks: [trust-sandbox]
 
-  # --- TLS terminator: Caddy, LE DNS-01 over Cloudflare (ZAGROS zone) ----------
+  # --- TLS terminator: Caddy, LE DNS-01 over Cloudflare (the goatnet's zone) ----------
   edge:
     image: ghcr.io/usareur-af/caddy-cloudflare:sha-2c360bd@sha256:7016c6789e078973df6ba706a076e3411411e889e8d2d2dbf5dacc09c4222bed   # stock caddy lacks the cloudflare DNS module
     restart: unless-stopped
@@ -77,11 +84,11 @@ services:
       - "443:443"
       - "80:80"
     env_file:
-      - path: ./deploy/edge.env     # a deployment's own edge values (TS_ACME_EMAIL); goat ships none
+      - path: ./deploy/edge.env     # a deployment's own values (TS_ACME_EMAIL, TS_GOATNET); goat ships none
         required: false
     environment:
       TS_PUBLIC_HOST: "${TS_PUBLIC_HOST}"
-      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN_ZAGROS}"
+      CLOUDFLARE_API_TOKEN: "${TS_CLOUDFLARE_API_TOKEN}"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro   # path is relative to the project dir (the base compose's dir)
       - caddy-data:/data

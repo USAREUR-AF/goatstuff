@@ -87,11 +87,11 @@ fn env_or(key: &str, default: &str) -> String {
 
 /// The URI-SAN identity grammar this sandbox stamps on the leaves it mints:
 /// `urn:goat:<goatnet>:org=<org>,role=OPERATOR`. The goatnet label comes from
-/// `TS_GOATNET` (default `zagros`, the example goatnet).
+/// `TS_GOATNET` (default `goatnet`, which names no deployment).
 fn operator_uri_san(org: &str) -> String {
     format!(
         "urn:goat:{}:org={org},role=OPERATOR",
-        env_or("TS_GOATNET", "zagros")
+        env_or("TS_GOATNET", "goatnet")
     )
 }
 

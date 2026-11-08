@@ -30,14 +30,36 @@ use panoscope_core::portsets::{IntentIndex, Vocabulary};
 /// panoscope-core — that crate is linked by microscope, stethoscope,
 /// panoscope and flashlight, and none of them renders a port-set.
 const PORT_SETS_YAML: &str = include_str!("../../../ops/warrant/port-sets.yaml");
-const RULE_INTENTS_YAML: &str =
-    include_str!("../../../ops/warrant/rule-intents/netbird-acl.yaml");
+
+/// Names the goatnet's rule-intents file (ops/warrant/rule-intents/
+/// netbird-acl.yaml in its tree). The deployment's own, never compiled in;
+/// unset or unreadable, rules carry no intent annotation.
+pub const RULE_INTENTS_ENV: &str = "NETVIS_RULE_INTENTS_FILE";
+
+/// The rule-intents text: the file `NETVIS_RULE_INTENTS_FILE` names.
+#[cfg(not(test))]
+pub(crate) fn rule_intents_yaml() -> String {
+    let Some(p) = std::env::var_os(RULE_INTENTS_ENV).filter(|v| !v.is_empty()) else {
+        eprintln!("netvis: no rule intents: set {RULE_INTENTS_ENV} to the goatnet's rule-intents file; rules carry no intent annotation until then");
+        return String::new();
+    };
+    std::fs::read_to_string(&p).unwrap_or_else(|e| {
+        eprintln!("netvis: {RULE_INTENTS_ENV}={} cannot be read: {e}; rules carry no intent annotation", std::path::Path::new(&p).display());
+        String::new()
+    })
+}
+
+/// Tests read the rule intents this repository carries, as a fixture.
+#[cfg(test)]
+pub(crate) fn rule_intents_yaml() -> String {
+    include_str!("../../../ops/warrant/rule-intents/netbird-acl.yaml").to_string()
+}
 
 /// Parsed once per process, not per request.
 ///
-/// ADR 1123: client demand must never amplify into load. This is static text
-/// compiled into the binary, so the lens adds no NetBird call, no fabric
-/// query and no I/O of any kind — a pair view costs exactly what it cost
+/// ADR 1123: client demand must never amplify into load. The files are read
+/// once per process, so the lens adds no NetBird call, no fabric query and no
+/// per-request I/O — a pair view costs exactly what it cost
 /// before, plus two map lookups.
 fn warrant_vocab() -> &'static (Vocabulary, IntentIndex) {
     static CELL: std::sync::OnceLock<(Vocabulary, IntentIndex)> = std::sync::OnceLock::new();
@@ -48,7 +70,7 @@ fn warrant_vocab() -> &'static (Vocabulary, IntentIndex) {
         // not cause and cannot fix.
         (
             Vocabulary::parse(PORT_SETS_YAML).unwrap_or_default(),
-            IntentIndex::parse(RULE_INTENTS_YAML),
+            IntentIndex::parse(&rule_intents_yaml()),
         )
     })
 }

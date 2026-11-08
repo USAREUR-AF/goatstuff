@@ -38,7 +38,7 @@ defineProps<{ gate: string }>()
       <div class="cert-card pulse">
         <div class="cc-title">an X.509 certificate, taken apart</div>
         <div class="cc-row"><span class="cc-k">Subject</span><span class="cc-v">CN = acme-sensors</span><span class="cc-a">the Common Name (CN) — your access anchor</span></div>
-        <div class="cc-row"><span class="cc-k">Subject Alt Name</span><span class="cc-v">urn:goat:zagros:org=acme-sensors,role=OPERATOR</span><span class="cc-a">the identity grammar, in the SAN</span></div>
+        <div class="cc-row"><span class="cc-k">Subject Alt Name</span><span class="cc-v">urn:goat:__goatnet__:org=acme-sensors,role=OPERATOR</span><span class="cc-a">the identity grammar, in the SAN</span></div>
         <div class="cc-row"><span class="cc-k">Issuer</span><span class="cc-v">trust-sandbox CA</span><span class="cc-a">who vouched for it</span></div>
         <div class="cc-row"><span class="cc-k">Validity</span><span class="cc-v">short-lived · auto-expires</span><span class="cc-a">it lapses on its own</span></div>
         <div class="cc-row"><span class="cc-k">Public key</span><span class="cc-v">the holder’s keypair</span><span class="cc-a">proves possession on connect</span></div>

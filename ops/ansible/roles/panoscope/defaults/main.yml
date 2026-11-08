@@ -268,6 +268,11 @@ panoscope_minio_vendor_blocklist: []
 # match (no wildcards). See docs/design/panoscope.md §"Topic blocklist".
 panoscope_topic_blocklist: []
 
+# Schema families this goatnet's publishers use, ahead of the compiled-in
+# floor (ops/panoscope/src/schema.rs). Each item: {key_prefix: "<org>/**",
+# family: "<name>"}. Rendered as PANOSCOPE_SCHEMA_FAMILIES.
+panoscope_schema_families: []
+
 # Block 94 cross-surface deep-link contract — sibling-surface base URLs.
 # Each is rendered into a per-target outbound button in panoscope's side
 # panel (`diagnose ↗` → stethoscope, `tail ↗` → flashlight, `schema ↗`

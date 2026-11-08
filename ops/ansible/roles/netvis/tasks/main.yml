@@ -115,6 +115,29 @@
   no_log: true
   when: netvis_portal_keystore_dir | length > 0
 
+# The goatnet's ACL declaration and rule intents, mounted read-only. The image
+# carries none: one image serves every goatnet.
+- name: netvis | declaration directory
+  ansible.builtin.file:
+    path: "{{ netvis_compose_dir }}/declaration"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: netvis | place the goatnet's ACL declaration and rule intents
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ netvis_compose_dir }}/declaration/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: "{{ netvis_acl_declaration_src_dir }}/netbird_acl_taxonomy.yml", dest: netbird_acl_taxonomy.yml }
+    - { src: "{{ netvis_acl_declaration_src_dir }}/netbird_acl_matrix.yml", dest: netbird_acl_matrix.yml }
+    - { src: "{{ netvis_rule_intents_src }}", dest: rule-intents.yaml }
+  notify: restart netvis
+
 - name: netvis | render docker-compose.yml
   ansible.builtin.template:
     src: docker-compose.yml.j2

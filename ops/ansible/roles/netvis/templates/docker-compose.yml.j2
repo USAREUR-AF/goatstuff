@@ -33,6 +33,9 @@ services:
 {% endif %}
     env_file:
       - .env
+    volumes:
+      # The goatnet's ACL declaration and rule intents (the role places them).
+      - ./declaration:/etc/netvis/declaration:ro
     labels:
       - "traefik.enable=false"
 

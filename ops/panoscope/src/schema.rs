@@ -66,18 +66,12 @@ pub fn longest_prefix_match(key: &str, mappings: &[SchemaMapping]) -> Option<Str
     best.map(|(m, _)| m.family.clone())
 }
 
-/// The compiled-in family-map floor.
-/// Matches docs/design/panoscope.md §"Schema-color data source".
+/// The compiled-in family-map floor: product namespaces only, the same on
+/// every goatnet. A goatnet's own publishers' prefixes come from
+/// PANOSCOPE_SCHEMA_FAMILIES. Matches docs/design/panoscope.md
+/// §"Schema-color data source".
 pub fn embedded_mappings() -> Vec<SchemaMapping> {
     vec![
-        SchemaMapping {
-            key_prefix: "org11x/**".into(),
-            family: "lattice".into(),
-        },
-        SchemaMapping {
-            key_prefix: "org116x/**".into(),
-            family: "ecn".into(),
-        },
         SchemaMapping {
             key_prefix: "tak/cot/**".into(),
             family: "cot".into(),
@@ -122,11 +116,36 @@ pub struct FamilyMapResolver {
     mappings: Vec<SchemaMapping>,
 }
 
+/// Names the deployment's own family mappings: comma-separated
+/// `<key-prefix>=<family>` entries, e.g. `org-a/**=lattice,org-b/**=ecn`.
+pub const FAMILIES_ENV: &str = "PANOSCOPE_SCHEMA_FAMILIES";
+
+/// Parse `PANOSCOPE_SCHEMA_FAMILIES`. Entries without both halves are skipped.
+pub fn parse_families(v: &str) -> Vec<SchemaMapping> {
+    v.split(',')
+        .filter_map(|entry| {
+            let (prefix, family) = entry.split_once('=')?;
+            let (prefix, family) = (prefix.trim(), family.trim());
+            (!prefix.is_empty() && !family.is_empty()).then(|| SchemaMapping {
+                key_prefix: prefix.to_string(),
+                family: family.to_string(),
+            })
+        })
+        .collect()
+}
+
 impl FamilyMapResolver {
+    /// The deployment's mappings (`PANOSCOPE_SCHEMA_FAMILIES`) ahead of the
+    /// compiled-in floor; for the same prefix the deployment's family wins.
     pub fn new() -> Self {
-        Self {
-            mappings: embedded_mappings(),
-        }
+        Self::with_families(&std::env::var(FAMILIES_ENV).unwrap_or_default())
+    }
+
+    /// As `new`, with the deployment's mappings given directly.
+    pub fn with_families(families: &str) -> Self {
+        let mut mappings = parse_families(families);
+        mappings.extend(embedded_mappings());
+        Self { mappings }
     }
 }
 
@@ -170,6 +189,15 @@ mod tests {
     }
 
     #[test]
+    fn deployment_families_add_to_and_override_the_floor() {
+        let r = FamilyMapResolver::with_families("org-a/**=lattice, tak/cot/**=mine,broken,=x");
+        assert_eq!(r.resolve("org-a/sensor/track/v1"), Some("lattice".into()));
+        assert_eq!(r.resolve("tak/cot/track/v1"), Some("mine".into()));
+        assert_eq!(r.resolve("notional/peer/site-3/thing/v1"), Some("notional".into()));
+        assert!(parse_families("broken,=x,y=").is_empty());
+    }
+
+    #[test]
     fn family_map_resolver_unknown_returns_none() {
         let r = FamilyMapResolver::new();
         assert_eq!(r.resolve("unknown-vendor/system/topic"), None);
@@ -180,7 +208,7 @@ mod tests {
     fn family_map_resolver_status_and_count() {
         let r = FamilyMapResolver::new();
         assert_eq!(r.status(), ResolverStatus::FamilyMap);
-        assert_eq!(r.known_family_count(), 6);
+        assert_eq!(r.known_family_count(), 4);
     }
 
     #[test]
