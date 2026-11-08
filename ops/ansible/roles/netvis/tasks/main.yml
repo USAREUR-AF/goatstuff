@@ -8,7 +8,7 @@
 #   - netvis_netbird_url in group_vars; the token through the netbird-infra
 #     service identity (ops/netbird/service-identities.yaml)
 #   - an OIDC client registered for the fence; the fence's issuer, client
-#     secret and a cookie secret of 16, 24 or 32 characters
+#     secret and a cookie secret oauth2-proxy accepts
 #   - a mesh-DNS row for netvis_hostname (F-197: a declared-but-unresolvable
 #     service deploys dark)
 
@@ -34,14 +34,18 @@
     that:
       - netvis_oauth2_proxy_oidc_issuer_url | length > 0
       - netvis_oauth2_proxy_client_secret | length > 0
-      # oauth2-proxy measures the cookie secret in characters and starts only
-      # with exactly 16, 24 or 32; any other length crash-loops it at boot
-      # behind a green play, and netvis answers 502.
-      - (netvis_oauth2_proxy_cookie_secret | length) in [16, 24, 32]
+      # oauth2-proxy (pkg/encryption SecretBytes) uses the cookie secret as
+      # URL-safe base64 when it decodes to 16, 24 or 32 bytes (22 or 43
+      # characters, padding aside), else as raw text of exactly 16, 24 or 32
+      # characters. Anything else (a standard-base64 value with + or /, a
+      # generated password) crash-loops it at boot behind a green play, and
+      # netvis answers 502.
+      - (((netvis_oauth2_proxy_cookie_secret | length) in [16, 24, 32]) or ((netvis_oauth2_proxy_cookie_secret is match('^[A-Za-z0-9_-]+=*$')) and ((netvis_oauth2_proxy_cookie_secret | regex_replace('=+$', '') | length) in [22, 43])))
     fail_msg: >-
       netvis_oauth2_proxy_enabled=true but the issuer or client secret is unset,
       or the cookie secret is {{ netvis_oauth2_proxy_cookie_secret | length }}
-      characters; it must be 16, 24 or 32 (`openssl rand -hex 16` gives 32).
+      characters and not URL-safe base64 of 16, 24 or 32 bytes; use
+      `openssl rand -hex 16` (32 characters).
   when: netvis_oauth2_proxy_enabled | bool
 
 - name: netvis | ensure the compose project directory

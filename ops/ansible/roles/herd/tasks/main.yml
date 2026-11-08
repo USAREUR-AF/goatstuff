@@ -30,15 +30,16 @@
       # than as a restart loop with a correct-looking config.
       - herd_admin_override_secret | length >= 32
       - (not herd_oauth2_proxy_enabled) or (herd_oauth2_proxy_client_secret | length > 0)
-      # oauth2-proxy starts only with a cookie secret of exactly 16, 24 or 32
-      # characters; any other length crash-loops it behind a green play.
-      - (not herd_oauth2_proxy_enabled) or ((herd_oauth2_proxy_cookie_secret | length) in [16, 24, 32])
+      # oauth2-proxy uses the cookie secret as URL-safe base64 when it decodes
+      # to 16, 24 or 32 bytes, else as raw text of exactly 16, 24 or 32
+      # characters; anything else crash-loops it behind a green play.
+      - (not herd_oauth2_proxy_enabled) or (((herd_oauth2_proxy_cookie_secret | length) in [16, 24, 32]) or ((herd_oauth2_proxy_cookie_secret is match('^[A-Za-z0-9_-]+=*$')) and ((herd_oauth2_proxy_cookie_secret | regex_replace('=+$', '') | length) in [22, 43])))
     fail_msg: >-
       Missing one of HERD_POSTGRES_PASSWORD / HERD_PORTAL_KEY /
       HERD_OAUTH2_CLIENT_SECRET / HERD_OAUTH2_COOKIE_SECRET /
       HERD_ADMIN_OVERRIDE_SECRET (>=32 chars) in the environment, or
-      HERD_OAUTH2_COOKIE_SECRET is not 16, 24 or 32 characters
-      (`openssl rand -hex 16` gives 32).
+      HERD_OAUTH2_COOKIE_SECRET is neither 16, 24 or 32 characters nor URL-safe
+      base64 of 16, 24 or 32 bytes (`openssl rand -hex 16` gives 32 characters).
 
 # ADR 1131's load-bearing invariant, asserted rather than trusted: turning the
 # entitlement gate or the node-class check off leaves a console that opens
