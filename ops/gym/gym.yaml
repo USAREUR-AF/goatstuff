@@ -4116,24 +4116,30 @@ modules:
   - do: Rehearse the plan on the worked example with a one-line stand-in for the agreement.
     run: goatbuilder federate hello-ally --as zagros --work <your-work-dir> --dry-run
     note: >-
-      The dry run prints all eleven phases and the exact command each would run, and touches
-      nothing. The stand-in agreement is what lets phase 10 show the transport the way a real plan
+      The dry run prints all fourteen phases and the exact command each would run, and touches
+      nothing. The stand-in agreement is what lets phase 11 show the transport the way a real plan
       does. Compare your output with the tutorial's recorded checkpoint.
-  - do: Find the manual phase and the phase that reads the agreement.
+  - do: Find the two phases that stop for a person, and the phase that reads the agreement.
     note: >-
-      Phase 4 is the package exchange and stops the run on purpose. Phase 10 opens the transport
-      the agreement chose, read from the agreement itself, never from a preference order.
+      Phase 5 exchanges both packages and CA certificates through the peering directory, then
+      stops for the one call where both sides read their verifying keys and CA fingerprints
+      aloud. Phase 10 stops for the review that admits the edge on your core. Phase 11 opens the
+      transport the agreement chose, read from the agreement itself, never from a preference
+      order.
   - do: Before a live run, gather what the driver cannot create.
     note: >-
-      A counterparty with their own goatnet, an edge host on neither side's management plane, the
-      peering declared in your configuration, the partner's verifying key bound out of band, and a
-      validated-cryptography fabric image on both edges.
-  - do: Run it for real up to the manual phase, exchange packages, then resume.
-    run: goatbuilder federate <peering> --env <your-goatnet> --as <your-code> --from 5
+      A counterparty with their own goatnet, an agreement on what data flows, an edge host in node
+      class PEERING-EDGE, the peering declared in your configuration, a peering directory both
+      sides reach (FED_DIRECTORY_URL, FED_COUNTERPARTY_ID, FED_SIGNING_KEY; phase 1 refuses
+      without them), and a validated-cryptography fabric image on both edges.
+  - do: Run it to phase 5, read the keys to each other, then resume.
+    run: goatbuilder federate <peering> --env <your-goatnet> --as <your-code> --from 6
     note: >-
-      Composition refuses for any party whose key is not bound. The exit codes are specific, so
-      read them: a composition refused, a lint refused, a diff refused, a value that could not be
-      derived.
+      Phase 5 uploads your package and CA, fetches theirs, and prints both keys and CA
+      fingerprints in groups of four and a compatibility report; if their entry is not there yet,
+      run phase 5 again. Record both keys once read back. Composition refuses for any party whose
+      key is not bound. The exit codes are specific, so read them: a composition refused, a lint
+      refused, a diff refused, a value that could not be derived.
   - do: Prove it with the acceptance gate, in its own words.
     note: >-
       Carries, refuses, round-trips. A sample on your egress lane reaches the partner and theirs
@@ -4147,21 +4153,23 @@ modules:
     evidence: docs/design/cross-sovereign-federation.md
     so: >-
       Treat the bundle exchange as the start of recognition, not of access. Access is the one rule
-      in phase 8, and it exists only after the agreement is composed and verified.
+      phase 9 renders and phase 10 admits, and it exists only after the agreement is composed and
+      verified.
   - claim: >-
-      A partner key taken from the package it verifies proves nothing. Phase 5 refuses to compose
-      for any party whose verifying key was not bound out of band.
+      A partner key taken from the package it verifies, or from the directory that carried it,
+      proves nothing. Phase 6 refuses to compose for any party whose verifying key was not read
+      back on the call.
     evidence: docs/tutorials/03-boundary-node.md
     so: >-
-      Bind the partner's key over a channel authenticated independently of this link before you
-      resume at phase 5, and record both keys as the plan names.
+      Read both keys and CA fingerprints aloud, group count first, before you resume at phase 6,
+      and record both keys as the plan names.
   - claim: >-
-      Phase 10 refuses when the two parties' packages do not intersect on a transport this
+      Phase 11 refuses when the two parties' packages do not intersect on a transport this
       repository can stand up. It never substitutes the other transport.
     evidence: docs/findings/F-495-the-agreement-selects-wireguard-and-only-ipsec-has-a-play.md
     so: >-
       A tunnel that does not match the agreement is the drift the flow exists to prevent. When
-      phase 10 refuses, the fix is in the agreement, never in the play.
+      phase 11 refuses, the fix is in the agreement, never in the play.
   - claim: >-
       Denial on the fabric is silent, so the acceptance gate's refuses stage is checked by live
       fire, never by reading the configuration.
@@ -4180,8 +4188,8 @@ modules:
       Run the tutorial's dry-run rehearsal with the one-line agreement stand-in and compare your
       output with its recorded checkpoint.
     pass: >-
-      Your output matches the checkpoint line for line, you can point at the manual phase, and you
-      can say why phase 10 names the transport it does.
+      Your output matches the checkpoint line for line, you can point at the two phases that stop
+      for a person, and you can say why phase 11 names the transport it does.
     safety: read-only
   deeper:
   - doc: docs/tutorials/03-boundary-node.md
