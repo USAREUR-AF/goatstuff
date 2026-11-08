@@ -191,7 +191,7 @@ const back = BACK[topic] || BACK.jwt
           <tr><td class="k">key algorithm</td><td><b>ECDSA P-256</b> (NIST secp256r1) keypair <span class="std">open standard</span></td></tr>
           <tr><td class="k">signature</td><td><b>ECDSA-with-SHA-256</b> — the CA signs the leaf <span class="std">standard</span></td></tr>
           <tr><td class="k mono">CN</td><td>the Common Name — the access anchor the ACL keys on</td></tr>
-          <tr><td class="k">URI-SAN</td><td><span class="mono">urn:goat:zagros:org=…,role=…</span> — the identity grammar <span class="ours">our convention</span></td></tr>
+          <tr><td class="k">URI-SAN</td><td><span class="mono">urn:goat:__goatnet__:org=…,role=…</span> — the identity grammar <span class="ours">our convention</span></td></tr>
           <tr><td class="k">issuer</td><td>the goat CA — who vouched for it</td></tr>
           <tr><td class="k">validity</td><td>short-lived; rotation is a re-key, the cut is mesh-first</td></tr>
         </table>
@@ -287,12 +287,12 @@ const back = BACK[topic] || BACK.jwt
         <div class="panel-head"><span class="dot accent" /><h3>Where this is today</h3></div>
         <p class="pp"><span class="badge-now">LIVE</span> One internal SPIRE trust domain on the goatnet edge node,
           issuing auto-rotated CN-bearing SVIDs to workloads we run the agent for (the fabric-health meter is the first
-          live consumer on ZAGROS).</p>
+          live consumer on __GOATNET__).</p>
         <p class="pp"><span class="badge-soon">DESIGNED</span> A mission partner runs its <b>own</b> SPIRE inside its
           pod — its own trust domain — and <b>federates</b>, exchanging only public trust bundles. The pod then issues
           and rotates its workloads <b>locally</b> and never hits the goat core for certs; each side's SPIRE is a SPOF
           only for its own domain. This federation is designed-not-built — it lands with the moon-pod SPIRE overlay
-          (zagros-moon-pod).</p>
+          (__goatnet__-moon-pod).</p>
       </div>
     </template>
 
@@ -414,10 +414,10 @@ const back = BACK[topic] || BACK.jwt
         <div class="panel-head"><span class="dot accent" /><h3>Where this is today</h3></div>
         <p class="pp"><span class="badge-now">LIVE</span> Operator-driven rotation (portal
           <span class="mono">POST /api/vendors/&lt;anchor&gt;/rotate</span> + <span class="mono">goat admin rotate</span>)
-          and SPIRE auto-rotation are deployed and live-fired on ZAGROS today.</p>
+          and SPIRE auto-rotation are deployed and live-fired on __GOATNET__ today.</p>
         <p class="pp"><span class="badge-soon">DESIGNED</span> A <b>federated</b> partner pod rotates its <i>own</i>
           workloads locally (it runs its own SPIRE) — designed-not-built; it lands with the moon-pod SPIRE overlay
-          (zagros-moon-pod).</p>
+          (__goatnet__-moon-pod).</p>
       </div>
     </template>
 
@@ -480,11 +480,11 @@ const back = BACK[topic] || BACK.jwt
       <div class="panel now-soon">
         <div class="panel-head"><span class="dot accent" /><h3>Where this is today</h3></div>
         <p class="pp"><span class="badge-now">LIVE</span> The mesh-first cut (NetBird / Ory peer + setup-key removal,
-          ACL de-authorization) runs on ZAGROS today via <span class="mono">goat admin onboard &lt;handle&gt; --revoke</span>.</p>
+          ACL de-authorization) runs on __GOATNET__ today via <span class="mono">goat admin onboard &lt;handle&gt; --revoke</span>.</p>
         <p class="pp"><span class="badge-soon">PARTLY BUILT</span> The full registry-driven enumerate-and-cut depends on
           the issuance registry (staged). <span class="badge-soon">DESIGNED</span> A <b>federated</b> partner pod
           revokes its <i>own</i> workloads locally — designed-not-built; it lands with the moon-pod SPIRE overlay
-          (zagros-moon-pod).</p>
+          (__goatnet__-moon-pod).</p>
       </div>
     </template>
 

@@ -3,7 +3,7 @@
 //! `init-ca` mode mints the CA root, zenohd's server cert, and the observer
 //! leaf into the shared certs volume (so zenohd can boot before the long-lived
 //! orchestrator). `serve` mode reloads the CA key and mints persona leaves on
-//! demand — carrying the real URI-SAN grammar (`urn:goat:zagros:org=<anchor>,…`)
+//! demand — carrying the real URI-SAN grammar (`urn:goat:<goatnet>:org=<anchor>,…`)
 //! and CN=<anchor> (the axis the zenohd ACL keys on). This is the portal/CA
 //! issuance path (gate ②); SPIRE is the other (gate ③), see spire.rs.
 

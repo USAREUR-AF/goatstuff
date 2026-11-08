@@ -104,21 +104,21 @@ docker build -f deploy/Dockerfile.caddy -t caddy-cloudflare:local .
 ```
 
 ```bash
-# instance A  (TS_ZAGROS_OIDC_ISSUER must match the discovery doc EXACTLY, incl. trailing slash)
+# instance A  (TS_OIDC_ISSUER must match the discovery doc EXACTLY, incl. trailing slash)
 export TS_PUBLIC_HOST=trust-sandbox.zagros.netbird.zagros.example
 export TS_PUBLIC_ORIGIN=https://trust-sandbox.zagros.netbird.zagros.example   # used by the in-sandbox teaching IdP
-export TS_ZAGROS_OIDC_ISSUER=https://oauth2.zagros.netbird.zagros.example/
+export TS_OIDC_ISSUER=https://oauth2.zagros.netbird.zagros.example/
 export TS_GATE_CLIENT_ID=...  TS_GATE_CLIENT_SECRET=...
 export TS_GATE_COOKIE_SECRET="$(openssl rand -hex 16)"   # MUST be 16/24/32 bytes — `-hex 16` = 32 bytes (NOT `-base64 32`, which is 44)
 # export TS_GATE_ALLOWED_GROUPS=ADMINS                   # optional; empty (default) = any authenticated mesh peer
-export CLOUDFLARE_API_TOKEN_ZAGROS=...
+export TS_CLOUDFLARE_API_TOKEN=...
 docker compose -p trust-sandbox-a -f docker-compose.yml -f deploy/docker-compose.hosted.yml up -d
 ```
 
 `deploy/edge.env` (optional, not shipped) carries a deployment's own values: `TS_ACME_EMAIL`
 for the edge, and `TS_GOATNET`, the goatnet the sandbox models. The orchestrator stamps
 `TS_GOATNET` into the URI-SAN of the leaves it mints, and the web container rewrites the
-pages to name it. Unset, both use the example goatnet.
+pages to name it. Unset, both say `goatnet`, which names no deployment.
 
 A second instance on the **same VM** must SHARE the edge (one host = one :443): bring
 it up without its own edge (`up -d certs-init orchestrator web spire-server spire-agent

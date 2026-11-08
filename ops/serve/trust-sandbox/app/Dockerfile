@@ -23,7 +23,7 @@ LABEL org.opencontainers.image.title="trust-sandbox-web" \
       org.opencontainers.image.description="Zero-trust identity playground front-end — docs/design/trust-sandbox.md"
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-# TS_GOATNET (unset: the example goatnet) names the goatnet the pages describe.
+# TS_GOATNET (unset: "goatnet") names the goatnet the pages describe.
 COPY app/goatnet-name.sh /docker-entrypoint.d/40-goatnet-name.sh
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

@@ -66,18 +66,12 @@ pub fn longest_prefix_match(key: &str, mappings: &[SchemaMapping]) -> Option<Str
     best.map(|(m, _)| m.family.clone())
 }
 
-/// The compiled-in family-map floor.
-/// Matches docs/design/panoscope.md §"Schema-color data source".
+/// The compiled-in family-map floor: product namespaces only, the same on
+/// every goatnet. A goatnet's own publishers' prefixes come from
+/// PANOSCOPE_SCHEMA_FAMILIES. Matches docs/design/panoscope.md
+/// §"Schema-color data source".
 pub fn embedded_mappings() -> Vec<SchemaMapping> {
     vec![
-        SchemaMapping {
-            key_prefix: "org11x/**".into(),
-            family: "lattice".into(),
-        },
-        SchemaMapping {
-            key_prefix: "org116x/**".into(),
-            family: "ecn".into(),
-        },
         SchemaMapping {
             key_prefix: "tak/cot/**".into(),
             family: "cot".into(),
@@ -214,7 +208,7 @@ mod tests {
     fn family_map_resolver_status_and_count() {
         let r = FamilyMapResolver::new();
         assert_eq!(r.status(), ResolverStatus::FamilyMap);
-        assert_eq!(r.known_family_count(), 6);
+        assert_eq!(r.known_family_count(), 4);
     }
 
     #[test]

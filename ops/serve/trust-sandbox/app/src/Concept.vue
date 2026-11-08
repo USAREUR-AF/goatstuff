@@ -35,7 +35,7 @@ const ASPECTS: Aspect[] = [
     q: 'What signed identity do you present?',
     tagline: 'A provable, signed identity for machines and external-org systems — like a scoped, time-limited, revocable keycard. The connection is mutual TLS: both sides show photo ID.',
     points: [
-      'A trusted Certificate Authority (CA) signs a leaf carrying a Common Name (CN, the access anchor) and the identity grammar in its Subject Alternative Name (SAN): urn:goat:zagros:org=…,role=….',
+      'A trusted Certificate Authority (CA) signs a leaf carrying a Common Name (CN, the access anchor) and the identity grammar in its Subject Alternative Name (SAN): urn:goat:__goatnet__:org=…,role=….',
       'Mutual TLS (mTLS) means both the client and the server present a chain-verifiable certificate — neither side is trusted by address.',
       'Short-lived and re-issuable: rotation is a re-key (a fresh leaf for the same anchor), not a revoke; the cut is mesh-first.',
       'Identity is a signed thing you present per connection — not a username, an IP, or a hostname.',
