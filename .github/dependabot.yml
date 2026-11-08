@@ -1,5 +1,8 @@
-# Base-image refresh (goatcore ADR 1220). Each role file under ops/base-images/
-# pins one base by digest; Dependabot opens a PR when the pinned tag has a newer
+# Base-image refresh (goatcore ADR 1220) for the role only this repository
+# defines, node-build. goatcore's Dependabot refreshes the roles goatcore owns
+# (rust-build, runtime-cc); this repository copies them from goatcore main
+# (base-images-shared.yml, .github/scripts/base-images-shared.sh --fix). The role
+# file pins one base by digest; Dependabot opens a PR when the pinned tag has a newer
 # build. The base-images check then fails until
 # `python3 ops/base-images/base-images.py sync` rewrites the Dockerfile defaults;
 # push that to the PR, and the rewritten Dockerfiles rebuild the images.
@@ -8,8 +11,6 @@ updates:
   - package-ecosystem: docker
     directories:
       - /ops/base-images/node-build
-      - /ops/base-images/runtime-cc
-      - /ops/base-images/rust-build
     schedule:
       interval: weekly
       day: monday
