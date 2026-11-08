@@ -22,12 +22,19 @@ services:
   orchestrator:
     image: ghcr.io/usareur-af/trust-sandbox-orchestrator:sha-43b99f2@sha256:120b168955e2112c7651bd208a890013fba431717f9d24a888441c98db87c394
     build: !reset null
-    environment:
-      TS_GOATNET: "zagros"          # goatnet label in the URI-SAN of the leaves it mints (urn:goat:<goatnet>:…)
+    # TS_GOATNET: the goatnet label in the URI-SAN of the leaves it mints
+    # (urn:goat:<goatnet>:…); unset, the example goatnet.
+    env_file:
+      - path: ./deploy/edge.env     # a deployment's own values; goat ships none
+        required: false
   web:
     image: ghcr.io/usareur-af/trust-sandbox-web:sha-43b99f2@sha256:7c1ae2b728f7aa70498e2e390b22e39a35867c8127acad1ea1838ee3ef132c98
     build: !reset null
     ports: !reset []            # not host-published; the gate fronts it
+    # TS_GOATNET from edge.env names the goatnet the pages describe.
+    env_file:
+      - path: ./deploy/edge.env
+        required: false
   spire-server:
     image: ghcr.io/usareur-af/trust-sandbox-spire:sha-43b99f2@sha256:d81a4d081abd8ef18fc006b3d9f2ef17a4ba047b892aee9e8e13b8bdc4670a67
     build: !reset null
@@ -77,7 +84,7 @@ services:
       - "443:443"
       - "80:80"
     env_file:
-      - path: ./deploy/edge.env     # a deployment's own edge values (TS_ACME_EMAIL); goat ships none
+      - path: ./deploy/edge.env     # a deployment's own values (TS_ACME_EMAIL, TS_GOATNET); goat ships none
         required: false
     environment:
       TS_PUBLIC_HOST: "${TS_PUBLIC_HOST}"

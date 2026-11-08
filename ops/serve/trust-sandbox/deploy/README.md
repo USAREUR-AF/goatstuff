@@ -115,6 +115,11 @@ export CLOUDFLARE_API_TOKEN_ZAGROS=...
 docker compose -p trust-sandbox-a -f docker-compose.yml -f deploy/docker-compose.hosted.yml up -d
 ```
 
+`deploy/edge.env` (optional, not shipped) carries a deployment's own values: `TS_ACME_EMAIL`
+for the edge, and `TS_GOATNET`, the goatnet the sandbox models. The orchestrator stamps
+`TS_GOATNET` into the URI-SAN of the leaves it mints, and the web container rewrites the
+pages to name it. Unset, both use the example goatnet.
+
 A second instance on the **same VM** must SHARE the edge (one host = one :443): bring
 it up without its own edge (`up -d certs-init orchestrator web spire-server spire-agent
 zenohd hydra hydra-init coredns target gate`), connect the edge to its network, and
