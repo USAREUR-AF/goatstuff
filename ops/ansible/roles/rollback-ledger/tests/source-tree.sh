@@ -5,7 +5,7 @@
 # ONE key, `source_tree`, and never again at the top level.
 #
 # Runs the real role on localhost against a scratch ledger, with no privilege
-# escalation, in four cases:
+# escalation, in five cases:
 #   1. GOAT_DEPLOY_SOURCE_TREE set (every play through ansible-preflight.sh),
 #      assembled marker present: source_tree is the exported object, verbatim.
 #   2. no export, assembled marker with goatstuff and pre-disclosure patches:
@@ -15,6 +15,9 @@
 #      overlay_commit, embargo): the role reads it as the prior row, appends
 #      the new row, the end-of-play promote marks it `deploy`, and the old row
 #      is left byte for byte.
+#   5. the same ref deployed again: a new row only when the overlay commit or the
+#      set of pre-disclosure patches differs from the prior row's; a plain
+#      checkout (no source_tree) keeps the ref-only comparison.
 # No row carries top-level goatcore_ref, overlay_commit or embargo.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -93,6 +96,28 @@ if [ "$(head -1 "$S/old/deploy-history.jsonl")" = "$OLD" ]; then ok "old: the ol
 got="$(last old '[r.get("prior_ref"), r.get("action")]')"
 if [ "$got" = '["ref-0","deploy"]' ]; then ok "old: prior_ref read from the old row; new row promoted"; else bad "old: $got"; fi
 no_dupes old
+
+echo "[rollback-ledger/source-tree] case 5: same ref, the tree changes"
+rows_in() { wc -l < "$S/$1/deploy-history.jsonl" | tr -d ' '; }
+TREE_A='{"goatcore":"'$CORE'","overlay":"'$OVER'"}'
+TREE_P='{"embargo":["A"],"goatcore":"'$CORE'","overlay":"'$OVER'"}'
+OVER2=4444444444444444444444444444444444444444
+TREE_O='{"embargo":["A"],"goatcore":"'$CORE'","overlay":"'$OVER2'"}'
+SRC="$TREE_A" run tree ref-1
+SRC="$TREE_A" run tree ref-1
+if [ "$(rows_in tree)" = 1 ]; then ok "tree: same ref, same tree: no new row"; else bad "tree: $(rows_in tree) rows after an unchanged re-run"; fi
+SRC="$TREE_P" run tree ref-1
+got="$(last tree '[r.get("ref"), r.get("prior_ref"), r.get("action"), r["source_tree"].get("embargo")]')"
+if [ "$(rows_in tree)" = 2 ] && [ "$got" = '["ref-1","ref-1","deploy",["A"]]' ]; then ok "tree: a patch added with the same ref writes a promoted row"; else bad "tree: $(rows_in tree) rows, last $got"; fi
+SRC="$TREE_P" run tree ref-1
+if [ "$(rows_in tree)" = 2 ]; then ok "tree: the same patched tree again: no new row"; else bad "tree: $(rows_in tree) rows after re-running the patched tree"; fi
+SRC="$TREE_O" run tree ref-1
+if [ "$(rows_in tree)" = 3 ]; then ok "tree: a new overlay commit with the same ref writes a row"; else bad "tree: $(rows_in tree) rows after an overlay change"; fi
+SRC="$TREE_A" run tree ref-1
+got="$(last tree '"embargo" in r["source_tree"]')"
+if [ "$(rows_in tree)" = 4 ] && [ "$got" = false ]; then ok "tree: the patch removed writes a row without it"; else bad "tree: $(rows_in tree) rows, embargo still present: $got"; fi
+SRC="" run tree ref-1
+if [ "$(rows_in tree)" = 4 ]; then ok "tree: a plain checkout with the same ref keeps the ref-only comparison"; else bad "tree: $(rows_in tree) rows after a plain-checkout run"; fi
 
 if [ "$fails" -gt 0 ]; then
   echo "[rollback-ledger/source-tree] FAIL ($fails)"
