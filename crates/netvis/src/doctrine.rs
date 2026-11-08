@@ -1,10 +1,11 @@
 //! The declared vocabulary, read from the files Ansible acts on.
 //!
 //! `netbird_acl_taxonomy.yml` carries a description for every group suffix and
-//! `netbird_acl_matrix.yml` one for every rule. Both are compiled in with
-//! `include_str!`, so what this service says a group is FOR cannot drift from
-//! what `netbird-acl-bootstrap.yml` actually creates. A hand-written gloss
-//! would have drifted the first time someone added a group.
+//! `netbird_acl_matrix.yml` one for every rule. They are the deployment's own
+//! and are never compiled in: the netvis role mounts the goatnet's copies and
+//! names the directory in `NETVIS_ACL_DECLARATION_DIR`, so what this service
+//! says a group is FOR is what `netbird-acl-bootstrap.yml` acts on for that
+//! goatnet, and one image serves every goatnet.
 //!
 //! Keyed by SUFFIX, not by full group name. The taxonomy defines a shared
 //! vocabulary and the prefix only says which scope an instance belongs to: a
@@ -16,19 +17,58 @@ use std::collections::BTreeMap;
 
 use panoscope_core::meshgraph::netvis::DeclaredSuffix;
 
-pub const TAXONOMY_YAML: &str = include_str!("../../../ops/ansible/netbird_acl_taxonomy.yml");
-pub const MATRIX_YAML: &str = include_str!("../../../ops/ansible/netbird_acl_matrix.yml");
+/// Names the directory holding the goatnet's netbird_acl_taxonomy.yml and
+/// netbird_acl_matrix.yml.
+pub const ACL_DIR_ENV: &str = "NETVIS_ACL_DECLARATION_DIR";
+
+/// The two files, read once. Unset or unreadable: None, said once on stderr
+/// with what to supply; the matrix still renders from live data, without the
+/// declared purpose and without assertions.
+#[cfg(not(test))]
+fn files() -> Option<&'static (String, String)> {
+    static CELL: std::sync::OnceLock<Option<(String, String)>> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| {
+        let Some(dir) = std::env::var_os(ACL_DIR_ENV).filter(|v| !v.is_empty()) else {
+            eprintln!(
+                "netvis: no ACL declaration: set {ACL_DIR_ENV} to a directory holding the \
+                 goatnet's netbird_acl_taxonomy.yml and netbird_acl_matrix.yml (the netvis \
+                 role mounts them); group purposes and assertions are off until then"
+            );
+            return None;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        let read = |n: &str| match std::fs::read_to_string(dir.join(n)) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!(
+                    "netvis: {ACL_DIR_ENV}={} but {n} cannot be read: {e}; group purposes and \
+                     assertions are off",
+                    dir.display()
+                );
+                None
+            }
+        };
+        Some((read("netbird_acl_taxonomy.yml")?, read("netbird_acl_matrix.yml")?))
+    })
+    .as_ref()
+}
+
+/// Tests read the declaration this repository carries, as a fixture.
+#[cfg(test)]
+pub(crate) const TAXONOMY_YAML: &str =
+    include_str!("../../../ops/ansible/netbird_acl_taxonomy.yml");
+#[cfg(test)]
+pub(crate) const MATRIX_YAML: &str = include_str!("../../../ops/ansible/netbird_acl_matrix.yml");
+#[cfg(test)]
+fn files() -> Option<&'static (String, String)> {
+    static CELL: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+    Some(CELL.get_or_init(|| (TAXONOMY_YAML.to_string(), MATRIX_YAML.to_string())))
+}
 
 /// The ACL declaration, parsed for the assertion evaluator.
-///
-/// The two files are compiled in HERE and not in `panoscope_core::aclcheck`,
-/// which is a library: an `include_str!` at that level would force every image
-/// linking it — microscope, stethoscope, panoscope, flashlight, none of which
-/// read an ACL assertion — to ship `ops/ansible/*.yml` in order to compile,
-/// and would rebuild all of them on a taxonomy edit. netvis already carries
-/// these bytes for `group_purpose`; the assertion gate rides along.
 pub fn declaration() -> Option<panoscope_core::aclcheck::Declaration> {
-    panoscope_core::aclcheck::Declaration::parse(TAXONOMY_YAML, MATRIX_YAML).ok()
+    let (tax, mat) = files()?;
+    panoscope_core::aclcheck::Declaration::parse(tax, mat).ok()
 }
 
 #[derive(serde::Deserialize)]
@@ -137,8 +177,9 @@ impl Doctrine {
 /// blank the security picture.
 pub fn load(site: &str) -> Option<Doctrine> {
     let site = site.trim().to_lowercase();
-    let tax: TaxonomyFile = serde_yaml::from_str(TAXONOMY_YAML).ok()?;
-    let mat: MatrixFile = serde_yaml::from_str(MATRIX_YAML).ok()?;
+    let (tax, mat) = files()?;
+    let tax: TaxonomyFile = serde_yaml::from_str(tax).ok()?;
+    let mat: MatrixFile = serde_yaml::from_str(mat).ok()?;
     let me = tax.netbird_acl_taxonomy.get(&site)?;
     Some(Doctrine {
         site_prefix: me.site_prefix.clone(),

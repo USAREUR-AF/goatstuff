@@ -5,9 +5,11 @@
 # runtime-cc base (ops/base-images/, goatcore ADR 1220), mirroring
 # crates/microscope/Dockerfile.
 #
-# Build context is the repo root, because the binary include_str!s several
-# things that live outside the crate: the design-system tokens, the two ACL
-# YAMLs, and the warrant registry (port-sets + rule intents). Those COPY lines are load-bearing — an include_ that crosses the
+# Build context is the repo root, because the binary include_str!s two things
+# that live outside the crate: the design-system tokens and the port-set
+# vocabulary. The goatnet's ACL declaration and rule intents are NOT built in:
+# the netvis role mounts them (NETVIS_ACL_DECLARATION_DIR,
+# NETVIS_RULE_INTENTS_FILE). Those COPY lines are load-bearing — an include_ that crosses the
 # crate boundary without its build-context entry compiles locally and fails
 # only in CI, which is exactly how microscope's image broke once already:
 #
@@ -28,16 +30,9 @@ WORKDIR /build
 COPY crates/ ./crates/
 # The page shell serves the design-system tokens.
 COPY docs/design-system/colors_and_type.css ./docs/design-system/
-# doctrine.rs compiles the declared vocabulary in, so what this service says a
-# group is FOR cannot drift from what netbird-acl-bootstrap.yml creates.
-COPY ops/ansible/netbird_acl_taxonomy.yml ./ops/ansible/
-COPY ops/ansible/netbird_acl_matrix.yml ./ops/ansible/
-# The warrant lens (ADR 1129) compiles in the port-set vocabulary and the rule
-# intents, so a pair view can name the set a rule's ports ARE and say whether
-# the grant expires. Exactly the failure this file's header warns about: both
-# include_str!s compiled locally and broke only the image build.
+# The warrant lens (ADR 1129) compiles in the port-set vocabulary, product
+# data that is the same for every goatnet.
 COPY ops/warrant/port-sets.yaml ./ops/warrant/
-COPY ops/warrant/rule-intents/netbird-acl.yaml ./ops/warrant/rule-intents/
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \

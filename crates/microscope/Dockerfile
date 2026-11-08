@@ -25,14 +25,6 @@ WORKDIR /build
 COPY crates/ ./crates/
 COPY docs/design-system/colors_and_type.css ./docs/design-system/
 COPY docs/design-system/components.css ./docs/design-system/
-# netvis compiles the declared mesh vocabulary in (netvis.rs) so the page's
-# prose cannot drift from what netbird-acl-bootstrap.yml acts on. Same
-# include_str! pattern as the design-system CSS above: the file must be in
-# context or the build fails at compile time — which is the intended
-# behaviour, since a netvis with no taxonomy would silently lose the
-# "what each group is for" column.
-COPY ops/ansible/netbird_acl_taxonomy.yml ./ops/ansible/
-COPY ops/ansible/netbird_acl_matrix.yml ./ops/ansible/
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \

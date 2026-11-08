@@ -121,3 +121,9 @@ netvis_healthcheck_image: "curlimages/curl:8.8.0"
 # calls beyond the ones the page already makes.
 netvis_assertions_timer_enabled: true
 netvis_assertions_interval: 15min
+
+# Where the role takes the goatnet's ACL declaration (netbird_acl_taxonomy.yml,
+# netbird_acl_matrix.yml) and rule intents from on the controller. The image
+# carries neither; the role mounts both at /etc/netvis/declaration.
+netvis_acl_declaration_src_dir: "{{ playbook_dir }}"
+netvis_rule_intents_src: "{{ playbook_dir }}/../warrant/rule-intents/netbird-acl.yaml"

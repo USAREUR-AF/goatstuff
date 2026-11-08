@@ -216,9 +216,7 @@ fn warrant_registry() -> &'static (
                 "../../../ops/warrant/port-sets.yaml"
             ))
             .unwrap_or_default(),
-            panoscope_core::portsets::IntentIndex::parse(include_str!(
-                "../../../ops/warrant/rule-intents/netbird-acl.yaml"
-            )),
+            panoscope_core::portsets::IntentIndex::parse(&api::rule_intents_yaml()),
         )
     })
 }
