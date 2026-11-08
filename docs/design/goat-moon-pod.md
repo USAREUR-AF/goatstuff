@@ -6,13 +6,13 @@
 |---|---|
 | Status | Proposed (Phase 2D-late / Phase 3 commitment) |
 | ADR anchor | [`../adr/0223-goat-moon-pod-repo-containment.md`](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-goat-moon-pod-repo-containment.md) |
-| Companions | [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md), [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md), [`partner-reference-architecture.md`](https://github.com/usareur-af/goatdocs/blob/main/docs/design/partner-reference-architecture.md), [`mission-partner-sharing.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/mission-partner-sharing.md) |
+| Companions | [`moon-pod-conformance.md`](moon-pod-conformance.md), [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md), [`partner-reference-architecture.md`](https://github.com/usareur-af/goatdocs/blob/main/docs/design/partner-reference-architecture.md), [`mission-partner-sharing.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/mission-partner-sharing.md) |
 | Reference implementation | [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) (separate repo; Apache 2.0; private during MVP, public at GA) |
 | Implementation tracker | `../project/implementation-plan.md` Block 60 |
 
 ## What this is
 
-The **abstract spec** for a goat-moon-pod — a deployable instance of the sovereign-orbital partner-relationship pattern. This document defines the architectural shape; the requirements contract lives at [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md); the reference implementation lives at [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod); a guide for vendors who want to build their own lives at [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md).
+The **abstract spec** for a goat-moon-pod — a deployable instance of the sovereign-orbital partner-relationship pattern. This document defines the architectural shape; the requirements contract lives at [`moon-pod-conformance.md`](moon-pod-conformance.md); the reference implementation lives at [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod); a guide for vendors who want to build their own lives at [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md).
 
 ## The shape in one paragraph
 
@@ -53,11 +53,11 @@ Single host. Single bundle. Two networks (partner's local network + goat partner
 
 ## Required pieces
 
-A conformant goat-moon-pod has six pieces. Each piece has multiple acceptable implementations; the partner (or vendor building a non-`open` moon-pod) picks. The contract is that the *seven requirements* of [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) are met at the boundary, not that any specific implementation is used.
+A conformant goat-moon-pod has six pieces. Each piece has multiple acceptable implementations; the partner (or vendor building a non-`open` moon-pod) picks. The contract is that the *seven requirements* of [`moon-pod-conformance.md`](moon-pod-conformance.md) are met at the boundary, not that any specific implementation is used.
 
 ### 1. Network client (partner-net peer)
 
-Joins the goat-hosted **partner-net** — a separate netbird mgmt-plane instance distinct from the main fabric mgmt-plane — over WireGuard. Setup key embedded in the signed bundle at first deploy; rotated thereafter. Partner-net is goat-hosted *coordination metadata only*; partner data does not transit or persist there. Not a sovereignty violation per [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) §"Sovereignty-floor edge cases" E1.
+In the exercise environment, joins the goat-hosted **partner-net** — a separate netbird mgmt-plane instance distinct from the main fabric mgmt-plane — over WireGuard. Setup key embedded in the signed bundle at first deploy; rotated thereafter. Partner-net is goat-hosted *coordination metadata only*; partner data does not transit or persist there. Not a sovereignty violation per [`moon-pod-conformance.md`](moon-pod-conformance.md) §"Sovereignty-floor edge cases" E1.
 
 Acceptable implementations: native netbird client (default), wireguard-tools with manual config, equivalent ZTOL client.
 
@@ -75,7 +75,7 @@ Acceptable implementations: polygloat (default), partner-built translator, vendo
 
 ### 4. Local identity database
 
-Holds the partner's operator credentials. Standards-compliant OIDC or SAML. Partner administers the database; goat does not host it. Per [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) §"Sovereignty floor" requirement 6(b).
+Holds the partner's operator credentials. Standards-compliant OIDC or SAML. Partner administers the database; goat does not host it. Per [`moon-pod-conformance.md`](moon-pod-conformance.md) §"Sovereignty floor" requirement 6(b).
 
 Acceptable implementations (the reference pod ships overlays for all four):
 
@@ -89,7 +89,7 @@ Partner picks at install time. The pod's web UI auth federates to whatever they 
 
 ### 5. Audit sink
 
-Retains 90+ days of access logs covering reads and writes to `release/<partner>/...` data. Per [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) requirement 4. Format flexible.
+Retains 90+ days of access logs covering reads and writes to `release/<partner>/...` data. Per [`moon-pod-conformance.md`](moon-pod-conformance.md) requirement 4. Format flexible.
 
 Acceptable implementations: Loki (default in reference pod), journald with retention configured, OpenSearch, partner SIEM integration, OpenObserve, partner-existing-Splunk via syslog-forwarder.
 
@@ -121,7 +121,7 @@ Per [ADR 0223](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-go
 
 | Concern | Location |
 |---|---|
-| Requirements contract (the seven requirements) | This repo: [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) |
+| Requirements contract (the seven requirements) | This repo: [`moon-pod-conformance.md`](moon-pod-conformance.md) |
 | Boundary enforcement (release-bridge, schema-enforcer, allowlist, conditioning) | This repo: `zenoh-plugins/release-bridge/` + Ansible roles |
 | Coordination plane (partner-net netbird-mgmt instance) | This repo: `terraform/` + `ops/ansible/` |
 | Reference implementation (bundle, IdP overlays, hardware imaging, web UI, first-boot scripts, signing pipeline) | **Canonical:** separate repo [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod). In-monorepo dev mirror at `incubator/goat-moon-open-pod/` (kept in sync; the standalone repo wins on divergence). |
@@ -194,7 +194,7 @@ This path is what the conformance smoke-test at [`../../tests/moon-pod-conforman
 
 The pod preserves partner sovereignty because:
 
-- **Data lands on partner hardware** in partner's facility, on partner's power. Per [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) requirement 6(a).
+- **Data lands on partner hardware** in partner's facility, on partner's power. Per [`moon-pod-conformance.md`](moon-pod-conformance.md) requirement 6(a).
 - **Partner's operators authenticate through partner's IdP** — even though we shipped the IdP binary, the partner administers it, the credential database is theirs. Per requirement 6(b).
 - **Partner audit logs live in partner storage**; we do not aggregate. Per requirement 6(c).
 - **Partner can fork the bundle** at any time and run the partner-net coordination plane themselves. The bundle is open source (Apache 2.0); the partner-net mgmt-plane Ansible roles + Terraform live in this repo as documented; there is no architectural lock-in. Per requirement 7.
@@ -236,7 +236,7 @@ These are all implementation choices, not contract concerns.
 
 - [ADR 0223](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-goat-moon-pod-repo-containment.md) — repo-containment + naming-pattern + vendor-extensibility-bones decision
 - [ADR 0821](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0821-mission-partner-sharing-pattern.md) — mission-partner-sharing anchor
-- [`partner-receiver-requirements.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/partner-receiver-requirements.md) — the seven-requirement contract
+- [`moon-pod-conformance.md`](moon-pod-conformance.md) — the seven-requirement contract
 - [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md) — for vendors building their own
 - [`partner-reference-architecture.md`](https://github.com/usareur-af/goatdocs/blob/main/docs/design/partner-reference-architecture.md) — Tier-0-aligned reference (when partner has more engineering capacity)
 - [`mission-partner-sharing.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/mission-partner-sharing.md) — design companion to ADR 0821
