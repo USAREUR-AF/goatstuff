@@ -4106,6 +4106,9 @@ modules:
     your goatnet release chosen data to a counterparty who runs their own goatnet under their own
     authority, without either side joining the other's network. You rehearse the plan on your
     laptop; the live run needs the counterparty, so it is the one tutorial you cannot finish alone.
+    The live run is becoming four stages of one command, goatbuilder federate plan, deploy, test
+    and status. Status: WIP — gate: the federation end-to-end test drives both sides with
+    goatbuilder federate alone.
   walkthrough:
   - do: Read the three levels of access and what holds a partner at each one.
     note: >-
@@ -4132,7 +4135,7 @@ modules:
       class PEERING-EDGE, the peering declared in your configuration, a peering directory both
       sides reach (FED_DIRECTORY_URL, FED_COUNTERPARTY_ID, FED_SIGNING_KEY; phase 1 refuses
       without them), and a validated-cryptography fabric image on both edges.
-  - do: Run it to phase 5, read the keys to each other, then resume.
+  - do: Until the default switch, run it to phase 5, read the keys to each other, then resume.
     run: goatbuilder federate <peering> --env <your-goatnet> --as <your-code> --from 6
     note: >-
       Phase 5 uploads your package and CA, fetches theirs, and prints both keys and CA
@@ -4140,6 +4143,23 @@ modules:
       run phase 5 again. Record both keys once read back. Composition refuses for any party whose
       key is not bound. The exit codes are specific, so read them: a composition refused, a lint
       refused, a diff refused, a value that could not be derived.
+  - do: After the switch, run the four stages.
+    run: goatbuilder federate <peering> --env <your-goatnet> --as <your-code>
+    note: >-
+      The command runs plan, deploy, test and status in order; each is also a command of its own.
+      The one decision is the partner and the release sets it receives: your federation.toml
+      owns the offered sets, and the peering's declaration may only narrow them. Plan validates,
+      measures and proposes the per-peering values as a change you review. Confirmation 1: you
+      and the partner read the verifying keys and CA fingerprints aloud and compare the agreement
+      digest. Confirmation 2: you approve what your core admits, including the reviewed
+      configuration change; the approval is bound to the plan's hash. Deploy rechecks live
+      prerequisites just before any change and, when re-run, resumes by inspecting actual state,
+      guided by the run journal in the working directory. Test is a bilateral acceptance session:
+      each side runs locally, evidence lands in the working directory's evidence/acceptance
+      folder, bundles are exchanged by file, and every check reads PASS, FAIL, BLOCKED, SKIP or
+      NOT APPLICABLE; a required check passes only on PASS, never on a skip. Publishing
+      exchanging afterwards is a third deliberate act by both operators, through a reviewable
+      change.
   - do: Prove it with the acceptance gate, in its own words.
     note: >-
       Carries, refuses, round-trips. A sample on your egress lane reaches the partner and theirs
