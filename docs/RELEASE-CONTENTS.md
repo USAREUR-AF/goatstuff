@@ -8,7 +8,7 @@ This repository, `goatstuff`, holds the surfaces, demos and example applications
 
 | Component | Path | Status | Workflow |
 |---|---|---|---|
-| stethoscope, netvis, microscope, flashlight analytics | `crates/` | Tested in CI | `ci.yml`, job `rust`; needs tag `goatcore/v0.1.0` of `goatcore` |
+| stethoscope, netvis, microscope, flashlight analytics | `crates/` | Tested in CI | `ci.yml`, job `rust`; needs tag `goatcore/v0.2.0` of `goatcore` |
 | panoscope web interface | `ops/panoscope/frontend/` | Tested in CI | `panoscope-frontend-test.yml` |
 | Map surface | `ops/serve/goat-map/` | Tested in CI | `ci.yml` runs `tests-public/` |
 | Peer view | `ops/peerview/` | Tested in CI | `ci.yml` |

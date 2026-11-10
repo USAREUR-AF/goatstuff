@@ -31,7 +31,7 @@ categories = ["network-programming"]
 # parsing, Zenoh TLS config, portal client) live in panoscope-core
 # alongside panoscope + stethoscope. flashlight consumes the same
 # crate via path dep — Phase C wiring builds on Phase B's shared crate.
-panoscope-core = { git = "https://github.com/usareur-af/goatcore", tag = "goatcore/v0.1.0" }
+panoscope-core = { git = "https://github.com/usareur-af/goatcore", tag = "goatcore/v0.2.0" }
 
 # Phase D Tier 2 analytics core — the same crate the browser-side
 # WASM module compiles from, linked natively here so the

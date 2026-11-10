@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
+use panoscope_core::audit_tail::DEFAULT_AUDIT_FETCH_CONCURRENCY;
 use panoscope_core::{AuditTailConfig, PortalClient};
 
 /// Resolved runtime configuration. Built once at startup from env vars.
@@ -125,6 +126,11 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(5_000),
+            // Objects fetched at once; peak memory is about this many bodies.
+            fetch_concurrency: std::env::var("STETHOSCOPE_AUDIT_FETCH_CONCURRENCY")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(DEFAULT_AUDIT_FETCH_CONCURRENCY),
         };
         let gaps = audit_env_gaps(&audit);
         if !gaps.is_empty() {
