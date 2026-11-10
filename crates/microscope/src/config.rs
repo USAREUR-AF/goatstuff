@@ -29,6 +29,10 @@ pub struct Config {
     pub audit_secret_key: String,
     /// Lookback window for the audit adapters (hours).
     pub audit_window_hours: u32,
+    /// Most timeline rows ONE audit adapter keeps from its window (the newest
+    /// ones). 0 = [`crate::adapters::DEFAULT_AUDIT_MAX_ROWS`]. Aggregates
+    /// (per-surface counts, totals) still cover every event in the window.
+    pub audit_max_rows: usize,
     /// Site label shown in the page chrome (e.g. `zagros`).
     pub site_label: String,
     /// `off` (default, inert) | `enforce` (in-app fail-closed group gate).
@@ -78,6 +82,7 @@ impl Config {
             audit_access_key: get("MICROSCOPE_AUDIT_ACCESS_KEY"),
             audit_secret_key: get("MICROSCOPE_AUDIT_SECRET_KEY"),
             audit_window_hours: get("MICROSCOPE_AUDIT_WINDOW_HOURS").parse().unwrap_or(24),
+            audit_max_rows: get("MICROSCOPE_AUDIT_MAX_ROWS").parse().unwrap_or(0),
             site_label: {
                 let v = get("MICROSCOPE_SITE_LABEL");
                 if v.is_empty() { "goatnet".into() } else { v }

@@ -25,8 +25,12 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
+use panoscope_core::AuditEvent;
 
-use crate::adapters::{tail_from, AdapterOutput, SourceAdapter};
+use crate::adapters::{
+    audit_max_rows, rows_clause, tail_from, AdapterOutput, NewestRows, SourceAdapter,
+    AUDIT_MAX_OBJECTS,
+};
 use crate::config::Config;
 use crate::event::{Attribution, TimelineEvent};
 use crate::spine::EntitySpine;
@@ -51,6 +55,51 @@ fn split_key(key: &str) -> Option<(String, String)> {
     Some((surface, actor))
 }
 
+/// The fold over the `ops` walk: per-surface counts over EVERY matching visit,
+/// and the newest matching visits as bounded timeline rows.
+struct VisitFold {
+    keys: Vec<String>,
+    rows: NewestRows,
+    per_surface: BTreeMap<String, usize>,
+}
+
+impl VisitFold {
+    fn new(keys: Vec<String>, max_rows: usize) -> Self {
+        Self {
+            keys,
+            rows: NewestRows::new(max_rows),
+            per_surface: BTreeMap::new(),
+        }
+    }
+
+    fn observe(&mut self, r: AuditEvent) {
+        let Some((surface, actor)) = split_key(&r.key_expr) else {
+            return;
+        };
+        if !self.keys.iter().any(|k| actor.eq_ignore_ascii_case(k)) {
+            return;
+        }
+        *self.per_surface.entry(surface.clone()).or_default() += 1;
+        self.rows.offer(crate::timefmt::canonical_str(&r.ts), move |ts| TimelineEvent {
+            ts,
+            source: SOURCE,
+            action: "surface-visit".into(),
+            actor: actor.clone(),
+            target: Some(surface.clone()),
+            summary: format!(
+                "visited {surface} ({} B age-encrypted — path and status decrypt operator-side)",
+                r.payload_len
+            ),
+            kind: crate::event::EventKind::classify("surface.visit"),
+            outcome: crate::event::Outcome::Unrecorded,
+            direction: crate::event::Direction::BySubject,
+            detail: None,
+            attribution: Attribution::Strong,
+            raw: serde_json::to_value(&r).ok(),
+        });
+    }
+}
+
 #[async_trait]
 impl SourceAdapter for SurfaceVisits {
     fn name(&self) -> &'static str {
@@ -63,47 +112,24 @@ impl SourceAdapter for SurfaceVisits {
             Ok(None) => return AdapterOutput::skipped(SOURCE, "MICROSCOPE_AUDIT_* unset"),
             Err(e) => return AdapterOutput::error(SOURCE, e),
         };
-        // The stream's first key segment is `ops`, so one vendor-filtered fetch
+        // The stream's first key segment is `ops`, so one vendor-filtered walk
         // narrows to the ops namespace before the prefix match — same shape as
-        // operator-audit above it.
-        let (rows, stats) = match tail.recent_events(cfg.audit_window_hours, Some("ops")).await {
+        // operator-audit above it. Rows are folded as they stream: the counts
+        // cover every visit in the window, the timeline keeps the newest.
+        let keys: Vec<String> = spine.match_keys().iter().map(|k| k.to_lowercase()).collect();
+        let mut fold = VisitFold::new(keys, audit_max_rows(cfg));
+        let stats = match tail
+            .stream_recent_events(cfg.audit_window_hours, Some("ops"), |r| fold.observe(r))
+            .await
+        {
             Ok(v) => v,
             Err(e) => return AdapterOutput::error(SOURCE, e),
         };
-        let partial = stats.objects_fetched >= 5_000;
-        let keys: Vec<String> = spine.match_keys().iter().map(|k| k.to_lowercase()).collect();
+        let partial = stats.objects_fetched >= AUDIT_MAX_OBJECTS;
+        let per_surface = fold.per_surface;
+        let (events, seen) = fold.rows.finish();
 
-        let mut events = Vec::new();
-        let mut per_surface: BTreeMap<String, usize> = BTreeMap::new();
-
-        for r in rows {
-            let Some((surface, actor)) = split_key(&r.key_expr) else {
-                continue;
-            };
-            if !keys.iter().any(|k| actor.eq_ignore_ascii_case(k)) {
-                continue;
-            }
-            *per_surface.entry(surface.clone()).or_default() += 1;
-            events.push(TimelineEvent {
-                ts: crate::timefmt::canonical_str(&r.ts),
-                source: SOURCE,
-                action: "surface-visit".into(),
-                actor: actor.clone(),
-                target: Some(surface.clone()),
-                summary: format!(
-                    "visited {surface} ({} B age-encrypted — path and status decrypt operator-side)",
-                    r.payload_len
-                ),
-                kind: crate::event::EventKind::classify("surface.visit"),
-                outcome: crate::event::Outcome::Unrecorded,
-                direction: crate::event::Direction::BySubject,
-                detail: None,
-                attribution: Attribution::Strong,
-                raw: serde_json::to_value(&r).ok(),
-            });
-        }
-
-        let coverage = if partial {
+        let mut coverage = if partial {
             format!(
                 "PARTIAL {}h (object ceiling — older hours uncovered)",
                 cfg.audit_window_hours
@@ -111,6 +137,10 @@ impl SourceAdapter for SurfaceVisits {
         } else {
             format!("last {}h", cfg.audit_window_hours)
         };
+        if let Some(c) = rows_clause(events.len(), seen) {
+            coverage.push_str(", ");
+            coverage.push_str(&c);
+        }
 
         // The count per surface is the answer to the question this source was
         // added for, so it goes in the detail line rather than being left for
@@ -167,5 +197,32 @@ mod tests {
         assert_eq!(split_key("ops/audit/surface/brief"), None);
         assert_eq!(split_key("ops/audit/surface//actor"), None);
         assert_eq!(split_key("something/else"), None);
+    }
+
+    /// Counts cover every visit in a large window; the timeline keeps at most
+    /// the ceiling, newest first.
+    #[test]
+    fn a_large_window_counts_everything_and_keeps_at_most_the_ceiling() {
+        use crate::adapters::test_audit_event;
+        const N: usize = 200_000;
+        const K: usize = 300;
+        let mut fold = VisitFold::new(vec!["a@b.c".into()], K);
+        for i in 0..N {
+            let key = match i % 4 {
+                0 => "ops/audit/surface/brief/a@b.c",
+                1 => "ops/audit/surface/demogame/A@B.C",
+                2 => "ops/audit/surface/brief/other@b.c",
+                _ => "ops/audit/operator/a@b.c",
+            };
+            fold.observe(test_audit_event(key, i));
+        }
+        assert_eq!(fold.per_surface.get("brief"), Some(&(N / 4)));
+        assert_eq!(fold.per_surface.get("demogame"), Some(&(N / 4)));
+        assert_eq!(fold.per_surface.len(), 2);
+        let (events, seen) = fold.rows.finish();
+        assert_eq!(seen, N / 2);
+        assert_eq!(events.len(), K);
+        let oldest_kept = crate::timefmt::canonical_str(&test_audit_event("x", N - 2 * K).ts);
+        assert!(events.iter().all(|e| e.ts >= oldest_kept));
     }
 }
