@@ -12,7 +12,7 @@
 // filter collapse/expand that alters the derived set).
 
 import { test, expect } from "@playwright/test";
-import { topologySignature, topologyChanged } from "../src/layout-settle.js";
+import { topologySignature, topologyChanged } from "../web/src/layout-settle.js";
 
 const EMPTY = { nodeSig: "", edgeSig: "" };
 

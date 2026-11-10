@@ -14,123 +14,113 @@
 //   - Packet dot = brief animated circle traveling along an edge each
 //     time a publish_sampled event arrives.
 
-import * as d3 from "d3";
+// d3 v7.9.0 is one vendored file (../vendor/d3/README.md). The file is a UMD
+// bundle; loaded as a module it sets globalThis.d3.
+import "../vendor/d3/d3.min.js";
 import { shortId } from "./ids.js";
-import type { GroupOut, NodeHygiene, Role, ViewParams, ViewResponse } from "./types.js";
 import { partitionDanglingEdges } from "./edge-guard.js";
 import { topologySignature, topologyChanged } from "./layout-settle.js";
 
-interface RNode extends d3.SimulationNodeDatum {
-  id: string;
-  /** Slot alias (ADR 1039) — operator-assigned human name for the node's
-   *  slot anchor (e.g. "pat-operator"). Preferred as the node label when
-   *  present; `id` stays the canonical UUID. Absent → display_name/vendor
-   *  fallback. */
-  slot_alias?: string | null;
-  display_name?: string | null;
-  vendor: string | null;
-  role: Role;
-  /** Schema-decl role-class (`sensor` / `effector` / `data-service` /
-   *  `c2` / `observer` / `sink`). Drives fill color when present so the
-   *  6-class taxonomy reads at a glance; falls through to the pub/sub-
-   *  derived `role` color when absent. */
-  role_class?: string | null;
-  /** Operating site (`alpha-fob` / `bravo-fob` / `charlie-fob` /
-   *  `theater`). Carried so future encodings (stroke, hull tint) can
-   *  read it without a re-binding pass. */
-  site?: string | null;
-  /** Substrate-level node kind from the admin namespace (`router` /
-   *  `peer` / `subscriber`). When set to `"router"` the renderer flips
-   *  to the infrastructure visual class (square shape, subdued
-   *  desaturated fill, label "zenoh-router") so the Zenoh broker
-   *  doesn't read as a peer that lost its identity. `null` for
-   *  application peers (schema-decl populated). */
-  node_kind?: string | null;
-  /** Participant class — `"infra"` (underlying infrastructure: router,
-   *  observer subscriber, schema-registry / operator-system publisher,
-   *  chaos generator, or self-declared) vs `"app"`. Computed backend-side;
-   *  the single axis the infra fill + INFRA fleet filter key off of, so
-   *  the renderer never re-derives "is this substrate?" per glyph. */
-  node_class?: string | null;
-  /** Infrastructure sub-type key (`router` / `subscriber` / `chaos` /
-   *  `schema-registry` / `operator-system` / `infra`) when infra, else
-   *  null. Drives the side-panel label + explainer. */
-  node_subkind?: string | null;
-  /** True when this peer subscribes to `**` — a universal observer whose
-   *  per-topic fan-out edges the backend suppresses; rendered with a marker
-   *  so an edgeless watch-all node reads as intentional, not orphaned. */
-  universal_observer?: boolean | null;
-  /** Compact pub/sub-hygiene verdict for this publisher (key-shape only);
-   *  carried through to the side panel which badges it + lazily fetches the
-   *  full report. Absent for non-publishers. */
-  hygiene?: NodeHygiene | null;
-  publishes: string[];
-  subscribes: string[];
-  total_events: number;
-  first_seen_ms: number;
-  last_seen_ms: number;
-  synthetic?: boolean | null;
-  /** Vendor-collapse super-node marker. When true, this RNode represents
-   *  a whole vendor whose peers + intra-vendor topics have been hidden
-   *  into a single composite glyph (chunky rounded square, always
-   *  labeled "VENDOR  Np·Mt"). Clicking it expands the vendor back to
-   *  its constituent peers. Set on synthetic ids of the form
-   *  `org:<vendor>`. */
-  is_vendor_super?: boolean;
-  /** When `is_vendor_super`, the count of peers folded inside. Drives
-   *  the super-node label + sidebar summary. */
-  super_peer_count?: number;
-  /** When `is_vendor_super`, the count of distinct topics folded
-   *  inside (key_exprs whose first segment is this vendor). */
-  super_topic_count?: number;
-  /** Group marker: this node is a server group from /api/view — many of
-   *  one publisher's topics drawn as one element (id `grp:<publisher>:…`).
-   *  Hover shows the member count; a click opens the group inspector. */
-  is_singleton_super?: boolean;
-  /** When `is_singleton_super`, the publishing peer the group hangs off. */
-  singleton_source_peer?: string;
-  /** When `is_singleton_super`, the group's display pattern (`a/b/*`,
-   *  `a/b/*` + `/…`, `a/b/**`, or `**` for the whole publisher). */
-  singleton_namespace?: string;
-  /** When `is_singleton_super`, the number of topics in the group. */
-  singleton_count?: number;
-  /** Peer-side indicator: this peer publishes at least one group. The
-   *  renderer overlays a darker inner dot so the operator can see at a
-   *  glance which peers have grouped topics. */
-  has_collapsed_singletons?: boolean;
-  /** This peer is folded (double-click): all its topics are one group. Same
-   *  inner-dot visual as has_collapsed_singletons; distinguished by intent. */
-  manually_collapsed?: boolean;
-  /** Server group kind (`family` / `subtree` / `publisher`) when this node is
-   *  a group from /api/view. */
-  group_kind?: string;
-}
+const d3 = globalThis.d3;
 
-interface REdge extends d3.SimulationLinkDatum<RNode> {
-  source: string | RNode;
-  target: string | RNode;
-  topic: string;
-  ema_eps: number;
-  projected_eps: number;
-  total_events: number;
-  schema_family: string | null;
-  last_event_ms: number;
-  edge_kind?: "publish" | "subscribe";
-}
+/**
+ * Extends `d3.SimulationNodeDatum`.
+ * @typedef {Object} RNode
+ * @property {string} id
+ * @property {string | null} [slot_alias] Slot alias (ADR 1039) — operator-assigned human name for the node's
+ *   slot anchor (e.g. "pat-operator"). Preferred as the node label when
+ *   present; `id` stays the canonical UUID. Absent → display_name/vendor
+ *   fallback.
+ * @property {string | null} [display_name]
+ * @property {string | null} vendor
+ * @property {import("./types.js").Role} role
+ * @property {string | null} [role_class] Schema-decl role-class (`sensor` / `effector` / `data-service` /
+ *   `c2` / `observer` / `sink`). Drives fill color when present so the
+ *   6-class taxonomy reads at a glance; falls through to the pub/sub-
+ *   derived `role` color when absent.
+ * @property {string | null} [site] Operating site (`alpha-fob` / `bravo-fob` / `charlie-fob` /
+ *   `theater`). Carried so future encodings (stroke, hull tint) can
+ *   read it without a re-binding pass.
+ * @property {string | null} [node_kind] Substrate-level node kind from the admin namespace (`router` /
+ *   `peer` / `subscriber`). When set to `"router"` the renderer flips
+ *   to the infrastructure visual class (square shape, subdued
+ *   desaturated fill, label "zenoh-router") so the Zenoh broker
+ *   doesn't read as a peer that lost its identity. `null` for
+ *   application peers (schema-decl populated).
+ * @property {string | null} [node_class] Participant class — `"infra"` (underlying infrastructure: router,
+ *   observer subscriber, schema-registry / operator-system publisher,
+ *   chaos generator, or self-declared) vs `"app"`. Computed backend-side;
+ *   the single axis the infra fill + INFRA fleet filter key off of, so
+ *   the renderer never re-derives "is this substrate?" per glyph.
+ * @property {string | null} [node_subkind] Infrastructure sub-type key (`router` / `subscriber` / `chaos` /
+ *   `schema-registry` / `operator-system` / `infra`) when infra, else
+ *   null. Drives the side-panel label + explainer.
+ * @property {boolean | null} [universal_observer] True when this peer subscribes to `**` — a universal observer whose
+ *   per-topic fan-out edges the backend suppresses; rendered with a marker
+ *   so an edgeless watch-all node reads as intentional, not orphaned.
+ * @property {import("./types.js").NodeHygiene | null} [hygiene] Compact pub/sub-hygiene verdict for this publisher (key-shape only);
+ *   carried through to the side panel which badges it + lazily fetches the
+ *   full report. Absent for non-publishers.
+ * @property {string[]} publishes
+ * @property {string[]} subscribes
+ * @property {number} total_events
+ * @property {number} first_seen_ms
+ * @property {number} last_seen_ms
+ * @property {boolean | null} [synthetic]
+ * @property {boolean} [is_vendor_super] Vendor-collapse super-node marker. When true, this RNode represents
+ *   a whole vendor whose peers + intra-vendor topics have been hidden
+ *   into a single composite glyph (chunky rounded square, always
+ *   labeled "VENDOR  Np·Mt"). Clicking it expands the vendor back to
+ *   its constituent peers. Set on synthetic ids of the form
+ *   `org:<vendor>`.
+ * @property {number} [super_peer_count] When `is_vendor_super`, the count of peers folded inside. Drives
+ *   the super-node label + sidebar summary.
+ * @property {number} [super_topic_count] When `is_vendor_super`, the count of distinct topics folded
+ *   inside (key_exprs whose first segment is this vendor).
+ * @property {boolean} [is_singleton_super] Group marker: this node is a server group from /api/view — many of
+ *   one publisher's topics drawn as one element (id `grp:<publisher>:…`).
+ *   Hover shows the member count; a click opens the group inspector.
+ * @property {string} [singleton_source_peer] When `is_singleton_super`, the publishing peer the group hangs off.
+ * @property {string} [singleton_namespace] When `is_singleton_super`, the group's display pattern (`a/b/*`,
+ *   `a/b/*` + `/…`, `a/b/**`, or `**` for the whole publisher).
+ * @property {number} [singleton_count] When `is_singleton_super`, the number of topics in the group.
+ * @property {boolean} [has_collapsed_singletons] Peer-side indicator: this peer publishes at least one group. The
+ *   renderer overlays a darker inner dot so the operator can see at a
+ *   glance which peers have grouped topics.
+ * @property {boolean} [manually_collapsed] This peer is folded (double-click): all its topics are one group. Same
+ *   inner-dot visual as has_collapsed_singletons; distinguished by intent.
+ * @property {string} [group_kind] Server group kind (`family` / `subtree` / `publisher`) when this node is
+ *   a group from /api/view.
+ */
 
-/** Where gestures go. The server owns grouping (docs/design/panoscope-view-model.md),
- *  so folding a peer, opening a group or collapsing an organisation is a
- *  ViewParams edit; the page's ViewClient applies it and refetches. */
-export interface ViewIntents {
-  openGroup(id: string): void;
-  togglePeerFold(peer: string): void;
-  toggleOrg(org: string): void;
-  collapseAllOrgs(): void;
-  expandAll(): void;
-  reveal(key: string, publisher: string): Promise<string | null>;
-}
+/**
+ * Extends `d3.SimulationLinkDatum<RNode>`.
+ * @typedef {Object} REdge
+ * @property {string | RNode} source
+ * @property {string | RNode} target
+ * @property {string} topic
+ * @property {number} ema_eps
+ * @property {number} projected_eps
+ * @property {number} total_events
+ * @property {string | null} schema_family
+ * @property {number} last_event_ms
+ * @property {"publish" | "subscribe"} [edge_kind]
+ */
 
-const ROLE_COLORS: Record<Role, string> = {
+/**
+ * Where gestures go. The server owns grouping (docs/design/panoscope-view-model.md),
+ * so folding a peer, opening a group or collapsing an organisation is a
+ * ViewParams edit; the page's ViewClient applies it and refetches.
+ * @typedef {Object} ViewIntents
+ * @property {(id: string) => void} openGroup
+ * @property {(peer: string) => void} togglePeerFold
+ * @property {(org: string) => void} toggleOrg
+ * @property {() => void} collapseAllOrgs
+ * @property {() => void} expandAll
+ * @property {(key: string, publisher: string) => Promise<string | null>} reveal
+ */
+
+const ROLE_COLORS = {
   source: "var(--role-source)",
   sink: "var(--role-sink)",
   deriver: "var(--role-deriver)",
@@ -145,7 +135,7 @@ const ROLE_COLORS: Record<Role, string> = {
  *  cert-bound vendor — the situation the namespace collapse
  *  creates on a trial fabric. Unknown role_class values + peers
  *  without a schema-decl fall through to ROLE_COLORS in `fillFor` below. */
-const ROLE_CLASS_COLORS: Record<string, string> = {
+const ROLE_CLASS_COLORS = {
   sensor: "var(--role-class-sensor)",
   effector: "var(--role-class-effector)",
   "data-service": "var(--role-class-data-service)",
@@ -154,14 +144,7 @@ const ROLE_CLASS_COLORS: Record<string, string> = {
   sink: "var(--role-class-sink)",
 };
 
-function fillFor(n: {
-  role: Role;
-  role_class?: string | null;
-  node_kind?: string | null;
-  node_class?: string | null;
-  is_vendor_super?: boolean;
-  is_singleton_super?: boolean;
-}): string {
+function fillFor(n) {
   // Vendor-collapse super-node gets the elevated background tone so
   // the chunky glyph reads as a panel ("a thing you click to expand")
   // rather than blending with one of the peer roles. The vendor border
@@ -193,7 +176,7 @@ function fillFor(n: {
   return ROLE_COLORS[n.role];
 }
 
-const SCHEMA_COLORS: Record<string, string> = {
+const SCHEMA_COLORS = {
   lattice: "var(--schema-lattice)",
   ecn: "var(--schema-ecn)",
   cot: "var(--schema-cot)",
@@ -201,12 +184,12 @@ const SCHEMA_COLORS: Record<string, string> = {
   caracal: "var(--schema-caracal)",
 };
 
-function schemaColor(family: string | null): string {
+function schemaColor(family) {
   if (!family) return "var(--schema-unknown)";
   return SCHEMA_COLORS[family] ?? "var(--schema-unknown)";
 }
 
-function nodeRadius(n: RNode): number {
+function nodeRadius(n) {
   // Singletons-super: chunkier than a topic-pin (it represents many)
   // but smaller than a vendor-super (it's narrower in scope). Scales
   // with the folded-topic count so a 4500-topic fold reads visibly
@@ -231,13 +214,13 @@ function nodeRadius(n: RNode): number {
   return base + Math.min(20, Math.log1p(n.total_events) * 2);
 }
 
-function edgeWidth(e: REdge): number {
+function edgeWidth(e) {
   // EMA up to ~50 eps maps to 0.5..6 px
   const eps = Math.max(0.01, e.projected_eps);
   return 0.5 + Math.min(5.5, Math.log1p(eps) * 1.5);
 }
 
-function edgeOpacity(e: REdge): number {
+function edgeOpacity(e) {
   // Fade to near-invisible when projected EPS drops near zero.
   return Math.max(0.08, Math.min(0.9, 0.1 + e.projected_eps / 10));
 }
@@ -249,18 +232,19 @@ function edgeOpacity(e: REdge): number {
  *  client/server skew of a few seconds is immaterial against this threshold,
  *  and the window membership itself is decided server-side.) */
 const AGED_AFTER_MS = 120_000;
-function isAgedNode(d: RNode): boolean {
+function isAgedNode(d) {
   return d.last_seen_ms > 0 && Date.now() - d.last_seen_ms > AGED_AFTER_MS;
 }
 
-export interface RendererOptions {
-  onNodeClick?: (n: RNode) => void;
-  onEdgeClick?: (e: REdge) => void;
-  onSelectionChange?: (selectedIds: string[]) => void;
-}
+/**
+ * @typedef {Object} RendererOptions
+ * @property {(n: RNode) => void} [onNodeClick]
+ * @property {(e: REdge) => void} [onEdgeClick]
+ * @property {(selectedIds: string[]) => void} [onSelectionChange]
+ */
 
 /** Convert client-space coordinates to SVG-local coordinates. */
-function clientToSvgPoint(svg: SVGSVGElement, x: number, y: number): { x: number; y: number } {
+function clientToSvgPoint(svg, x, y) {
   const pt = svg.createSVGPoint();
   pt.x = x;
   pt.y = y;
@@ -283,22 +267,22 @@ function clientToSvgPoint(svg: SVGSVGElement, x: number, y: number): { x: number
  *  The panoscope viz tags these clusters as "future design" so an
  *  operator viewing the COP for the first time doesn't mistake the
  *  schema-decl heartbeat for live application traffic. */
-const FUTURE_DESIGN_PREFIXES: ReadonlySet<string> = new Set(["attest"]);
+const FUTURE_DESIGN_PREFIXES = new Set(["attest"]);
 
-function isFutureCluster(vendor: string): boolean {
+function isFutureCluster(vendor) {
   return FUTURE_DESIGN_PREFIXES.has(vendor.toLowerCase());
 }
 
 /** True if a topic key_expr lives under a future-design top-level
  *  prefix (e.g. `attest/schema/...`). Used by the side panel to
  *  surface the "future design" hint on per-topic selection. */
-export function isFutureDesignKeyExpr(keyExpr: string): boolean {
+export function isFutureDesignKeyExpr(keyExpr) {
   const head = keyExpr.split("/")[0]?.toLowerCase() ?? "";
   return FUTURE_DESIGN_PREFIXES.has(head);
 }
 
 /** Extract a vendor key (namespace) from a node id. */
-function vendorOf(node: { id: string; vendor: string | null; role: Role }): string {
+function vendorOf(node) {
   if (node.vendor) return node.vendor;
   if (node.id.startsWith("org:")) {
     return node.id.slice("org:".length);
@@ -325,7 +309,7 @@ function vendorOf(node: { id: string; vendor: string | null; role: Role }): stri
  *  1-msg topic-broker pins (e.g. `vendor-c/fleet/entities/v3/<uuid>` →
  *  `vendor-c/fleet/entities/v3`). Returns the empty string for keys
  *  with no `/`, which then bucket together as a degenerate group. */
-export function topicNamespaceOf(key: string): string {
+export function topicNamespaceOf(key) {
   const i = key.lastIndexOf("/");
   return i > 0 ? key.slice(0, i) : "";
 }
@@ -340,71 +324,71 @@ const GROUP_OPEN_WARN_THRESHOLD = 150;
 const PENDING_SELECT_MS = 15_000;
 
 export class GraphRenderer {
-  private svg: d3.Selection<SVGSVGElement, unknown, null, undefined>;
-  private viewport: d3.Selection<SVGGElement, unknown, null, undefined>;
-  private nodes: RNode[] = [];
-  private edges: REdge[] = [];
-  private simulation: d3.Simulation<RNode, REdge>;
-  private hullGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
-  private nodeGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
-  private edgeGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
-  private dotGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
-  private hullLabelGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
-  private lassoRect: d3.Selection<SVGRectElement, unknown, null, undefined>;
-  private width = 800;
-  private height = 600;
-  private options: RendererOptions;
+  svg;
+  viewport;
+  nodes = [];
+  edges = [];
+  simulation;
+  hullGroup;
+  nodeGroup;
+  edgeGroup;
+  dotGroup;
+  hullLabelGroup;
+  lassoRect;
+  width = 800;
+  height = 600;
+  options;
   // Selection drives all label/opacity/animation decisions. Empty
   // selection = default-overview state (cluster labels only, no node
   // labels, packet-dots throttled).
-  private selectedIds: Set<string> = new Set();
-  private neighborIds: Set<string> = new Set(); // 2-hop graph walkout from selection
+  selectedIds = new Set();
+  neighborIds = new Set(); // 2-hop graph walkout from selection
   /** Fleet aggregate rate (sum of all edge projected_eps) — fed in by
    *  main.ts from the view totals; drives adaptive packet-dot throttle. */
-  private fleetMsgPerSec: number = 0;
+  fleetMsgPerSec = 0;
   /** The last view drawn, and the parameters it was requested with. */
-  private lastView: ViewResponse | null = null;
-  private viewParams: ViewParams | null = null;
+  lastView = null;
+  viewParams = null;
   /** Gesture sink, set by main.ts (`setViewIntents`). */
-  private intents: ViewIntents | null = null;
+  intents = null;
   /** What to select once a view that draws it arrives: a revealed topic's
    *  pin, a folded peer's group, a collapsed organisation. Expires so a
    *  request the server could not honour never selects something later. */
-  private pendingSelect: { match: (n: RNode) => boolean; until: number } | null = null;
+  pendingSelect = null;
   /** Component isolation (the "show me only what this is connected to"
    *  gesture). `focusAnchors` is what the operator picked; the member set is
    *  recomputed from the drawn graph on every view, so a component that grows
    *  or shrinks stays honest. Local to this browser and this session: it is a
    *  lens over what the server already served, not a view parameter. */
-  private focusAnchors: string[] | null = null;
-  private focusHidden = 0;
+  focusAnchors = null;
+  focusHidden = 0;
   /** Packet-dot lookup: `publisher|topic` → the publish edge drawing that
    *  topic's pin, and per publisher the groups (selector + publish edge). */
-  private pinEdgeIndex: Map<string, REdge> = new Map();
-  private groupEdgeIndex: Map<string, Array<{ selector: string[]; edge: REdge }>> = new Map();
+  pinEdgeIndex = new Map();
+  groupEdgeIndex = new Map();
   // Signatures of the last *rendered* topology (the derived node-id set and
   // the derived edge source|target|topic set). The force layout is re-heated
   // only when one of these changes — data-only refreshes (rates, counts,
   // labels arriving on the ~1.5s snapshot poll) update in place and let the
   // simulation keep cooling to equilibrium instead of jiggling forever.
   // Empty initial value → the first frame always reads as changed → reheats.
-  private lastTopologyNodeSig = "";
-  private lastTopologyEdgeSig = "";
+  lastTopologyNodeSig = "";
+  lastTopologyEdgeSig = "";
   /** Latest classified wire format keyed by topic key_expr — sourced
    *  from EdgeView.format on the most recent snapshot. The side-panel
    *  reads this to render per-topic format pills. */
-  private topicFormat: Map<string, string> = new Map();
+  topicFormat = new Map();
   /** Origin of the goat-zenoh-portal — set from the periodic /api/legend
    *  refresh so the side-panel can link out to `/schema.html?key=<t>`.
    *  Mirrors `siblings.portal` for backwards-compat with callers that
    *  used `getPortalBaseUrl()` directly before Block 94. */
-  private portalBaseUrl: string = "";
+  portalBaseUrl = "";
   /** Sibling-surface base URLs (Block 94 cross-surface deep-link
    *  contract; see docs/design/zenoh-surface-deep-links.md). Drives
    *  the side-panel diagnose/tail/schema-page outbound buttons. */
-  private siblings: import("./types").SiblingUrls = {};
+  siblings = {};
 
-  constructor(svgEl: SVGSVGElement, options: RendererOptions = {}) {
+  constructor(svgEl, options = {}) {
     this.options = options;
     this.svg = d3.select(svgEl);
     this.viewport = this.svg.append("g").attr("class", "viewport");
@@ -421,13 +405,9 @@ export class GraphRenderer {
       .attr("class", "lasso-rect")
       .style("display", "none");
 
-    this.simulation = d3
-      .forceSimulation<RNode, REdge>()
-      .force(
+    this.simulation = d3.forceSimulation().force(
         "link",
-        d3
-          .forceLink<RNode, REdge>()
-          .id((d) => d.id)
+        d3.forceLink().id((d) => d.id)
           // Longer links (140→190) give topic pins room to sit between
           // their publisher and subscribers instead of being crushed into
           // a congested center where edges hairpin back on themselves.
@@ -436,15 +416,15 @@ export class GraphRenderer {
       )
       // Stronger charge repulsion (-220→-360) spaces nodes out so the
       // dense pub→topic→sub web is legible rather than a hairball.
-      .force("charge", d3.forceManyBody<RNode>().strength(-360))
+      .force("charge", d3.forceManyBody().strength(-360))
       .force("center", d3.forceCenter(this.width / 2, this.height / 2))
       // Explicit x/y gravity around viewport center — forceCenter alone
       // doesn't actively pull, it just shifts the centroid. With few
       // nodes and no edges between them, charge-repulsion wins and
       // nodes drift toward the canvas corners. forceX/Y restores a
       // gentle pull back to center.
-      .force("x", d3.forceX<RNode>(this.width / 2).strength(0.04))
-      .force("y", d3.forceY<RNode>(this.height / 2).strength(0.04))
+      .force("x", d3.forceX(this.width / 2).strength(0.04))
+      .force("y", d3.forceY(this.height / 2).strength(0.04))
       // Vendor-clustering force: pull each node toward the centroid of
       // its vendor cluster. Together with the convex-hull rendering
       // below, this gives the spatial-grouping cue the Data-COP needs
@@ -458,16 +438,15 @@ export class GraphRenderer {
       .force("focus", this.makeSelectionFocusForce())
       .force(
         "collide",
-        d3.forceCollide<RNode>().radius((d) => nodeRadius(d) + 10),
+        d3.forceCollide().radius((d) => nodeRadius(d) + 10),
       )
       .on("tick", () => this.onTick());
 
     this.svg.call(
-      d3.zoom<SVGSVGElement, unknown>()
-        .filter((ev) => {
+      d3.zoom().filter((ev) => {
           // Ignore zoom drags initiated with shift held — those start
           // the lasso-rect selection (mousedown handler below).
-          if (ev.type === "mousedown" && (ev as MouseEvent).shiftKey) return false;
+          if (ev.type === "mousedown" && ev.shiftKey) return false;
           return !ev.ctrlKey && !ev.button;
         })
         .on("zoom", (ev) => {
@@ -488,31 +467,31 @@ export class GraphRenderer {
   }
 
   /** Public: set selection from outside (e.g. search-overlay commits). */
-  public setSelection(ids: string[], options: { append?: boolean } = {}): void {
+  setSelection(ids, options = {}) {
     if (!options.append) this.selectedIds.clear();
     for (const id of ids) this.selectedIds.add(id);
     this.refreshSelectionVisuals();
   }
 
   /** Public: clear selection. */
-  public clearSelection(): void {
+  clearSelection() {
     this.selectedIds.clear();
     this.refreshSelectionVisuals();
   }
 
   /** Public: get current selection ids. */
-  public getSelection(): string[] {
+  getSelection() {
     return Array.from(this.selectedIds);
   }
 
   /** Public: all node IDs known to the renderer. */
-  public allNodeIds(): RNode[] {
+  allNodeIds() {
     return this.nodes.slice();
   }
 
   /** Public: feed the adaptive packet-dot throttle. main.ts pushes the
    *  view's publish rate (`totals.msg_per_sec`) here. */
-  public setFleetMsgPerSec(rate: number): void {
+  setFleetMsgPerSec(rate) {
     this.fleetMsgPerSec = rate;
   }
 
@@ -520,9 +499,9 @@ export class GraphRenderer {
    *  publisher→subscriber edges. Used by the side-panel stream view
    *  so a sink peer (or any subscriber) can show the inbound data
    *  flow, not just outbound publishes. */
-  public consumedTopicsFor(peerId: string): string[] {
-    const consumed = new Set<string>();
-    const labels = new Map<string, string>();
+  consumedTopicsFor(peerId) {
+    const consumed = new Set();
+    const labels = new Map();
     for (const t of this.lastView?.topics ?? []) labels.set(t.id, t.key);
     for (const g of this.lastView?.groups ?? []) labels.set(g.id, `${g.label} (${g.topic_count} topics)`);
     for (const e of this.lastView?.edges ?? []) {
@@ -535,7 +514,7 @@ export class GraphRenderer {
    *  "json" / "protobuf" / "cbor" / "text" / "hex" / "empty"), or null
    *  if no sample has landed since startup. Source: EdgeView.format
    *  from the most recent snapshot. */
-  public formatForTopic(topic: string): string | null {
+  formatForTopic(topic) {
     return this.topicFormat.get(topic) ?? null;
   }
 
@@ -548,7 +527,7 @@ export class GraphRenderer {
    *  sibling set via `setSiblings()`; this method keeps existing tests
    *  + the legacy `portal_base_url` field on /api/legend working
    *  without a flag-day rewrite. */
-  public setPortalBaseUrl(u: string): void {
+  setPortalBaseUrl(u) {
     this.portalBaseUrl = u;
     // Mirror into the siblings struct unless an explicit
     // siblings.portal override has already landed.
@@ -558,21 +537,21 @@ export class GraphRenderer {
   }
 
   /** Public: portal origin (empty string when unconfigured). */
-  public getPortalBaseUrl(): string {
+  getPortalBaseUrl() {
     return this.siblings.portal ?? this.portalBaseUrl;
   }
 
   /** Public: set the full sibling-surface URL set (Block 94 cross-
    *  surface deep-link contract). Composes with `setPortalBaseUrl` —
    *  the portal field here wins over the legacy mirror. */
-  public setSiblings(s: import("./types").SiblingUrls): void {
+  setSiblings(s) {
     this.siblings = { ...s };
     if (s.portal) this.portalBaseUrl = s.portal;
   }
 
   /** Public: read the current sibling-URL set. Used by side-panel
    *  renderers to construct outbound diagnose/tail/schema links. */
-  public getSiblings(): import("./types").SiblingUrls {
+  getSiblings() {
     return this.siblings;
   }
 
@@ -580,15 +559,15 @@ export class GraphRenderer {
    *  rate degrades, packet-dot animation is disabled entirely — the
    *  edge-thickness EMA still encodes flow rate without per-event DOM
    *  churn. */
-  private packetDotsAllowed = true;
-  public setPacketDotsAllowed(allowed: boolean): void {
+  packetDotsAllowed = true;
+  setPacketDotsAllowed(allowed) {
     this.packetDotsAllowed = allowed;
   }
 
   /** Public: pause / resume the D3 force-layout engine. In DEGRADED
    *  tier the layout is frozen so the canvas stops re-laying-out every
    *  tick — nodes hold their last positions; pan/zoom still works. */
-  public setForceSimEnabled(enabled: boolean): void {
+  setForceSimEnabled(enabled) {
     if (enabled) {
       // Re-HEAT on re-enable, not just resume. The tier gate can `stop()` the
       // sim mid-layout on a cold-load frame spike: the initial snapshot's
@@ -614,8 +593,8 @@ export class GraphRenderer {
    *  forceSim off, 30s polling) — the policy gates compute, this gate
    *  preserves "what's left is the most important + true + live"
    *  legibility instead of leaving a busy-but-frozen scene on screen. */
-  private austereMode = false;
-  public setAustereMode(on: boolean): void {
+  austereMode = false;
+  setAustereMode(on) {
     if (this.austereMode === on) return;
     this.austereMode = on;
     this.svg.classed("austere-mode", on);
@@ -628,7 +607,7 @@ export class GraphRenderer {
    *  main.ts surface "WATCHFUL — flow shown on selection only" instead
    *  of letting the operator stare at an apparently-frozen viz that is
    *  actually degrading gracefully. */
-  public isWatchfulWithoutSelection(): boolean {
+  isWatchfulWithoutSelection() {
     if (!this.packetDotsAllowed) return false; // browser-tier already explains it
     if (this.fleetMsgPerSec <= 50) return false;
     if (this.fleetMsgPerSec > 200) return false;
@@ -644,23 +623,23 @@ export class GraphRenderer {
    *  high-rate fabric never reads as a frozen/broken viz. (This is the
    *  signal that was missing when a duplicate-edge bug inflated the rate
    *  sum and silently crossed this threshold.) */
-  public isRateSaturated(): boolean {
+  isRateSaturated() {
     if (!this.packetDotsAllowed) return false; // browser-tier already explains it
     return this.fleetMsgPerSec > 200;
   }
 
   /** Current fleet rate the dot-gate sees — for the SATURATED badge text. */
-  public currentFleetMsgPerSec(): number {
+  currentFleetMsgPerSec() {
     return this.fleetMsgPerSec;
   }
 
   /** Public: connect gestures to the page's ViewClient. */
-  public setViewIntents(intents: ViewIntents): void {
+  setViewIntents(intents) {
     this.intents = intents;
   }
 
   /** Public: the test-data mode of the parameters behind the current view. */
-  public getTestFilter(): "hide" | "only" {
+  getTestFilter() {
     return this.viewParams?.test ?? "hide";
   }
 
@@ -670,7 +649,7 @@ export class GraphRenderer {
    *  group opens on the graph one level down, or — when it is too large to
    *  draw — opens the inspector that lists it.
    *  Topic pins and infrastructure are not foldable. */
-  public toggleFold(d: RNode): void {
+  toggleFold(d) {
     if (d.is_vendor_super && d.vendor) {
       this.intents?.toggleOrg(d.vendor);
       return;
@@ -698,34 +677,34 @@ export class GraphRenderer {
     this.intents?.togglePeerFold(peer);
   }
 
-  private selectWhenDrawn(match: (n: RNode) => boolean): void {
+  selectWhenDrawn(match) {
     this.pendingSelect = { match, until: Date.now() + PENDING_SELECT_MS };
   }
 
   /** Public: collapse one organisation into a single node. Idempotent. */
-  public collapseVendor(vendor: string): void {
+  collapseVendor(vendor) {
     if (!vendor || this.collapsedVendors().includes(vendor)) return;
     this.selectWhenDrawn((n) => !!n.is_vendor_super && n.vendor === vendor);
     this.intents?.toggleOrg(vendor);
   }
 
   /** Public: expand a collapsed organisation. Idempotent. */
-  public expandVendor(vendor: string): void {
+  expandVendor(vendor) {
     if (this.collapsedVendors().includes(vendor)) this.intents?.toggleOrg(vendor);
   }
 
-  public toggleVendorCollapse(vendor: string): void {
+  toggleVendorCollapse(vendor) {
     this.intents?.toggleOrg(vendor);
   }
 
   /** Public: COLLAPSE ALL — every organisation becomes one node. */
-  public collapseAllVendors(): void {
+  collapseAllVendors() {
     this.intents?.collapseAllOrgs();
   }
 
   /** Public: EXPAND ALL — no collapsed organisations, folded peers or opened
    *  groups: the view the server groups by default. */
-  public expandAllVendors(): void {
+  expandAllVendors() {
     this.intents?.expandAll();
   }
 
@@ -734,7 +713,7 @@ export class GraphRenderer {
    *  reachable through publish and subscribe edges, in either direction.
    *  Called again while focused, it re-anchors on the current selection.
    *  Returns false when there is nothing selected to anchor on. */
-  public focusComponent(anchorIds?: string[]): boolean {
+  focusComponent(anchorIds) {
     const anchors = (anchorIds && anchorIds.length > 0 ? anchorIds : this.getSelection()).filter((id) =>
       this.nodes.some((n) => n.id === id),
     );
@@ -749,7 +728,7 @@ export class GraphRenderer {
   }
 
   /** Public: leave component isolation and draw the whole view again. */
-  public exitFocus(): void {
+  exitFocus() {
     if (!this.focusAnchors) return;
     const anchors = this.focusAnchors;
     this.focusAnchors = null;
@@ -759,9 +738,9 @@ export class GraphRenderer {
   }
 
   /** Public: what isolation is showing, for the banner. Null when off. */
-  public focusInfo(): { anchors: string[]; label: string; shown: number; hidden: number } | null {
+  focusInfo() {
     if (!this.focusAnchors) return null;
-    const first = this.nodes.find((n) => n.id === this.focusAnchors![0]);
+    const first = this.nodes.find((n) => n.id === this.focusAnchors[0]);
     const label = first ? labelOf(first) || shortId(first.id) : shortId(this.focusAnchors[0]);
     return {
       anchors: [...this.focusAnchors],
@@ -773,13 +752,13 @@ export class GraphRenderer {
 
   /** Re-run the apply for the view already on screen (a local lens changed,
    *  not the data). No-op before the first view. */
-  private redrawCurrentView(): void {
+  redrawCurrentView() {
     if (this.lastView && this.viewParams) this.setView(this.lastView, this.viewParams);
   }
 
   /** Cut `nodes`/`edges` down to the component containing the anchors. The
    *  graph is undirected here: a subscriber is connected to what it hears. */
-  private applyComponentFocus(): void {
+  applyComponentFocus() {
     if (!this.focusAnchors) {
       this.focusHidden = 0;
       return;
@@ -793,8 +772,8 @@ export class GraphRenderer {
       return;
     }
     this.focusAnchors = present;
-    const adjacency = new Map<string, string[]>();
-    const link = (a: string, b: string) => {
+    const adjacency = new Map();
+    const link = (a, b) => {
       const list = adjacency.get(a);
       if (list) list.push(b);
       else adjacency.set(a, [b]);
@@ -804,10 +783,10 @@ export class GraphRenderer {
       link(a, b);
       link(b, a);
     }
-    const members = new Set<string>(present);
+    const members = new Set(present);
     const queue = [...present];
     while (queue.length > 0) {
-      const cur = queue.pop() as string;
+      const cur = queue.pop();
       for (const next of adjacency.get(cur) ?? []) {
         if (!members.has(next)) {
           members.add(next);
@@ -822,22 +801,22 @@ export class GraphRenderer {
   }
 
   /** Public: the last view drawn, for the HUD, inspector and search. */
-  public currentView(): ViewResponse | null {
+  currentView() {
     return this.lastView;
   }
 
   /** Public: one group of the current view by id. */
-  public groupById(id: string): GroupOut | undefined {
+  groupById(id) {
     return this.lastView?.groups.find((g) => g.id === id);
   }
 
   /** Public: organisations collapsed in the current view. */
-  public collapsedVendors(): string[] {
+  collapsedVendors() {
     return (this.lastView?.orgs ?? []).map((o) => o.org);
   }
 
   /** Public: open a group on the canvas (inspector "show on canvas"). */
-  public openGroup(groupId: string): void {
+  openGroup(groupId) {
     this.intents?.openGroup(groupId);
   }
 
@@ -845,13 +824,13 @@ export class GraphRenderer {
    *  commit. The server says which groups to open; the pin is selected when
    *  the view that draws it arrives. Resolves false when the server cannot
    *  draw the topic on its own (not visible, or its group is too large). */
-  public async revealTopic(topicKey: string, publisher: string): Promise<boolean> {
+  async revealTopic(topicKey, publisher) {
     const id = `topic:${topicKey}`;
     if (this.nodes.some((n) => n.id === id)) {
       this.setSelection([id]);
       return true;
     }
-    const match = (n: RNode) => n.id === id;
+    const match = (n) => n.id === id;
     this.selectWhenDrawn(match);
     const got = (await this.intents?.reveal(topicKey, publisher).catch(() => null)) ?? null;
     if (got === null && this.pendingSelect?.match === match) this.pendingSelect = null;
@@ -859,7 +838,7 @@ export class GraphRenderer {
   }
 
   /** Public: unfold a folded peer. */
-  public manuallyExpandNode(peerId: string): void {
+  manuallyExpandNode(peerId) {
     if (this.viewParams?.fold_peers.includes(peerId)) this.intents?.togglePeerFold(peerId);
   }
 
@@ -877,9 +856,9 @@ export class GraphRenderer {
    *  makes the selected subgraph visibly recede the unrelated mass to
    *  the periphery instead of just leaving it as a backdrop. No-op when
    *  selection is empty. */
-  private makeSelectionFocusForce(): d3.Force<RNode, undefined> {
-    let nodesRef: RNode[] = [];
-    const force = ((alpha: number) => {
+  makeSelectionFocusForce() {
+    let nodesRef = [];
+    const force = ((alpha) => {
       if (this.selectedIds.size === 0) return;
       const cx = this.width / 2;
       const cy = this.height / 2;
@@ -925,8 +904,8 @@ export class GraphRenderer {
           n.vy = (n.vy ?? 0) + (dy / dist) * repel;
         }
       }
-    }) as d3.Force<RNode, undefined>;
-    force.initialize = (nodes: RNode[]) => {
+    });
+    force.initialize = (nodes) => {
       nodesRef = nodes;
     };
     return force;
@@ -935,11 +914,11 @@ export class GraphRenderer {
   /** Vendor-cluster force: each node accelerates toward its vendor
    *  centroid. Centroids are recomputed every tick from current
    *  positions — cheap because vendor counts are tiny in v1. */
-  private makeVendorClusterForce(strength: number): d3.Force<RNode, undefined> {
-    let nodesRef: RNode[] = [];
-    const force = ((alpha: number) => {
+  makeVendorClusterForce(strength) {
+    let nodesRef = [];
+    const force = ((alpha) => {
       // Recompute centroid for each vendor.
-      const centroidByVendor = new Map<string, { x: number; y: number; count: number }>();
+      const centroidByVendor = new Map();
       for (const n of nodesRef) {
         if (n.x === undefined || n.y === undefined) continue;
         // Topic pins are positioned by their pub/sub links, not pulled to a
@@ -967,21 +946,21 @@ export class GraphRenderer {
         n.vx = (n.vx ?? 0) + (c.x - n.x) * strength * alpha;
         n.vy = (n.vy ?? 0) + (c.y - n.y) * strength * alpha;
       }
-    }) as d3.Force<RNode, undefined>;
-    force.initialize = (nodes: RNode[]) => {
+    });
+    force.initialize = (nodes) => {
       nodesRef = nodes;
     };
     return force;
   }
 
-  private installCanvasInteractions(): void {
-    const svgNode = this.svg.node() as SVGSVGElement;
-    let lassoStart: { x: number; y: number } | null = null;
+  installCanvasInteractions() {
+    const svgNode = this.svg.node();
+    let lassoStart = null;
 
-    this.svg.on("mousedown", (ev: MouseEvent) => {
+    this.svg.on("mousedown", (ev) => {
       // Shift-drag = lasso rect selection on empty canvas.
       if (!ev.shiftKey) return;
-      const target = ev.target as Element;
+      const target = ev.target;
       if (target.closest("g.node") || target.closest("path.hull")) return;
       const pt = clientToSvgPoint(svgNode, ev.clientX, ev.clientY);
       lassoStart = pt;
@@ -994,7 +973,7 @@ export class GraphRenderer {
       ev.preventDefault();
     });
 
-    this.svg.on("mousemove", (ev: MouseEvent) => {
+    this.svg.on("mousemove", (ev) => {
       if (!lassoStart) return;
       const pt = clientToSvgPoint(svgNode, ev.clientX, ev.clientY);
       const x = Math.min(pt.x, lassoStart.x);
@@ -1004,10 +983,10 @@ export class GraphRenderer {
       this.lassoRect.attr("x", x).attr("y", y).attr("width", w).attr("height", h);
     });
 
-    this.svg.on("mouseup", (ev: MouseEvent) => {
+    this.svg.on("mouseup", (ev) => {
       if (!lassoStart) {
         // Plain click on empty canvas → clear selection.
-        const target = ev.target as Element;
+        const target = ev.target;
         if (!target.closest("g.node") && !target.closest("path.hull")) {
           this.clearSelection();
         }
@@ -1024,7 +1003,7 @@ export class GraphRenderer {
       // box → viewport-space box so we can test against node x/y
       // (which live in viewport coords).
       const transform = d3.zoomTransform(svgNode);
-      const inv = (px: number, py: number) => {
+      const inv = (px, py) => {
         const [vx, vy] = transform.invert([px, py]);
         return { x: vx, y: vy };
       };
@@ -1041,7 +1020,7 @@ export class GraphRenderer {
         this.setSelection(hits, { append: ev.metaKey || ev.ctrlKey });
         // Tell the host so the side panel updates.
         if (this.options.onNodeClick && this.nodes.find((n) => n.id === hits[0])) {
-          this.options.onNodeClick(this.nodes.find((n) => n.id === hits[0])!);
+          this.options.onNodeClick(this.nodes.find((n) => n.id === hits[0]));
         }
       } else if (!(ev.metaKey || ev.ctrlKey)) {
         this.clearSelection();
@@ -1051,7 +1030,7 @@ export class GraphRenderer {
     });
   }
 
-  private refreshSelectionVisuals(reheat = true): void {
+  refreshSelectionVisuals(reheat = true) {
     // `reheat` controls the selection-focus reheat at the tail. A genuine
     // selection change (setSelection / clearSelection / modifier-click-out)
     // wants it so the focus force visibly rearranges the graph; a routine
@@ -1071,11 +1050,11 @@ export class GraphRenderer {
     // the omniwatch hub).
     this.neighborIds.clear();
     if (this.selectedIds.size > 0) {
-      const visited = new Set<string>(this.selectedIds);
-      let frontier = new Set<string>(this.selectedIds);
+      const visited = new Set(this.selectedIds);
+      let frontier = new Set(this.selectedIds);
       const MAX_HOPS = 2;
       for (let hop = 0; hop < MAX_HOPS; hop++) {
-        const next = new Set<string>();
+        const next = new Set();
         for (const e of this.edges) {
           const s = nodeId(e.source), t = nodeId(e.target);
           if (frontier.has(s) && !visited.has(t)) {
@@ -1094,8 +1073,7 @@ export class GraphRenderer {
     }
 
     const hasSelection = this.selectedIds.size > 0;
-    this.nodeGroup.selectAll<SVGGElement, RNode>("g.node")
-      .classed("selected", (d) => this.selectedIds.has(d.id))
+    this.nodeGroup.selectAll("g.node").classed("selected", (d) => this.selectedIds.has(d.id))
       .classed("neighbor", (d) => this.neighborIds.has(d.id))
       .classed("universal-observer", (d) => d.universal_observer === true)
       // History-lens aged marker: a peer within the selected window but not
@@ -1105,7 +1083,7 @@ export class GraphRenderer {
       .classed("aged", (d) => isAgedNode(d))
       .classed("dimmed", (d) =>
         hasSelection && !this.selectedIds.has(d.id) && !this.neighborIds.has(d.id));
-    this.edgeGroup.selectAll<SVGLineElement, REdge>("line.edge")
+    this.edgeGroup.selectAll("line.edge")
       .classed("selected", (d) =>
         this.selectedIds.has(nodeId(d.source)) || this.selectedIds.has(nodeId(d.target)))
       .classed("dimmed", (d) =>
@@ -1114,7 +1092,7 @@ export class GraphRenderer {
         !this.selectedIds.has(nodeId(d.target)) &&
         !this.neighborIds.has(nodeId(d.source)) &&
         !this.neighborIds.has(nodeId(d.target)));
-    this.hullGroup.selectAll<SVGPathElement, { vendor: string; ids: string[] }>("path.hull")
+    this.hullGroup.selectAll("path.hull")
       .classed("dimmed", (d) =>
         hasSelection && !d.ids.some((id) => this.selectedIds.has(id)));
     if (this.options.onSelectionChange) {
@@ -1128,9 +1106,9 @@ export class GraphRenderer {
     if (reheat) this.simulation.alpha(0.55).restart();
   }
 
-  private installResize(): void {
+  installResize() {
     const apply = () => {
-      const rect = (this.svg.node() as SVGSVGElement).getBoundingClientRect();
+      const rect = this.svg.node().getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
       this.width = rect.width;
       this.height = rect.height;
@@ -1138,9 +1116,8 @@ export class GraphRenderer {
         "center",
         d3.forceCenter(this.width / 2, this.height / 2),
       );
-      this.simulation
-        .force("x", d3.forceX<RNode>(this.width / 2).strength(0.06))
-        .force("y", d3.forceY<RNode>(this.height / 2).strength(0.06));
+      this.simulation.force("x", d3.forceX(this.width / 2).strength(0.06))
+        .force("y", d3.forceY(this.height / 2).strength(0.06));
       this.simulation.alpha(0.3).restart();
     };
     apply();
@@ -1152,7 +1129,7 @@ export class GraphRenderer {
     // nodes drift to the left edge.
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(() => apply());
-      ro.observe(this.svg.node() as SVGSVGElement);
+      ro.observe(this.svg.node());
     }
   }
 
@@ -1166,7 +1143,7 @@ export class GraphRenderer {
    * throws, the previously committed frame is restored and repainted and the
    * error re-thrown for the banner — the surface degrades, it never blanks.
    */
-  setView(view: ViewResponse, params: ViewParams): void {
+  setView(view, params) {
     const prevNodes = this.nodes;
     const prevEdges = this.edges;
     try {
@@ -1176,9 +1153,7 @@ export class GraphRenderer {
       this.edges = prevEdges;
       try {
         this.simulation.nodes(this.nodes);
-        (
-          this.simulation.force("link") as d3.ForceLink<RNode, REdge>
-        ).links(this.edges);
+        this.simulation.force("link").links(this.edges);
         this.render();
       } catch {
         // The previous frame was valid when committed; if its repaint throws
@@ -1188,7 +1163,7 @@ export class GraphRenderer {
     }
   }
 
-  private applyView(view: ViewResponse, params: ViewParams): void {
+  applyView(view, params) {
     this.lastView = view;
     this.viewParams = params;
     this.topicFormat.clear();
@@ -1197,28 +1172,28 @@ export class GraphRenderer {
     }
 
     // Keep each surviving element's position so a refresh does not reshuffle.
-    const nodeById = new Map<string, RNode>(this.nodes.map((n) => [n.id, n]));
-    const place = (id: string) => {
+    const nodeById = new Map(this.nodes.map((n) => [n.id, n]));
+    const place = (id) => {
       const e = nodeById.get(id);
       return { x: e?.x, y: e?.y, vx: e?.vx, vy: e?.vy };
     };
 
-    const publishedEvents = new Map<string, number>();
+    const publishedEvents = new Map();
     for (const e of view.edges) {
       if (e.kind === "publish") publishedEvents.set(e.from, (publishedEvents.get(e.from) ?? 0) + e.total_events);
     }
-    const groupsOf = new Map<string, GroupOut[]>();
+    const groupsOf = new Map();
     for (const g of view.groups) {
       const list = groupsOf.get(g.publisher);
       if (list) list.push(g);
       else groupsOf.set(g.publisher, [g]);
     }
-    const vendorOfPeer = new Map<string, string | null>(view.peers.map((p) => [p.peer_id, p.vendor]));
-    const nameOfPeer = new Map<string, string>(
+    const vendorOfPeer = new Map(view.peers.map((p) => [p.peer_id, p.vendor]));
+    const nameOfPeer = new Map(
       view.peers.map((p) => [p.peer_id, p.slot_alias ?? p.display_name ?? shortId(p.peer_id)]),
     );
 
-    const nodes: RNode[] = [];
+    const nodes = [];
     for (const p of view.peers) {
       nodes.push({
         id: p.peer_id,
@@ -1297,7 +1272,7 @@ export class GraphRenderer {
     }
     this.nodes = nodes;
 
-    const labelOf = new Map<string, string>();
+    const labelOf = new Map();
     for (const t of view.topics) labelOf.set(t.id, t.key);
     for (const g of view.groups) labelOf.set(g.id, g.label);
     this.edges = view.edges.map((e) => ({
@@ -1316,9 +1291,9 @@ export class GraphRenderer {
     // publisher's group whose selector matches.
     this.pinEdgeIndex.clear();
     this.groupEdgeIndex.clear();
-    const publishEdge = new Map<string, REdge>();
+    const publishEdge = new Map();
     for (const e of this.edges) {
-      if (e.edge_kind === "publish") publishEdge.set(`${e.source as string}|${e.target as string}`, e);
+      if (e.edge_kind === "publish") publishEdge.set(`${e.source}|${e.target}`, e);
     }
     for (const t of view.topics) {
       for (const pub of t.publishers) {
@@ -1341,7 +1316,7 @@ export class GraphRenderer {
     // as "Handler error on snapshot", and the ENTIRE render is aborted — one
     // dangling edge blanks the whole canvas (0/0 peers). Drop the unresolvable
     // edges and keep drawing the rest, rather than failing open-to-blank.
-    const nodeIdSet = new Set<string>(this.nodes.map((n) => n.id));
+    const nodeIdSet = new Set(this.nodes.map((n) => n.id));
     const { kept, dropped, missingIds } = partitionDanglingEdges(
       nodeIdSet,
       this.edges,
@@ -1371,9 +1346,7 @@ export class GraphRenderer {
     );
 
     this.simulation.nodes(this.nodes);
-    (
-      this.simulation.force("link") as d3.ForceLink<RNode, REdge>
-    ).links(this.edges);
+    this.simulation.force("link").links(this.edges);
     this.render();
     // reheat=false: repaint selection classes without the selection-focus
     // reheat, so a data-only poll doesn't churn the layout (the topology
@@ -1404,7 +1377,7 @@ export class GraphRenderer {
    * for the given topic. If the edge isn't currently rendered (event
    * arrived before snapshot resync), the dot is dropped silently.
    */
-  pingEdge(sourcePeer: string, topic: string): void {
+  pingEdge(sourcePeer, topic) {
     const edge =
       this.pinEdgeIndex.get(`${sourcePeer}|${topic}`) ??
       this.groupEdgeIndex.get(sourcePeer)?.find((g) => selectorMatches(g.selector, topic.split("/")))?.edge;
@@ -1436,8 +1409,8 @@ export class GraphRenderer {
     }
     // <50 msg/s: fall through and animate.
 
-    const src = edge.source as RNode;
-    const dst = edge.target as RNode;
+    const src = edge.source;
+    const dst = edge.target;
     if (
       typeof src !== "object" ||
       typeof dst !== "object" ||
@@ -1456,29 +1429,18 @@ export class GraphRenderer {
     // tiers above still gate aggregate dot count by selection at
     // >50 msg/s, so this purely sizes the dots that DO render).
     const dot = this.dotGroup
-      .append("circle")
-      .attr("class", "packet-dot")
-      .attr("r", 5)
-      .attr("cx", src.x)
-      .attr("cy", src.y!)
+      .append("circle").attr("class", "packet-dot").attr("r", 5).attr("cx", src.x).attr("cy", src.y)
       .attr("fill", schemaColor(edge.schema_family))
       .style("opacity", 0.95);
 
-    dot
-      .transition()
-      .duration(1200)
-      .attr("cx", dst.x!)
-      .attr("cy", dst.y!)
-      .style("opacity", 0)
+    dot.transition().duration(1200).attr("cx", dst.x).attr("cy", dst.y).style("opacity", 0)
       .remove();
   }
 
-  private render(): void {
+  render() {
     // Cluster hulls first (lowest z).
     const clusters = computeClusters(this.nodes);
-    const hullSel = this.hullGroup
-      .selectAll<SVGPathElement, { vendor: string; ids: string[] }>("path.hull")
-      .data(clusters, (d) => d.vendor);
+    const hullSel = this.hullGroup.selectAll("path.hull").data(clusters, (d) => d.vendor);
     hullSel.exit().remove();
     hullSel
       .enter()
@@ -1502,13 +1464,12 @@ export class GraphRenderer {
     // Update class on existing hulls so a vendor key that changes
     // category (rare but possible — e.g. a re-classified namespace)
     // re-renders with the right styling.
-    this.hullGroup.selectAll<SVGPathElement, { vendor: string; ids: string[] }>("path.hull")
+    this.hullGroup.selectAll("path.hull")
       .attr("class", (d) =>
         isFutureCluster(d.vendor)
           ? `hull hull-future${this.selectedIds.size > 0 && !d.ids.some((id) => this.selectedIds.has(id)) ? " dimmed" : ""}`
           : `hull${this.selectedIds.size > 0 && !d.ids.some((id) => this.selectedIds.has(id)) ? " dimmed" : ""}`);
-    const hullLabelSel = this.hullLabelGroup
-      .selectAll<SVGGElement, { vendor: string; ids: string[] }>("g.hull-label")
+    const hullLabelSel = this.hullLabelGroup.selectAll("g.hull-label")
       .data(clusters, (d) => d.vendor);
     hullLabelSel.exit().remove();
     const hullLabelEnter = hullLabelSel
@@ -1532,8 +1493,7 @@ export class GraphRenderer {
       .text("FUTURE DESIGN · NOT ACTIVE ON THIS FABRIC");
 
     // Edges.
-    const edgeSel = this.edgeGroup
-      .selectAll<SVGLineElement, REdge>("line.edge")
+    const edgeSel = this.edgeGroup.selectAll("line.edge")
       .data(this.edges, (d) => `${nodeId(d.source)}|${nodeId(d.target)}|${d.topic}`);
 
     edgeSel.exit().remove();
@@ -1555,19 +1515,14 @@ export class GraphRenderer {
       // edges (topic → sub) get a short dash pattern so direction is
       // legible without arrowheads. Publish edges stay solid.
       .attr("stroke-dasharray", (d) =>
-        (d as REdge & { edge_kind?: string }).edge_kind === "subscribe"
+        d.edge_kind === "subscribe"
           ? "4 3"
           : null,
       );
-    this.edgeGroup
-      .selectAll<SVGLineElement, REdge>("line.edge")
-      .select("title")
-      .text((d) => edgeTooltip(d));
+    this.edgeGroup.selectAll("line.edge").select("title").text((d) => edgeTooltip(d));
 
     // Nodes.
-    const nodeSel = this.nodeGroup
-      .selectAll<SVGGElement, RNode>("g.node")
-      .data(this.nodes, (d) => d.id);
+    const nodeSel = this.nodeGroup.selectAll("g.node").data(this.nodes, (d) => d.id);
 
     nodeSel.exit().remove();
 
@@ -1657,10 +1612,7 @@ export class GraphRenderer {
 
     const merged = nodeEnter.merge(nodeSel);
 
-    merged
-      .select<SVGPathElement>("path.node-shape")
-      .attr("d", (d) => shapeFor(d))
-      .attr("fill", (d) => fillFor(d))
+    merged.select("path.node-shape").attr("d", (d) => shapeFor(d)).attr("fill", (d) => fillFor(d))
       .attr("stroke", (d) => vendorColor(vendorOf(d)))
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", (d) => (isDashedNode(d) ? "4,2" : null));
@@ -1685,15 +1637,8 @@ export class GraphRenderer {
         const count = d.singleton_count ?? 0;
         const r = nodeRadius(d);
         const big = d.group_kind === "family" && count > GROUP_OPEN_WARN_THRESHOLD;
-        sel
-          .select<SVGTextElement>("text.peek-halo-count")
-          .attr("y", -r - 9)
-          .classed("warn", big)
-          .text(`${count}`);
-        sel
-          .select<SVGTextElement>("text.peek-halo-warn")
-          .attr("y", -r - 24)
-          .text(big ? "⚠ may slow browser" : "");
+        sel.select("text.peek-halo-count").attr("y", -r - 9).classed("warn", big).text(`${count}`);
+        sel.select("text.peek-halo-warn").attr("y", -r - 24).text(big ? "⚠ may slow browser" : "");
       });
 
     merged
@@ -1708,7 +1653,7 @@ export class GraphRenderer {
     // Render label as multi-line if it contains a slash (topic-prefix
     // or topic-node identities); otherwise single line. Clear existing
     // tspans first so re-renders don't accumulate.
-    merged.select<SVGTextElement>("text.node-label").each(function (d) {
+    merged.select("text.node-label").each(function (d) {
       const sel = d3.select(this);
       sel.selectAll("tspan").remove();
       // Shorten any tenant/peer UUID run for the canvas label; the full
@@ -1727,10 +1672,8 @@ export class GraphRenderer {
     });
   }
 
-  private installDrag(): d3.DragBehavior<SVGGElement, RNode, RNode | d3.SubjectPosition> {
-    return d3
-      .drag<SVGGElement, RNode>()
-      .on("start", (ev, d) => {
+  installDrag() {
+    return d3.drag().on("start", (ev, d) => {
         if (!ev.active) this.simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
@@ -1746,26 +1689,16 @@ export class GraphRenderer {
       });
   }
 
-  private onTick(): void {
-    this.edgeGroup
-      .selectAll<SVGLineElement, REdge>("line.edge")
-      .attr("x1", (d) => (d.source as RNode).x!)
-      .attr("y1", (d) => (d.source as RNode).y!)
-      .attr("x2", (d) => (d.target as RNode).x!)
-      .attr("y2", (d) => (d.target as RNode).y!);
+  onTick() {
+    this.edgeGroup.selectAll("line.edge").attr("x1", (d) => d.source.x)
+      .attr("y1", (d) => d.source.y).attr("x2", (d) => d.target.x).attr("y2", (d) => d.target.y);
 
-    this.nodeGroup
-      .selectAll<SVGGElement, RNode>("g.node")
-      .attr("transform", (d) => `translate(${d.x},${d.y})`);
+    this.nodeGroup.selectAll("g.node").attr("transform", (d) => `translate(${d.x},${d.y})`);
 
     // Recompute hull paths from current node positions.
-    const nodesById = new Map<string, RNode>(this.nodes.map((n) => [n.id, n]));
-    this.hullGroup
-      .selectAll<SVGPathElement, { vendor: string; ids: string[] }>("path.hull")
-      .attr("d", (d) => hullPath(d.ids, nodesById));
-    this.hullLabelGroup
-      .selectAll<SVGGElement, { vendor: string; ids: string[] }>("g.hull-label")
-      .attr("transform", (d) => {
+    const nodesById = new Map(this.nodes.map((n) => [n.id, n]));
+    this.hullGroup.selectAll("path.hull").attr("d", (d) => hullPath(d.ids, nodesById));
+    this.hullLabelGroup.selectAll("g.hull-label").attr("transform", (d) => {
         const c = clusterCentroid(d.ids, nodesById);
         return c ? `translate(${c.x},${c.y - 60})` : "translate(-9999,-9999)";
       });
@@ -1774,8 +1707,8 @@ export class GraphRenderer {
 
 // ---------- Cluster + hull helpers ----------
 
-function computeClusters(nodes: RNode[]): { vendor: string; ids: string[] }[] {
-  const groups = new Map<string, string[]>();
+function computeClusters(nodes) {
+  const groups = new Map();
   for (const n of nodes) {
     // Super-nodes don't belong to their own vendor's cluster — they
     // ARE the collapsed-state visual, and drawing a 1-node hull around
@@ -1801,9 +1734,9 @@ function computeClusters(nodes: RNode[]): { vendor: string; ids: string[] }[] {
 }
 
 function clusterCentroid(
-  ids: string[],
-  nodesById: Map<string, RNode>,
-): { x: number; y: number } | null {
+  ids,
+  nodesById,
+) {
   let sx = 0, sy = 0, c = 0;
   for (const id of ids) {
     const n = nodesById.get(id);
@@ -1817,8 +1750,8 @@ function clusterCentroid(
 
 /** Compute a rounded "blob" path around the cluster nodes via convex
  *  hull + radius-based smoothing. Works for 1, 2, N nodes. */
-function hullPath(ids: string[], nodesById: Map<string, RNode>): string {
-  const points: [number, number][] = [];
+function hullPath(ids, nodesById) {
+  const points = [];
   for (const id of ids) {
     const n = nodesById.get(id);
     if (!n || n.x === undefined || n.y === undefined) continue;
@@ -1849,19 +1782,19 @@ function hullPath(ids: string[], nodesById: Map<string, RNode>): string {
   const inflated = hull.map(([x, y]) => {
     const vx = x - cx, vy = y - cy;
     const len = Math.sqrt(vx * vx + vy * vy);
-    if (len === 0) return [x, y] as [number, number];
-    return [x + (vx / len) * pad, y + (vy / len) * pad] as [number, number];
+    if (len === 0) return [x, y];
+    return [x + (vx / len) * pad, y + (vy / len) * pad];
   });
   // Smooth via d3 line with monotoneCurve for a rounded blob.
-  const line = d3.line<[number, number]>().curve(d3.curveCatmullRomClosed).x((d) => d[0]).y((d) => d[1]);
+  const line = d3.line().curve(d3.curveCatmullRomClosed).x((d) => d[0]).y((d) => d[1]);
   return line(inflated) ?? "";
 }
 
-function circlePath(cx: number, cy: number, r: number): string {
+function circlePath(cx, cy, r) {
   return `M${cx - r},${cy} a${r},${r} 0 1,0 ${2 * r},0 a${r},${r} 0 1,0 ${-2 * r},0 Z`;
 }
 
-function rectAlongLine(a: [number, number], b: [number, number], r: number): string {
+function rectAlongLine(a, b, r) {
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const len = Math.sqrt(dx * dx + dy * dy);
   const nx = -dy / len, ny = dx / len;
@@ -1876,10 +1809,10 @@ function rectAlongLine(a: [number, number], b: [number, number], r: number): str
  *  radius is 0.4·r — gives a clear star silhouette without becoming a
  *  blob at typical node sizes. Drawn once per node (same cost as the
  *  hexagon path); no animation, no extra DOM. */
-function starPath(r: number): string {
+function starPath(r) {
   const outer = r;
   const inner = r * 0.4;
-  const pts: string[] = [];
+  const pts = [];
   for (let i = 0; i < 10; i++) {
     const radius = i % 2 === 0 ? outer : inner;
     // Start at the top (apex pointing up); 36° per step (10 vertices).
@@ -1892,7 +1825,7 @@ function starPath(r: number): string {
   return pts.join(" ");
 }
 
-function shapeFor(n: RNode): string {
+function shapeFor(n) {
   const r = nodeRadius(n);
   // Vendor-collapse super-node: chunky rounded rectangle, distinct
   // from every other glyph in the legend so "a vendor folded up"
@@ -1924,7 +1857,7 @@ function shapeFor(n: RNode): string {
     const ring1 = r;
     const ring2 = r * 0.66;
     const ring3 = r * 0.36;
-    const ringPath = (rad: number) =>
+    const ringPath = (rad) =>
       `M${-rad},0 a${rad},${rad} 0 1,0 ${2 * rad},0 a${rad},${rad} 0 1,0 ${-2 * rad},0`;
     return `${ringPath(ring1)} ${ringPath(ring2)} ${ringPath(ring3)} Z`;
   }
@@ -1984,21 +1917,21 @@ const VENDOR_COLORS = [
 // Vendors with a pinned identity color — never enter the rotating
 // palette assignment so the glyph reads as "this specific thing" on
 // every load regardless of first-seen order.
-const PINNED_VENDOR_COLORS: Record<string, string> = {
+const PINNED_VENDOR_COLORS = {
   // Trashgoat = amber. Pairs with the star shape (shapeFor) + dashed
   // stroke (render path) for the platform-internal chaos-actor
   // visual treatment. Reuses --schema-ecn so we don't add a token.
   trashgoat: "#d29922",
 };
-const vendorColorAssign = new Map<string, string>();
-function vendorColor(vendor: string): string {
+const vendorColorAssign = new Map();
+function vendorColor(vendor) {
   const pinned = PINNED_VENDOR_COLORS[vendor];
   if (pinned) return pinned;
   if (!vendorColorAssign.has(vendor)) {
     const c = VENDOR_COLORS[vendorColorAssign.size % VENDOR_COLORS.length];
     vendorColorAssign.set(vendor, c);
   }
-  return vendorColorAssign.get(vendor)!;
+  return vendorColorAssign.get(vendor);
 }
 
 /** True iff the node should render with a dashed border. Trashgoat's
@@ -2006,15 +1939,15 @@ function vendorColor(vendor: string): string {
  *  registers "synthetic / intermittent / platform-internal" at a
  *  glance — same vocabulary the existing fillFor() uses to push the
  *  router glyph into the visual background. */
-function isDashedNode(n: RNode): boolean {
+function isDashedNode(n) {
   return vendorOf(n) === "trashgoat" && n.role !== "topic";
 }
 
-function edgeTooltip(e: REdge): string {
+function edgeTooltip(e) {
   return `${e.topic}\n${(e.projected_eps).toFixed(2)} msg/s · ${e.total_events} total`;
 }
 
-function nodeId(ref: string | RNode): string {
+function nodeId(ref) {
   return typeof ref === "string" ? ref : ref.id;
 }
 
@@ -2026,7 +1959,7 @@ const TENANT_UUID_RE =
 
 /** The readable tail of a group pattern: every trailing wildcard segment plus
  *  the two literal segments before them. */
-export function groupShortLabel(pattern: string): string {
+export function groupShortLabel(pattern) {
   const parts = pattern.split("/").filter(Boolean);
   let i = parts.length;
   while (i > 0 && (parts[i - 1] === "*" || parts[i - 1] === "**" || parts[i - 1] === "…")) i--;
@@ -2036,7 +1969,7 @@ export function groupShortLabel(pattern: string): string {
 /** Does a group selector cover a topic? Selectors are segment lists where
  *  a single star matches one segment and a double star any remainder. Display attribution only (which
  *  element a live publish animates on) — never an authorization input. */
-export function selectorMatches(selector: string[], topic: string[]): boolean {
+export function selectorMatches(selector, topic) {
   let i = 0;
   for (; i < selector.length; i++) {
     if (selector[i] === "**") return true;
@@ -2054,14 +1987,14 @@ export function selectorMatches(selector: string[], topic: string[]): boolean {
  *  Idempotent on already-short strings (no UUID run → returned
  *  unchanged). Four chars is enough to scan/disambiguate at a glance;
  *  the full value is one hover away. */
-export function shortenUuids(s: string): string {
+export function shortenUuids(s) {
   return s.replace(TENANT_UUID_RE, (m) => {
     const hex = m.replace(/-/g, "");
     return `${hex.slice(0, 4)}…`;
   });
 }
 
-function labelOf(n: RNode): string {
+function labelOf(n) {
   // Vendor-collapse super-node label: "VENDOR  Np·Mt". Always
   // rendered (not gated on selection like peer labels) since the
   // super-node IS the only visible representation of the vendor in

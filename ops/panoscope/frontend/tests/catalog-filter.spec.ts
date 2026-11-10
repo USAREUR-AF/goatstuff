@@ -6,7 +6,7 @@
 // portal must never make the catalog look empty).
 
 import { test, expect } from "@playwright/test";
-import { isDiscoverable, foldEmptyOrgs } from "../src/catalog-filter.js";
+import { isDiscoverable, foldEmptyOrgs } from "../web/src/catalog-filter.js";
 
 test("declared topics show, positively-empty folds, unknown shows", () => {
   expect(isDiscoverable({ declared_topics: 3 })).toBe(true);

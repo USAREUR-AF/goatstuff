@@ -20,48 +20,49 @@
 // Pure + framework-free so the contract is locked by edge-guard.spec.ts
 // without a DOM, d3, or the heavyweight render-internal types.
 
-/** Minimal structural view of a graph node — only the id is load-bearing
- *  for the guard. The render path's RNode satisfies this. */
-export interface GuardNode {
-  id: string;
-}
+/**
+ * Minimal structural view of a graph node — only the id is load-bearing
+ * for the guard. The render path's RNode satisfies this.
+ * @typedef {Object} GuardNode
+ * @property {string} id
+ */
 
-/** Minimal structural view of a graph edge. d3 mutates source/target from
- *  the wire `string` id into a resolved node object after the first tick, so
- *  both shapes must be handled. The render path's REdge satisfies this. */
-export interface GuardEdge {
-  source: string | GuardNode;
-  target: string | GuardNode;
-}
+/**
+ * Minimal structural view of a graph edge. d3 mutates source/target from
+ * the wire `string` id into a resolved node object after the first tick, so
+ * both shapes must be handled. The render path's REdge satisfies this.
+ * @typedef {Object} GuardEdge
+ * @property {string | GuardNode} source
+ * @property {string | GuardNode} target
+ */
 
 /** Resolve an edge endpoint to its node id, whether it's still a raw wire
  *  id string or an already-resolved node object. */
-export function edgeEndpointId(end: string | GuardNode): string {
+export function edgeEndpointId(end) {
   return typeof end === "string" ? end : end.id;
 }
 
-export interface EdgePartition<E extends GuardEdge> {
-  /** Edges whose source AND target both resolve to a node in the set. */
-  kept: E[];
-  /** Edges with at least one unresolvable endpoint — must NOT reach d3. */
-  dropped: E[];
-  /** The distinct missing node ids the dropped edges referenced (for a
-   *  console.warn so the contract violation is visible, not silent). */
-  missingIds: string[];
-}
+/**
+ * @template {GuardEdge} E
+ * @typedef {Object} EdgePartition
+ * @property {E[]} kept Edges whose source AND target both resolve to a node in the set.
+ * @property {E[]} dropped Edges with at least one unresolvable endpoint — must NOT reach d3.
+ * @property {string[]} missingIds The distinct missing node ids the dropped edges referenced (for a
+ *   console.warn so the contract violation is visible, not silent).
+ */
 
 /**
  * Split `edges` into those safe to hand to d3-force and those that would
  * make it throw. `nodeIds` is the id set of every node that will be passed
  * to `simulation.nodes()`.
  */
-export function partitionDanglingEdges<E extends GuardEdge>(
-  nodeIds: Set<string>,
-  edges: E[],
-): EdgePartition<E> {
-  const kept: E[] = [];
-  const dropped: E[] = [];
-  const missing = new Set<string>();
+export function partitionDanglingEdges(
+  nodeIds,
+  edges,
+) {
+  const kept = [];
+  const dropped = [];
+  const missing = new Set();
   for (const e of edges) {
     const s = edgeEndpointId(e.source);
     const t = edgeEndpointId(e.target);

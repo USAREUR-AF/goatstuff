@@ -20,27 +20,15 @@ import { GraphRenderer, isFutureDesignKeyExpr, selectorMatches, shortenUuids } f
 import { ViewClient } from "./view-client.js";
 import { shortId } from "./ids.js";
 import { medianIntervalMs, streamIntervalMs } from "./freshness.js";
-import { makeIcon, type IconName } from "./icons.js";
+import { makeIcon } from "./icons.js";
 import { LegendPanel } from "./legend.js";
-import { PerformanceMonitor, POLICY, type PerfTier } from "./perf.js";
-import { WsClient, type ConnectionState } from "./ws.js";
-import { WelcomePanel, type WelcomeStatus } from "./welcome.js";
-import { compileFilter, type JsonValue } from "./jq-lite.js";
+import { PerformanceMonitor, POLICY } from "./perf.js";
+import { WsClient } from "./ws.js";
+import { WelcomePanel } from "./welcome.js";
+import { compileFilter } from "./jq-lite.js";
 import { isStale, foldFetchEma } from "./freshness.js";
 import { handleResponse, isPageSignedOut, shouldPoll } from "./session.js";
 import { LEX, applyLexicon } from "./lex.js";
-import type {
-  DecodedSampleRow,
-  GroupMemberRow,
-  GroupOut,
-  Legend,
-  SiblingUrls,
-  TopicDecodeOutcome,
-  ViewLimits,
-  ViewParams,
-  ViewResponse,
-  WsEvent,
-} from "./types.js";
 
 const STATUS_REFRESH_MS = 2_000;
 /** Per-fetch hard timeout for the fleet-bar + legend polls. Without
@@ -59,13 +47,15 @@ const FLEET_FETCH_TIMEOUT_MS = 8_000;
  *  it (docs/design/panoscope-view-model.md), so they all describe one view. */
 const viewClient = new ViewClient();
 
-/** View bus — one HTTP fetcher (the fleet-bar poll), many consumers. One
- *  publisher keeps the browser's per-origin connection pool free: the welcome
- *  panel, canvas and HUD used to fetch on their own and saturated it whenever
- *  a request lagged. */
-type ViewSubscriber = (view: ViewResponse, params: ViewParams) => void;
-const viewBus = new Set<ViewSubscriber>();
-function publishView(view: ViewResponse, params: ViewParams): void {
+/**
+ * View bus — one HTTP fetcher (the fleet-bar poll), many consumers. One
+ * publisher keeps the browser's per-origin connection pool free: the welcome
+ * panel, canvas and HUD used to fetch on their own and saturated it whenever
+ * a request lagged.
+ * @typedef {(view: import("./types.js").ViewResponse, params: import("./types.js").ViewParams) => void} ViewSubscriber
+ */
+const viewBus = new Set();
+function publishView(view, params) {
   for (const cb of viewBus) {
     try {
       cb(view, params);
@@ -74,18 +64,18 @@ function publishView(view: ViewResponse, params: ViewParams): void {
     }
   }
 }
-function subscribeView(cb: ViewSubscriber): () => void {
+function subscribeView(cb) {
   viewBus.add(cb);
   return () => viewBus.delete(cb);
 }
 
 /** Fetch the view now rather than at the next poll — a parameter changed.
  *  Assigned by installFleetBar, which owns the one fetcher. */
-let requestViewNow: () => void = () => {};
+let requestViewNow = () => {};
 
 /** History-lens window selections, hours, widest→narrowest (matches the
  *  toolbar select). docs/design/panoscope-history-lens.md. */
-const HISTORY_WINDOW_OPTIONS: { hours: number; label: string }[] = [
+const HISTORY_WINDOW_OPTIONS = [
   { hours: 168, label: "7d" },
   { hours: 72, label: "3d" },
   { hours: 48, label: "48h" },
@@ -95,13 +85,13 @@ const HISTORY_WINDOW_OPTIONS: { hours: number; label: string }[] = [
   { hours: 1, label: "1h" },
 ];
 
-function main(): void {
-  const svg = document.getElementById("graph") as SVGSVGElement | null;
+function main() {
+  const svg = document.getElementById("graph");
   if (!svg) {
     throw new Error("missing #graph element");
   }
   const indicator = document.getElementById("connection-indicator");
-  const mainEl = document.querySelector("main") as HTMLElement | null;
+  const mainEl = document.querySelector("main");
   if (!mainEl) {
     throw new Error("missing <main> element");
   }
@@ -126,7 +116,7 @@ function main(): void {
     },
   });
   // Expose renderer to search overlay + keyboard handlers.
-  (window as unknown as { __panoscopeRenderer: GraphRenderer }).__panoscopeRenderer = renderer;
+  window.__panoscopeRenderer = renderer;
   // Canvas gestures become view-parameter edits; every edit refetches now.
   renderer.setViewIntents({
     openGroup: (id) => viewClient.openGroup(id),
@@ -166,7 +156,7 @@ function main(): void {
   // last snapshot + a periodic /api/legend poll (LegendPanel does its
   // own poll for the footer strip; we read the legend cache for the
   // welcome status as well via fetch on a slower interval).
-  const status: WelcomeStatus = {
+  const status = {
     answered: false,
     ws: "connecting",
     resolver: null,
@@ -176,7 +166,7 @@ function main(): void {
     lastEventMs: null,
   };
 
-  const renderStatus = (): void => welcome.update({ ...status });
+  const renderStatus = () => welcome.update({ ...status });
   renderStatus();
 
   // Diagnostics overlay — clickable left sidebar opens a detailed
@@ -194,7 +184,7 @@ function main(): void {
   // push) is documented as v2.
   let inboundSelectionPending = parseInboundSelection(window.location.search);
 
-  const handleView = (view: ViewResponse, params: ViewParams): void => {
+  const handleView = (view, params) => {
     try {
       renderer.setView(view, params);
     } catch (e) {
@@ -227,7 +217,7 @@ function main(): void {
     }
   };
 
-  const handleDelta = (events: WsEvent[]): void => {
+  const handleDelta = (events) => {
     // Cheap path: animate publish_sampled events along existing edges.
     // peer_seen and publish_dropped events bump a counter but don't
     // mutate the renderer until the next resync. sample_arrived events
@@ -256,7 +246,7 @@ function main(): void {
       liveRefreshDebounce = window.setTimeout(() => {
         liveRefreshDebounce = null;
         void refreshStream();
-      }, LIVE_REFRESH_DEBOUNCE_MS) as unknown as number;
+      }, LIVE_REFRESH_DEBOUNCE_MS);
     }
     renderStatus();
     // The view is refreshed by the fleet-bar poll → viewBus, NOT by a
@@ -269,7 +259,7 @@ function main(): void {
   // welcome panel through the view bus.
   subscribeView(handleView);
 
-  const refreshLegendStatus = async (): Promise<void> => {
+  const refreshLegendStatus = async () => {
     if (!shouldPoll(document.hidden, isPageSignedOut())) return;
     try {
       const resp = await fetch("/api/legend", {
@@ -278,7 +268,7 @@ function main(): void {
       });
       if (handleResponse(resp)) return;
       if (!resp.ok) return;
-      const l = (await resp.json()) as Legend;
+      const l = (await resp.json());
       // Display lexicon (ADR — portal-lexicon §"Panoscope"): relex
       // JS-generated labels + sync the title/subtitle to this goatnet.
       applyLexicon(l);
@@ -315,7 +305,7 @@ function main(): void {
       status.ws = "lagged";
       renderStatus();
     },
-    onStateChange: (s: ConnectionState) => {
+    onStateChange: (s) => {
       status.ws = s;
       renderStatus();
       if (indicator) {
@@ -351,7 +341,7 @@ function main(): void {
   ws.connect();
 }
 
-function buildWsUrl(): string {
+function buildWsUrl() {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   // `snapshot=0`: this page draws from /api/view and has no use for the
   // opening full snapshot the server would otherwise build and send.
@@ -363,7 +353,7 @@ function buildWsUrl(): string {
  *  blanks the viz while the HUD keeps ticking from the parallel
  *  WS-events path — operator reads it as "fabric is quiet" and the
  *  real failure stays hidden in devtools. */
-function showRenderErrorBanner(reason: string, err: unknown): void {
+function showRenderErrorBanner(reason, err) {
   let banner = document.getElementById("render-error-banner");
   if (!banner) {
     banner = document.createElement("div");
@@ -377,7 +367,7 @@ function showRenderErrorBanner(reason: string, err: unknown): void {
     dismiss.className = "render-error-banner-dismiss";
     dismiss.setAttribute("aria-label", "Dismiss render-error banner");
     dismiss.textContent = "×";
-    dismiss.addEventListener("click", () => banner!.classList.add("hidden"));
+    dismiss.addEventListener("click", () => banner.classList.add("hidden"));
     banner.appendChild(dismiss);
     document.body.appendChild(banner);
   }
@@ -387,11 +377,13 @@ function showRenderErrorBanner(reason: string, err: unknown): void {
   if (msgEl) msgEl.textContent = `${reason}: ${message}`;
 }
 
-let streamRefreshHandle: number | null = null;
-let streamCurrentTopics: string[] = [];
+let streamRefreshHandle = null;
+let streamCurrentTopics = [];
 let streamPaused = false;
-type StreamMode = "raw" | "decoded";
-let streamMode: StreamMode = "raw";
+/**
+ * @typedef {"raw" | "decoded"} StreamMode
+ */
+let streamMode = "raw";
 
 /** LIVE-follow state (operator opt-in per docs/design/panoscope.md
  *  §"LIVE-follow on the stream view"). When true, the backend is
@@ -405,11 +397,11 @@ let streamLive = false;
  *  the backend is currently honoring for us. Kept in sync with
  *  streamCurrentTopics on every selection change while streamLive,
  *  and emptied on PAUSE + stopStream + LIVE-off + WS close. */
-let streamWatchedTopics: Set<string> = new Set();
+let streamWatchedTopics = new Set();
 /** Trailing-edge debounce timer for sample_arrived notifies. High-rate
  *  topics naturally batch into one refresh per LIVE_REFRESH_DEBOUNCE_MS
  *  window; low-rate topics still see at most ~50ms of latency. */
-let liveRefreshDebounce: number | null = null;
+let liveRefreshDebounce = null;
 const LIVE_REFRESH_DEBOUNCE_MS = 50;
 /** Stream-pane staleness floor when the publish interval is unknown (a
  *  single sample). Generous so one recent storage-recall doesn't read as
@@ -418,7 +410,7 @@ const STREAM_STALE_UNKNOWN_FLOOR_MS = 30_000;
 
 /** WsClient handle so installStreamLive can send {op:"watch"|"unwatch"}.
  *  Set in main() during WS construction; null until then. */
-let __wsClient: WsClient | null = null;
+let __wsClient = null;
 
 // Inspection-flow history — stack of selections the operator drilled
 // through. Lets the side panel render a clickable breadcrumb so the
@@ -430,14 +422,17 @@ let __wsClient: WsClient | null = null;
 // inspection survives a topic drill-down + back-navigation (operator
 // who set a deriver to "HEARS only" doesn't lose that choice when
 // they pop back from a topic inspection).
-type StreamScope = "all" | "hears" | "says";
-interface InspectionEntry {
-  kind: "peer" | "topic" | "namespace";
-  nodeId: string;
-  label: string;
-  scope: StreamScope;  // peer-only; topic entries always 'all'
-}
-let inspectionHistory: InspectionEntry[] = [];
+/**
+ * @typedef {"all" | "hears" | "says"} StreamScope
+ */
+/**
+ * @typedef {Object} InspectionEntry
+ * @property {"peer" | "topic" | "namespace"} kind
+ * @property {string} nodeId
+ * @property {string} label
+ * @property {StreamScope} scope
+ */
+let inspectionHistory = [];
 // True while a back-nav / breadcrumb-jump is mid-flight so renderNodeInfo
 // doesn't double-push onto the history.
 let suppressHistoryPush = false;
@@ -445,13 +440,15 @@ let suppressHistoryPush = false;
 // "open in fleet search" escape-hatch can drive the existing `/` search
 // overlay (open + pre-fill a query) without reaching into its closure.
 // Null until the overlay is installed at bootstrap.
-let openFleetSearch: ((prefill: string) => void) | null = null;
-type JsonFormat = "pretty" | "compact";
-let streamJsonFormat: JsonFormat = "pretty";
+let openFleetSearch = null;
+/**
+ * @typedef {"pretty" | "compact"} JsonFormat
+ */
+let streamJsonFormat = "pretty";
 // Compiled jq-lite filter (or null when the input is empty / errored).
 // Recompiled whenever the input box changes. The next refreshStream pass
 // applies it to each decoded sample's JSON output.
-let streamFilter: import("./jq-lite.js").CompiledFilter | null = null;
+let streamFilter = null;
 // Cached from /api/legend on bootstrap. When false, the Decoded toggle
 // stays disabled and shows a one-line tooltip pointing at the deploy gap.
 let decoderEnabled = false;
@@ -459,7 +456,7 @@ let decoderEnabled = false;
 /** Re-render the breadcrumb row above #info-title. Empty when only
  *  one entry is in history (no path to step back through). Each
  *  segment except the last is clickable + pops to that level. */
-function renderInspectionBreadcrumb(): void {
+function renderInspectionBreadcrumb() {
   const crumb = document.getElementById("info-breadcrumb");
   if (!crumb) return;
   while (crumb.firstChild) crumb.removeChild(crumb.firstChild);
@@ -489,7 +486,7 @@ function renderInspectionBreadcrumb(): void {
     if (idx === inspectionHistory.length - 1) {
       seg.classList.add("info-breadcrumb-seg--current");
     } else {
-      (seg as HTMLButtonElement).type = "button";
+      seg.type = "button";
       seg.addEventListener("click", () => jumpInspection(idx));
     }
     seg.textContent = entry.label;
@@ -498,14 +495,14 @@ function renderInspectionBreadcrumb(): void {
 }
 
 /** Step back one level. Used by the breadcrumb back-arrow + ESC. */
-function popInspection(): void {
+function popInspection() {
   if (inspectionHistory.length < 2) return;
   inspectionHistory.pop();
   reEnterCurrent();
 }
 
 /** Jump to a specific breadcrumb segment by index. */
-function jumpInspection(idx: number): void {
+function jumpInspection(idx) {
   if (idx < 0 || idx >= inspectionHistory.length) return;
   inspectionHistory = inspectionHistory.slice(0, idx + 1);
   reEnterCurrent();
@@ -513,11 +510,10 @@ function jumpInspection(idx: number): void {
 
 /** Re-render the side panel for the topmost history entry without
  *  pushing onto history (used by back / jump navigation). */
-function reEnterCurrent(): void {
+function reEnterCurrent() {
   const top = inspectionHistory[inspectionHistory.length - 1];
   if (!top) return;
-  const rndr = (window as unknown as { __panoscopeRenderer: GraphRenderer })
-    .__panoscopeRenderer;
+  const rndr = window.__panoscopeRenderer;
   if (!rndr) return;
   const node = rndr.allNodeIds().find((nn) => nn.id === top.nodeId);
   if (!node) {
@@ -542,10 +538,10 @@ function reEnterCurrent(): void {
  *  the retrievability line distinguishes "confirmed" from "unconfirmed"
  *  (never claims "not retrievable"). See docs/design/pubsub-hygiene-diagnostic.md. */
 function appendHygiene(
-  body: HTMLElement,
-  peerId: string,
-  h: import("./types.js").NodeHygiene,
-): void {
+  body,
+  peerId,
+  h,
+) {
   const wrap = document.createElement("div");
   wrap.className = "hygiene-block";
   const badge = document.createElement("div");
@@ -559,8 +555,7 @@ function appendHygiene(
   body.appendChild(wrap);
 
   fetch(`/api/publisher/hygiene?source=${encodeURIComponent(peerId)}`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((rep: import("./types.js").PublisherHygiene | null) => {
+    .then((r) => (r.ok ? r.json() : null)).then((rep) => {
       detail.textContent = "";
       if (!rep) {
         detail.textContent = "hygiene check unavailable";
@@ -568,7 +563,7 @@ function appendHygiene(
       }
       const ret = document.createElement("div");
       ret.className = `hygiene-retrieval hygiene-ret-${rep.retrievability}`;
-      const retText: Record<string, string> = {
+      const retText = {
         confirmed: "retrievable later: CONFIRMED — a storage answered a get",
         unconfirmed:
           "retrievable later: UNCONFIRMED — no storage answered the probe (may be no storage, an empty one, or none configured)",
@@ -598,23 +593,7 @@ function appendHygiene(
     });
 }
 
-function renderNodeInfo(n: {
-  id: string;
-  slot_alias?: string | null;
-  display_name?: string | null;
-  vendor: string | null;
-  role: string;
-  publishes: string[];
-  subscribes: string[];
-  first_seen_ms: number;
-  last_seen_ms: number;
-  // Group fields: present only when the clicked node is a group, which
-  // routes to the group inspector below.
-  is_singleton_super?: boolean;
-  singleton_source_peer?: string;
-  singleton_namespace?: string;
-  singleton_count?: number;
-}): void {
+function renderNodeInfo(n) {
   const panel = document.getElementById("info-panel");
   const title = document.getElementById("info-title");
   const body = document.getElementById("info-body");
@@ -643,7 +622,7 @@ function renderNodeInfo(n: {
     const label = isTopicNode
       ? topicKeyExpr ?? n.id
       : (n.slot_alias
-          ?? (n as { display_name?: string | null }).display_name
+          ?? n.display_name
           ?? n.vendor
           ?? shortId(n.id));
     const top = inspectionHistory[inspectionHistory.length - 1];
@@ -664,17 +643,7 @@ function renderNodeInfo(n: {
   // Infrastructure (Zenoh router) — admin-namespace discovered, no
   // schema-decl, no display_name/vendor/role_class. Without an
   // explicit branch the title would render as a truncated ZID.
-  const meta = n as typeof n & {
-    site?: string | null;
-    role_class?: string | null;
-    format_hint?: string | null;
-    node_kind?: string | null;
-    node_class?: string | null;
-    node_subkind?: string | null;
-    locator?: string | null;
-    universal_observer?: boolean | null;
-    hygiene?: import("./types.js").NodeHygiene | null;
-  };
+  const meta = n;
   const isRouterNode = meta.node_kind === "router";
   // Universal `**` observer — subscribes to everything; the backend
   // suppresses its per-topic fan-out edges, so it renders edgeless. Badge +
@@ -704,7 +673,7 @@ function renderNodeInfo(n: {
   // (Honors the console expand toggle, but the title isn't a `.uuid-key`
   // element — it's re-rendered per selection, so it picks up the flag then.)
   if (isTopicNode) {
-    (title as HTMLElement).title = titleText;
+    title.title = titleText;
     title.appendChild(document.createTextNode(consoleKeyDisplay(titleText)));
   } else {
     title.appendChild(document.createTextNode(titleText));
@@ -722,7 +691,7 @@ function renderNodeInfo(n: {
     title.appendChild(badge);
   }
   // SYNTHETIC badge — visible cue that this peer's traffic is notional.
-  if ((n as typeof n & { synthetic?: boolean | null }).synthetic === true) {
+  if (n.synthetic === true) {
     const badge = document.createElement("span");
     badge.className = "synthetic-badge";
     badge.textContent = "SYNTHETIC";
@@ -757,7 +726,7 @@ function renderNodeInfo(n: {
   // nodes get nothing (no actionable mission-data target on the
   // substrate) — generalized from the router-only suppression.
   if (!isInfraNode) {
-    const rndr = (window as unknown as { __panoscopeRenderer: GraphRenderer }).__panoscopeRenderer;
+    const rndr = window.__panoscopeRenderer;
     const siblings = rndr?.getSiblings?.() ?? {};
     appendSiblingActionRow(body, siblings, {
       key: topicKeyExpr ?? undefined,
@@ -768,7 +737,7 @@ function renderNodeInfo(n: {
   // Fold/unfold control — the discoverable, labeled equivalent of the
   // canvas double-click gesture (Option A + side-panel button). Guards
   // internally: topic pins + the infra router render nothing.
-  appendFoldActionRow(body, n as Parameters<GraphRenderer["toggleFold"]>[0]);
+  appendFoldActionRow(body, n);
   if (isUniversalObserver) {
     appendRow(
       body,
@@ -829,7 +798,7 @@ function renderNodeInfo(n: {
     // Drill-down lists: click a publish → select that topic-virtual
     // node (loads its stream). Click a subscribe → if it matches a
     // concrete topic show that, else show the pattern as text.
-    const rndr = (window as unknown as { __panoscopeRenderer: GraphRenderer }).__panoscopeRenderer;
+    const rndr = window.__panoscopeRenderer;
     if (n.publishes.length > 0) {
       appendTopicList(body, "publishes", n.publishes, rndr, (topic) => {
         const topicNodeId = `topic:${topic}`;
@@ -872,14 +841,13 @@ function renderNodeInfo(n: {
   //                         only, or both
   //   pure source         → only publishes[]; toggle hidden
   //   pure sink           → only consumed topics; toggle hidden
-  const renderer = (window as unknown as { __panoscopeRenderer: GraphRenderer })
-    .__panoscopeRenderer;
+  const renderer = window.__panoscopeRenderer;
   const consumed = renderer?.consumedTopicsFor?.(n.id) ?? [];
   const hasPub = n.publishes.length > 0;
   const hasSub = consumed.length > 0;
   const topEntry = inspectionHistory[inspectionHistory.length - 1];
-  const scope: StreamScope = topEntry?.scope ?? "all";
-  const streamTopics: string[] = isTopicNode
+  const scope = topEntry?.scope ?? "all";
+  const streamTopics = isTopicNode
     ? topicKeyExpr ? [topicKeyExpr] : []
     : scopeTopics(n.publishes, consumed, scope);
 
@@ -908,14 +876,15 @@ function renderNodeInfo(n: {
 // viewer's scope, from exactly the grouping the canvas drew — with the
 // group's aggregate stats. See docs/design/panoscope.md §"Side panel".
 
-interface NsTopicRow {
-  topic: string;
-  format: string | null;
-  total_events: number;
-  last_event_ms: number;
-  projected_eps: number;
-  schema_family: string | null;
-}
+/**
+ * @typedef {Object} NsTopicRow
+ * @property {string} topic
+ * @property {string | null} format
+ * @property {number} total_events
+ * @property {number} last_event_ms
+ * @property {number} projected_eps
+ * @property {string | null} schema_family
+ */
 
 /** Above this many members "show on canvas" carries a "may slow browser"
  *  notice. The ceiling on what can be opened at all is the server's
@@ -933,33 +902,25 @@ const NS_LIST_OVERSCAN = 6;
  *  its members one level down, so its size is what the canvas receives; a
  *  subtree or whole-publisher group opens into regrouped children. The server
  *  keeps a group closed when the opening would exceed the limit either way. */
-function groupOpensOnCanvas(g: GroupOut, limits: ViewLimits): boolean {
+function groupOpensOnCanvas(g, limits) {
   return g.kind !== "family" || g.topic_count <= limits.max_open_units;
 }
 
 /** The part of a group label to pre-fill fleet search with: the literal
  *  prefix before its first wildcard. */
-function groupSearchPrefix(label: string): string {
+function groupSearchPrefix(label) {
   const star = label.indexOf("*");
   return star < 0 ? label : label.slice(0, star);
 }
 
 function renderGroupInspector(
-  n: {
-    id: string;
-    vendor: string | null;
-    display_name?: string | null;
-    singleton_source_peer?: string;
-    singleton_namespace?: string;
-    singleton_count?: number;
-  },
-  _panel: HTMLElement,
-  title: HTMLElement,
-  body: HTMLElement,
+  n,
+  _panel,
+  title,
+  body,
   initialFilter = "",
-): void {
-  const rndr = (window as unknown as { __panoscopeRenderer?: GraphRenderer })
-    .__panoscopeRenderer;
+) {
+  const rndr = window.__panoscopeRenderer;
   const group = rndr?.groupById(n.id);
   const view = rndr?.currentView();
   const peer = group?.publisher ?? n.singleton_source_peer ?? "";
@@ -1064,7 +1025,7 @@ function renderGroupInspector(
   // the canvas (it is inside this group), so synthesize the minimal node
   // renderNodeInfo's topic branch needs; setSelection is a no-op highlight
   // when the pin isn't painted.
-  const drillIntoTopic = (topic: string) => {
+  const drillIntoTopic = (topic) => {
     const topicNodeId = `topic:${topic}`;
     rndr?.setSelection([topicNodeId]);
     const onCanvas = rndr?.allNodeIds().find((nn) => nn.id === topicNodeId);
@@ -1084,7 +1045,7 @@ function renderGroupInspector(
 
   // Members, paged. `request` increments on every new filter so a slow page
   // for an old filter never paints over a newer one.
-  let rows: NsTopicRow[] = [];
+  let rows = [];
   let matched = 0;
   let total = count;
   let request = 0;
@@ -1097,7 +1058,7 @@ function renderGroupInspector(
     renderGroupStats(stats, group, total, matched, search.value.trim());
     renderVirtualizedTopicList(listHost, rows, matched, drillIntoTopic, () => void loadMore());
   };
-  const load = async (q: string) => {
+  const load = async (q) => {
     const mine = ++request;
     loading = true;
     const page = await viewClient.groupMembers(n.id, q, 0, NS_PAGE).catch(() => null);
@@ -1135,14 +1096,14 @@ function renderGroupInspector(
   paint();
   void load(initialFilter.trim());
 
-  let debounce: number | null = null;
+  let debounce = null;
   search.addEventListener("input", () => {
     if (debounce !== null) window.clearTimeout(debounce);
-    debounce = window.setTimeout(() => void load(search.value.trim()), NS_SEARCH_DEBOUNCE_MS) as unknown as number;
+    debounce = window.setTimeout(() => void load(search.value.trim()), NS_SEARCH_DEBOUNCE_MS);
   });
 }
 
-function memberRow(r: GroupMemberRow): NsTopicRow {
+function memberRow(r) {
   return {
     topic: r.key,
     format: r.format,
@@ -1156,14 +1117,14 @@ function memberRow(r: GroupMemberRow): NsTopicRow {
 /** Aggregate stats above the member list, from the group as drawn: count
  *  (matched/total while filtering), format mix, rate, last event, subscribers. */
 function renderGroupStats(
-  host: HTMLElement,
-  group: GroupOut | undefined,
-  total: number,
-  matched: number,
-  filter: string,
-): void {
+  host,
+  group,
+  total,
+  matched,
+  filter,
+) {
   host.innerHTML = "";
-  const line = (label: string, value: string) => {
+  const line = (label, value) => {
     const row = document.createElement("div");
     row.className = "ns-inspector-stat";
     const k = document.createElement("span");
@@ -1197,12 +1158,12 @@ function renderGroupStats(
  *  time; an empty spacer reserves the scroll height of every MATCHED member,
  *  and scrolling near the end of the loaded rows asks for the next page. */
 function renderVirtualizedTopicList(
-  host: HTMLElement,
-  rows: NsTopicRow[],
-  matched: number,
-  onRowClick: (topic: string) => void,
-  onNeedMore: () => void,
-): void {
+  host,
+  rows,
+  matched,
+  onRowClick,
+  onNeedMore,
+) {
   const keepScroll = host.scrollTop;
   host.innerHTML = "";
   if (rows.length === 0) {
@@ -1252,9 +1213,9 @@ function renderVirtualizedTopicList(
 /** One topic row: key + format pill + event-count. Whole-row click
  *  drills into the topic (opens the per-topic stream pane). */
 function buildNsRow(
-  row: NsTopicRow,
-  onRowClick: (topic: string) => void,
-): HTMLElement {
+  row,
+  onRowClick,
+) {
   const el = document.createElement("div");
   el.className = "ns-inspector-row";
   el.title = `click to inspect ${row.topic}`;
@@ -1285,10 +1246,10 @@ function buildNsRow(
 }
 
 function scopeTopics(
-  publishes: string[],
-  consumed: string[],
-  scope: StreamScope,
-): string[] {
+  publishes,
+  consumed,
+  scope,
+) {
   if (scope === "hears") return Array.from(new Set(consumed));
   if (scope === "says") return Array.from(new Set(publishes));
   return Array.from(new Set([...publishes, ...consumed]));
@@ -1298,11 +1259,7 @@ function scopeTopics(
  *  DECODED toggle's visual treatment (info-stream-mode buttons) so the
  *  two controls read as a pair. Hidden when the peer has only one
  *  direction (pure source / pure sink). */
-function renderStreamScopeToggle(opts: {
-  show: boolean;
-  scope: StreamScope;
-  onChange: (next: StreamScope) => void;
-}): void {
+function renderStreamScopeToggle(opts) {
   const host = document.getElementById("info-stream-scope-host");
   if (!host) return;
   while (host.firstChild) host.removeChild(host.firstChild);
@@ -1319,8 +1276,8 @@ function renderStreamScopeToggle(opts: {
   // sibling has to flip its own aria-pressed AND clear every other
   // button's — otherwise the visual stays stuck on the prior
   // selection even though the underlying state updated.
-  const buttons: Array<{ btn: HTMLButtonElement; value: StreamScope }> = [];
-  const mk = (label: string, value: StreamScope) => {
+  const buttons = [];
+  const mk = (label, value) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "info-stream-mode-btn";
@@ -1345,7 +1302,7 @@ function renderStreamScopeToggle(opts: {
   host.appendChild(group);
 }
 
-function startStream(topics: string[]): void {
+function startStream(topics) {
   const section = document.getElementById("info-stream");
   const topicLabel = document.getElementById("info-stream-topic-label");
   const streamBody = document.getElementById("info-stream-body");
@@ -1375,16 +1332,16 @@ function startStream(topics: string[]): void {
       if (streamCurrentTopics.length === 0) return;
       await refreshStream();
       reschedule();
-    }, ms) as unknown as number;
+    }, ms);
   };
   reschedule();
 }
 
-function clearStreamBody(streamBody: HTMLElement): void {
+function clearStreamBody(streamBody) {
   while (streamBody.firstChild) streamBody.removeChild(streamBody.firstChild);
 }
 
-function setStreamPlainText(streamBody: HTMLElement, text: string): void {
+function setStreamPlainText(streamBody, text) {
   clearStreamBody(streamBody);
   const pre = document.createElement("pre");
   pre.className = "stream-sample-body stream-sample-body--note";
@@ -1406,11 +1363,11 @@ function setStreamPlainText(streamBody: HTMLElement, text: string): void {
  *  (for recalled samples that is the original publish time); `intervalMs`
  *  is the observed median inter-sample gap (0 when <2 samples). */
 function applyStreamStaleness(
-  streamBody: HTMLElement,
-  newestTsMs: number,
-  recalled: boolean,
-  intervalMs: number,
-): void {
+  streamBody,
+  newestTsMs,
+  recalled,
+  intervalMs,
+) {
   const ageMs = Date.now() - newestTsMs;
   // Rate-aware threshold. The old rule (`recalled || age > 4× poll`, i.e.
   // a flat 6s at LIVE) falsely flagged every healthy SLOW topic as STALE:
@@ -1441,7 +1398,7 @@ function applyStreamStaleness(
   streamBody.insertBefore(banner, streamBody.firstChild);
 }
 
-async function refreshStream(): Promise<void> {
+async function refreshStream() {
   const streamBody = document.getElementById("info-stream-body");
   if (!streamBody || streamCurrentTopics.length === 0) return;
   // Pause = stop pushing new content to the DOM (next refresh re-fetches
@@ -1470,10 +1427,10 @@ async function refreshStream(): Promise<void> {
 }
 
 async function refreshRawStream(
-  streamBody: HTMLElement,
-  captured: string[],
-  perTopic: number,
-): Promise<void> {
+  streamBody,
+  captured,
+  perTopic,
+) {
   try {
     const results = await Promise.all(
       captured.map(async (t) => {
@@ -1481,16 +1438,7 @@ async function refreshRawStream(
         if (handleResponse(resp)) return [];
         if (!resp.ok) return [];
         const json = await resp.json();
-        return (json.entries ?? []) as Array<{
-          ts_ms: number;
-          topic: string;
-          source_peer: string | null;
-          format: string;
-          size_bytes: number;
-          truncated: boolean;
-          preview: string;
-          stale?: boolean;
-        }>;
+        return (json.entries ?? []);
       }),
     );
     if (selectionChanged(captured)) return;
@@ -1500,7 +1448,7 @@ async function refreshRawStream(
       setStreamPlainText(streamBody, "[no samples yet — waiting…]");
       return;
     }
-    const FMT_ICON: Record<string, string> = {
+    const FMT_ICON = {
       json:  "{ }",
       cbor:  "[*]",
       text:  "txt",
@@ -1549,10 +1497,10 @@ async function refreshRawStream(
 }
 
 async function refreshDecodedStream(
-  streamBody: HTMLElement,
-  captured: string[],
-  perTopic: number,
-): Promise<void> {
+  streamBody,
+  captured,
+  perTopic,
+) {
   if (captured.length === 1) {
     await refreshDecodedSingle(streamBody, captured, perTopic);
     return;
@@ -1561,10 +1509,10 @@ async function refreshDecodedStream(
 }
 
 async function refreshDecodedSingle(
-  streamBody: HTMLElement,
-  captured: string[],
-  perTopic: number,
-): Promise<void> {
+  streamBody,
+  captured,
+  perTopic,
+) {
   const topic = captured[0];
   try {
     const resp = await fetch(
@@ -1576,7 +1524,7 @@ async function refreshDecodedSingle(
       setSchemaBadge(null);
       return;
     }
-    const outcome = (await resp.json()) as TopicDecodeOutcome;
+    const outcome = (await resp.json());
     if (selectionChanged(captured)) return;
     renderDecodedOutcome(streamBody, outcome);
   } catch (e) {
@@ -1597,19 +1545,19 @@ async function refreshDecodedSingle(
  *  missing / disabled / errored contribute zero samples but their
  *  counts surface in the schema badge so the operator knows. */
 async function refreshDecodedMulti(
-  streamBody: HTMLElement,
-  captured: string[],
-  perTopic: number,
-): Promise<void> {
+  streamBody,
+  captured,
+  perTopic,
+) {
   try {
     const outcomes = await Promise.all(
-      captured.map(async (t): Promise<TopicDecodeOutcome | null> => {
+      captured.map(async (t) => {
         try {
           const resp = await fetch(
             `/api/samples/decoded?topic=${encodeURIComponent(t)}&limit=${perTopic}`,
           );
           if (!resp.ok) return null;
-          return (await resp.json()) as TopicDecodeOutcome;
+          return (await resp.json());
         } catch {
           return null;
         }
@@ -1626,11 +1574,12 @@ async function refreshDecodedMulti(
     let badSchema = 0;
     let transient = 0;
     let unreachable = 0;
-    type StampedSample = {
-      topic: string;
-      row: DecodedSampleRow;
-    };
-    const merged: StampedSample[] = [];
+    /**
+     * @typedef {Object} StampedSample
+     * @property {string} topic
+     * @property {import("./types.js").DecodedSampleRow} row
+     */
+    const merged = [];
     for (let i = 0; i < captured.length; i++) {
       const o = outcomes[i];
       if (o === null) {
@@ -1746,7 +1695,7 @@ async function refreshDecodedMulti(
   }
 }
 
-function renderDecodedOutcome(streamBody: HTMLElement, outcome: TopicDecodeOutcome): void {
+function renderDecodedOutcome(streamBody, outcome) {
   const status = outcome.status;
   if (status === "no_schema") {
     setStreamPlainText(
@@ -1853,7 +1802,7 @@ function renderDecodedOutcome(streamBody: HTMLElement, outcome: TopicDecodeOutco
 /** Pane-level note prepended above passthrough rows, so the "not decoded"
  *  framing is stated once in prose even before the operator reads the
  *  per-row PASSTHROUGH tags. */
-function appendPassthroughNote(streamBody: HTMLElement): void {
+function appendPassthroughNote(streamBody) {
   const note = document.createElement("div");
   note.className = "stream-passthrough-note";
   note.textContent =
@@ -1861,12 +1810,13 @@ function appendPassthroughNote(streamBody: HTMLElement): void {
   streamBody.appendChild(note);
 }
 
-interface RenderedSampleRow {
-  node: HTMLElement;
-  state: "working" | "failing" | "noraw" | "passthrough";
-}
+/**
+ * @typedef {Object} RenderedSampleRow
+ * @property {HTMLElement} node
+ * @property {"working" | "failing" | "noraw" | "passthrough"} state
+ */
 
-function renderDecodedSampleRow(topic: string, s: DecodedSampleRow): RenderedSampleRow | null {
+function renderDecodedSampleRow(topic, s) {
   const sample = document.createElement("div");
   sample.className = "stream-sample";
   if (s.stale) sample.classList.add("stream-sample--stale");
@@ -1884,8 +1834,8 @@ function renderDecodedSampleRow(topic: string, s: DecodedSampleRow): RenderedSam
   const body = document.createElement("pre");
   body.className = "stream-sample-body";
 
-  let state: RenderedSampleRow["state"];
-  let copyValue: string | null = null;
+  let state;
+  let copyValue = null;
 
   if (s.result === "no_raw_bytes") {
     sample.classList.add("stream-sample--noraw");
@@ -1911,7 +1861,7 @@ function renderDecodedSampleRow(topic: string, s: DecodedSampleRow): RenderedSam
     if (pt.format === "json") {
       // JSON passthrough honors the same jq-lite filter + formatting as a
       // real decode (the body is already a structured value).
-      const value = pt.body as JsonValue;
+      const value = pt.body;
       const values = streamFilter ? streamFilter(value) : [value];
       if (values.length === 0) return null;
       const text = values
@@ -1932,7 +1882,7 @@ function renderDecodedSampleRow(topic: string, s: DecodedSampleRow): RenderedSam
     // Decoded → apply the optional jq-lite filter, then format. The filter
     // can fan a single sample into N output values (e.g. `.arr[]`) or zero
     // (e.g. `select(.kind == "air")` against a non-matching sample).
-    const decoded = s.result.decoded as JsonValue;
+    const decoded = s.result.decoded;
     const values = streamFilter ? streamFilter(decoded) : [decoded];
     if (values.length === 0) {
       // Sample passed the descriptor cleanly but was filtered out.
@@ -1980,7 +1930,7 @@ function renderDecodedSampleRow(topic: string, s: DecodedSampleRow): RenderedSam
   return { node: sample, state };
 }
 
-async function copyToClipboard(text: string): Promise<boolean> {
+async function copyToClipboard(text) {
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
@@ -2001,16 +1951,17 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-interface StateSummary {
-  working: number;
-  failing: number;
-  noraw: number;
-  total: number;
-  filtered?: number;
-  passthrough?: number;
-}
+/**
+ * @typedef {Object} StateSummary
+ * @property {number} working
+ * @property {number} failing
+ * @property {number} noraw
+ * @property {number} total
+ * @property {number} [filtered]
+ * @property {number} [passthrough]
+ */
 
-function setStateSummary(s: StateSummary | null): void {
+function setStateSummary(s) {
   const el = document.getElementById("info-stream-state-summary");
   if (!el) return;
   if (s === null) {
@@ -2020,7 +1971,7 @@ function setStateSummary(s: StateSummary | null): void {
     return;
   }
   el.classList.remove("hidden");
-  const parts: string[] = [];
+  const parts = [];
   if (s.working > 0 || (s.passthrough ?? 0) === 0) parts.push(`${s.working} ok`);
   if (s.passthrough && s.passthrough > 0) parts.push(`${s.passthrough} passthrough`);
   if (s.failing > 0) parts.push(`${s.failing} err`);
@@ -2033,7 +1984,7 @@ function setStateSummary(s: StateSummary | null): void {
   // working-only pane to "mixed" so the summary colour matches the amber
   // PASSTHROUGH row tags rather than reading as all-green decoded.
   const pass = s.passthrough ?? 0;
-  let tone: "working" | "mixed" | "failing";
+  let tone;
   if (s.total === 0 || (s.failing === 0 && s.noraw === 0 && pass === 0 && s.working > 0)) {
     tone = "working";
   } else if (s.working === 0 && pass === 0) {
@@ -2044,14 +1995,14 @@ function setStateSummary(s: StateSummary | null): void {
   el.setAttribute("data-state", tone);
 }
 
-function selectionChanged(captured: string[]): boolean {
+function selectionChanged(captured) {
   return (
     streamCurrentTopics.length !== captured.length ||
     streamCurrentTopics.some((t, i) => t !== captured[i])
   );
 }
 
-function formatTs(tsMs: number): string {
+function formatTs(tsMs) {
   return (
     new Date(tsMs).toLocaleTimeString("en-US", { hour12: false }) +
     "." +
@@ -2061,7 +2012,7 @@ function formatTs(tsMs: number): string {
 
 /** Set or clear the NO SCHEMA / DECODER OFF / etc. badge next to the
  *  Decoded toggle. Passing null hides the badge. */
-function setSchemaBadge(text: string | null, tooltip?: string): void {
+function setSchemaBadge(text, tooltip) {
   const badge = document.getElementById("info-stream-schema-badge");
   if (!badge) return;
   if (text === null) {
@@ -2080,10 +2031,8 @@ function setSchemaBadge(text: string | null, tooltip?: string): void {
  *  Called whenever the legend response refreshes — until /api/legend
  *  comes back, the toggle defaults to enabled-with-fallback (clicking
  *  surfaces PORTAL_DISABLED if it turns out to not be configured). */
-function applyDecoderEnabledToStreamToggle(): void {
-  const btn = document.getElementById("info-stream-mode-decoded") as
-    | HTMLButtonElement
-    | null;
+function applyDecoderEnabledToStreamToggle() {
+  const btn = document.getElementById("info-stream-mode-decoded");
   if (!btn) return;
   if (decoderEnabled) {
     btn.disabled = false;
@@ -2097,7 +2046,7 @@ function applyDecoderEnabledToStreamToggle(): void {
   }
 }
 
-function installStreamModeToggle(): void {
+function installStreamModeToggle() {
   const raw = document.getElementById("info-stream-mode-raw");
   const dec = document.getElementById("info-stream-mode-decoded");
   if (!raw || !dec) return;
@@ -2128,7 +2077,7 @@ function installStreamModeToggle(): void {
 /** Hide / show the toolkit container based on stream mode. Toolkit only
  *  appears in DECODED mode — its controls (jq filter, pretty/compact)
  *  are no-ops against the RAW hex view. */
-function applyToolkitVisibility(): void {
+function applyToolkitVisibility() {
   const toolkit = document.getElementById("info-stream-toolkit");
   if (!toolkit) return;
   if (streamMode === "decoded") toolkit.classList.remove("hidden");
@@ -2138,8 +2087,8 @@ function applyToolkitVisibility(): void {
 /** Wire the jq filter input + pretty/compact toggle. Recompiles the filter
  *  on every input change; surfaces structured parse errors in the error
  *  banner; triggers a stream refresh so the change is immediately visible. */
-function installStreamToolkit(): void {
-  const filterInput = document.getElementById("info-stream-filter") as HTMLInputElement | null;
+function installStreamToolkit() {
+  const filterInput = document.getElementById("info-stream-filter");
   const filterError = document.getElementById("info-stream-filter-error");
   const pretty = document.getElementById("info-stream-fmt-pretty");
   const compact = document.getElementById("info-stream-fmt-compact");
@@ -2181,19 +2130,19 @@ function installStreamToolkit(): void {
   };
   // Debounce keystrokes a touch so very large streams don't relayout on
   // every character. 150ms is below the perception threshold; feels live.
-  let debounceHandle: number | null = null;
+  let debounceHandle = null;
   filterInput.addEventListener("input", () => {
     if (debounceHandle !== null) window.clearTimeout(debounceHandle);
     debounceHandle = window.setTimeout(() => {
       debounceHandle = null;
       onFilterChange();
-    }, 150) as unknown as number;
+    }, 150);
   });
 
   applyToolkitVisibility();
 }
 
-function appendRow(parent: HTMLElement, label: string, value: string): void {
+function appendRow(parent, label, value) {
   const dt = document.createElement("dt");
   dt.textContent = label;
   const dd = document.createElement("dd");
@@ -2202,18 +2151,19 @@ function appendRow(parent: HTMLElement, label: string, value: string): void {
   parent.appendChild(dd);
 }
 
-/** Inbound URL params per Block 94 cross-surface deep-link contract
- *  (see docs/design/zenoh-surface-deep-links.md §"URL parameter canon").
- *  More specific wins on conflict: `key` > `vendor` > `peer`. */
-interface InboundSelection {
-  key?: string;
-  vendor?: string;
-  peer?: string;
-}
+/**
+ * Inbound URL params per Block 94 cross-surface deep-link contract
+ * (see docs/design/zenoh-surface-deep-links.md §"URL parameter canon").
+ * More specific wins on conflict: `key` > `vendor` > `peer`.
+ * @typedef {Object} InboundSelection
+ * @property {string} [key]
+ * @property {string} [vendor]
+ * @property {string} [peer]
+ */
 
-function parseInboundSelection(search: string): InboundSelection | null {
+function parseInboundSelection(search) {
   const qs = new URLSearchParams(search);
-  const sel: InboundSelection = {};
+  const sel = {};
   const key = qs.get("key");
   const vendor = qs.get("vendor");
   const peer = qs.get("peer");
@@ -2233,16 +2183,16 @@ function parseInboundSelection(search: string): InboundSelection | null {
  *  resolves to the topic's PUBLISHER peer(s) — the real graph nodes
  *  that render a proper side panel. */
 function resolveInboundSelection(
-  sel: InboundSelection,
-  view: ViewResponse,
-): string[] {
+  sel,
+  view,
+) {
   if (sel.key) {
     // Resolve a topic key to its publisher peer(s): real graph nodes whose
     // side panel lists the topic, which is "show me X in the fabric". A
     // shared pin names its publishers; a topic inside a group is attributed
     // by the group's selector. Returning [] when no publisher is drawn yet
     // keeps the request pending for a later view.
-    const publishers = new Set<string>();
+    const publishers = new Set();
     for (const t of view.topics) {
       if (t.key === sel.key) t.publishers.forEach((p) => publishers.add(p));
     }
@@ -2273,10 +2223,10 @@ function resolveInboundSelection(
  *  encodes values via `encodeURIComponent` (key expressions contain
  *  `/` which must be percent-encoded as a query value). */
 function siblingUrl(
-  siblings: SiblingUrls,
-  target: "stethoscope" | "flashlight" | "portal-schema",
-  params: { key?: string; vendor?: string; peer?: string },
-): string | null {
+  siblings,
+  target,
+  params,
+) {
   const base =
     target === "stethoscope"
       ? siblings.stethoscope
@@ -2304,10 +2254,10 @@ function siblingUrl(
  *  render the diagnose button (Block 94 contract). Topic-broker pins
  *  pass `key`, application peers pass `vendor` and/or `peer`. */
 function appendSiblingActionRow(
-  parent: HTMLElement,
-  siblings: SiblingUrls,
-  target: { key?: string; vendor?: string; peer?: string },
-): void {
+  parent,
+  siblings,
+  target,
+) {
   // Stethoscope: prefer `key` (topic-level) → `vendor` (peer-level)
   // since stethoscope's target picker auto-detects kind from key shape.
   const stethoParams = target.key
@@ -2341,12 +2291,12 @@ function appendSiblingActionRow(
   // mixed glyphs/arrows. The action row has room for the larger
   // stethoscope mark; the per-topic list uses the compact `health` mark.
   const add = (
-    url: string | null,
-    cls: string,
-    icon: IconName,
-    label: string,
-    title: string,
-  ): void => {
+    url,
+    cls,
+    icon,
+    label,
+    title,
+  ) => {
     if (!url) return;
     const a = document.createElement("a");
     a.className = `sibling-action ${cls}`;
@@ -2372,7 +2322,7 @@ function appendSiblingActionRow(
  *  the generic self-declared case so the badge stays just
  *  "INFRASTRUCTURE". Presentation copy lives here; the classification
  *  (which subkind) is decided backend-side in PeerInfo::node_subkind. */
-function infraSubkindLabel(subkind: string | null | undefined): string {
+function infraSubkindLabel(subkind) {
   switch (subkind) {
     case "router":
       return "ROUTER";
@@ -2395,10 +2345,7 @@ function infraSubkindLabel(subkind: string | null | undefined): string {
  *  ecosystem — so a new operator can tell at a glance that attest /
  *  trashgoat / system / router nodes are different in kind from the
  *  vendors whose mission data the fabric carries. */
-function infraPanelInfo(subkind: string | null | undefined): {
-  kind: string;
-  description: string;
-} {
+function infraPanelInfo(subkind) {
   switch (subkind) {
     case "router":
       return {
@@ -2466,24 +2413,15 @@ function infraPanelInfo(subkind: string | null | undefined): {
  *      own inspector; pins and infrastructure are not foldable)
  *  Every selectable element also gets "◎ isolate what this connects to". */
 function appendFoldActionRow(
-  parent: HTMLElement,
-  n: Parameters<GraphRenderer["toggleFold"]>[0],
-): void {
-  const rndr = (window as unknown as { __panoscopeRenderer?: GraphRenderer })
-    .__panoscopeRenderer;
+  parent,
+  n,
+) {
+  const rndr = window.__panoscopeRenderer;
   if (!rndr) return;
-  const m = n as {
-    is_vendor_super?: boolean;
-    is_singleton_super?: boolean;
-    singleton_count?: number;
-    vendor?: string | null;
-    role?: string;
-    node_kind?: string | null;
-    node_class?: string | null;
-  };
+  const m = n;
   const row = document.createElement("div");
   row.className = "fold-action-row";
-  const mkBtn = (label: string, title: string, onClick: () => void) => {
+  const mkBtn = (label, title, onClick) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "fold-action-btn";
@@ -2498,7 +2436,7 @@ function appendFoldActionRow(
     rndrFocus.focusInfo() ? "◎ re-isolate on this" : "◎ isolate what this connects to",
     "draw only this element's connected component and hide the rest (f; esc to leave)",
     () => {
-      rndrFocus.focusComponent([(n as { id: string }).id]);
+      rndrFocus.focusComponent([n.id]);
       renderFocusBanner(rndrFocus);
     },
   );
@@ -2526,7 +2464,7 @@ function appendFoldActionRow(
         () => rndr.collapseVendor(v),
       );
     }
-    const peerId = (n as { id: string }).id;
+    const peerId = n.id;
     const folded = viewClient.get().fold_peers.includes(peerId);
     mkBtn(
       folded ? "▾ unfold peer" : "▸ fold peer",
@@ -2553,12 +2491,12 @@ function appendFoldActionRow(
  *  this is how we keep the contract URL-only with no runtime coupling
  *  (a deployment without stethoscope just doesn't render the button). */
 function appendSiblingIconLink(
-  parent: HTMLElement,
-  url: string | null,
-  className: string,
-  icon: IconName,
-  title: string,
-): void {
+  parent,
+  url,
+  className,
+  icon,
+  title,
+) {
   if (!url) return;
   const a = document.createElement("a");
   a.className = className;
@@ -2592,13 +2530,13 @@ function appendSiblingIconLink(
 let consoleExpandUuids = false;
 
 /** Visible text for a key in the console, honoring the expand toggle. */
-function consoleKeyDisplay(fullKey: string): string {
+function consoleKeyDisplay(fullKey) {
   return consoleExpandUuids ? fullKey : shortenUuids(fullKey);
 }
 
 /** Tag an element as a toggleable console key: stash the full key, set the
  *  (possibly shortened) visible text, and keep the full key on hover. */
-function tagConsoleKey(el: HTMLElement, fullKey: string): void {
+function tagConsoleKey(el, fullKey) {
   el.dataset.fullkey = fullKey;
   el.classList.add("uuid-key");
   el.textContent = consoleKeyDisplay(fullKey);
@@ -2607,17 +2545,15 @@ function tagConsoleKey(el: HTMLElement, fullKey: string): void {
 
 /** Re-apply the current expand state to every tagged console key. Called by
  *  the info-panel UUID toggle; no full re-render needed. */
-function refreshConsoleKeys(): void {
-  document
-    .querySelectorAll<HTMLElement>("#info-panel .uuid-key")
-    .forEach((el) => {
+function refreshConsoleKeys() {
+  document.querySelectorAll("#info-panel .uuid-key").forEach((el) => {
       const f = el.dataset.fullkey;
       if (f) el.textContent = consoleKeyDisplay(f);
     });
 }
 
 /** Wire the info-panel `UUID short/full` toggle once at startup. */
-function installUuidToggle(): void {
+function installUuidToggle() {
   const btn = document.getElementById("info-uuid-toggle");
   if (!btn) return;
   const sync = () => {
@@ -2636,11 +2572,11 @@ function installUuidToggle(): void {
 }
 
 function renderTopicLi(
-  topic: string,
-  renderer: GraphRenderer,
-  portalBase: string | null,
-  onClick: (item: string) => void,
-): HTMLLIElement {
+  topic,
+  renderer,
+  portalBase,
+  onClick,
+) {
   const li = document.createElement("li");
   li.className = "drilldown-list-item topic-list-item";
 
@@ -2717,12 +2653,12 @@ function renderTopicLi(
 const INLINE_TOPIC_CAP = 4;
 
 function appendTopicList(
-  parent: HTMLElement,
-  label: string,
-  items: string[],
-  renderer: GraphRenderer,
-  onClick: (item: string) => void,
-): void {
+  parent,
+  label,
+  items,
+  renderer,
+  onClick,
+) {
   const dt = document.createElement("dt");
   dt.textContent = label;
   const dd = document.createElement("dd");
@@ -2758,7 +2694,7 @@ function appendTopicList(
   parent.appendChild(dd);
 }
 
-function appendList(parent: HTMLElement, label: string, items: string[]): void {
+function appendList(parent, label, items) {
   const dt = document.createElement("dt");
   dt.textContent = label;
   const dd = document.createElement("dd");
@@ -2778,7 +2714,7 @@ function appendList(parent: HTMLElement, label: string, items: string[]): void {
  *  on purpose — 99,999 → 100K crossover is the operator's first cue
  *  that the fabric has left small-fleet territory; once that lands we
  *  prefer reading "12.3M" over "12,345,678" in a 60-char-wide HUD. */
-function formatCompactNumber(n: number): string {
+function formatCompactNumber(n) {
   if (n < 100_000) return String(n);
   if (n < 100_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   return `${(n / 1_000_000_000).toFixed(1)}B`;
@@ -2787,7 +2723,7 @@ function formatCompactNumber(n: number): string {
 /** Wire the stream pause/resume button. Pause stops DOM updates so
  *  the operator can read a frozen frame; resume continues from the
  *  latest fetch. Space toggles when stream is focused. */
-function installStreamPause(): void {
+function installStreamPause() {
   const btn = document.getElementById("info-stream-pause");
   if (!btn) return;
   const apply = () => {
@@ -2821,7 +2757,7 @@ function installStreamPause(): void {
  *  is what the operator intended. Shared by every badge-opened popup so
  *  they dismiss consistently (the diagnostics overlay wires its own copy
  *  inline as it predates this helper). */
-function dismissOverlayOnGraphClick(overlay: HTMLElement): void {
+function dismissOverlayOnGraphClick(overlay) {
   document.getElementById("graph")?.addEventListener(
     "click",
     () => {
@@ -2831,7 +2767,7 @@ function dismissOverlayOnGraphClick(overlay: HTMLElement): void {
   );
 }
 
-function installLegendOverlay(): void {
+function installLegendOverlay() {
   const overlay = document.getElementById("legend-overlay");
   const openBtn = document.getElementById("fleet-legend-toggle");
   const closeBtn = document.getElementById("legend-close");
@@ -2862,7 +2798,7 @@ function installLegendOverlay(): void {
  *  when an input/textarea is focused so it doesn't intercept literal
  *  `?` typed into the jq filter input or the search box.
  */
-function installKeysOverlay(): void {
+function installKeysOverlay() {
   const overlay = document.getElementById("keys-overlay");
   const openBtn = document.getElementById("fleet-keys-toggle");
   const closeBtn = document.getElementById("keys-close");
@@ -2912,7 +2848,7 @@ function installKeysOverlay(): void {
  *     the two together give the operator both readings without
  *     conflating them. (Task #13 of the polling-coalesce arc.)
  */
-function installFleetDiagnostics(status: WelcomeStatus): void {
+function installFleetDiagnostics(status) {
   const sidebar = document.getElementById("fleet-stats-sidebar");
   const overlay = document.getElementById("fleet-diagnostics-overlay");
   const closeBtn = document.getElementById("fleet-diagnostics-close");
@@ -2969,7 +2905,7 @@ function installFleetDiagnostics(status: WelcomeStatus): void {
     if (!indicator) return;
     const wsState = status.ws;
     const lastEvent = status.lastEventMs;
-    let effectiveState: string = wsState;
+    let effectiveState = wsState;
     if (
       wsState === "live" &&
       lastEvent != null &&
@@ -3003,7 +2939,7 @@ function installFleetDiagnostics(status: WelcomeStatus): void {
           signal: AbortSignal.timeout(2000),
         });
         if (resp.ok) {
-          const v = (await resp.json()) as { name: string; version: string };
+          const v = (await resp.json());
           imageEl.textContent = `${v.name} ${v.version}`;
         }
       } catch {
@@ -3021,7 +2957,7 @@ function installFleetDiagnostics(status: WelcomeStatus): void {
   // interactive elements today; the closest-button guard is defensive
   // for future additions).
   sidebar.addEventListener("click", (ev) => {
-    if ((ev.target as HTMLElement).closest("button")) return;
+    if (ev.target.closest("button")) return;
     toggle();
   });
   closeBtn?.addEventListener("click", close);
@@ -3070,7 +3006,7 @@ function installFleetDiagnostics(status: WelcomeStatus): void {
 /** Show, next to the canvas, that the server regrouped or closed things to
  *  keep the view under its element cap — the canvas is then not the whole
  *  picture at normal detail, and the viewer must be told so. */
-function renderTruncation(view: ViewResponse): void {
+function renderTruncation(view) {
   let note = document.getElementById("view-truncated");
   const t = view.truncated;
   if (!t) {
@@ -3084,7 +3020,7 @@ function renderTruncation(view: ViewResponse): void {
     note.setAttribute("role", "status");
     document.querySelector("main")?.appendChild(note);
   }
-  const parts: string[] = [
+  const parts = [
     `Simplified to fit ${t.max_elements.toLocaleString()} elements: at most ${t.publisher_budget} per publisher.`,
   ];
   if (t.opened_ignored) parts.push("Opened groups are closed until fewer are open.");
@@ -3096,17 +3032,10 @@ function renderTruncation(view: ViewResponse): void {
 /** A two- or three-state toolbar button bound to one view parameter. Its
  *  state is read back from the parameters, so a reload, another control or
  *  the EXPAND ALL reset never leaves the label out of step. */
-function bindCycleButton<T extends string>(opts: {
-  id: string;
-  dataAttr: string;
-  read: (p: ViewParams) => T;
-  write: (p: ViewParams, v: T) => ViewParams;
-  order: readonly T[];
-  label: (v: T) => string;
-}): void {
+function bindCycleButton(opts) {
   const btn = document.getElementById(opts.id);
   if (!btn) return;
-  const sync = (p: ViewParams) => {
+  const sync = (p) => {
     const v = opts.read(p);
     btn.setAttribute(opts.dataAttr, v);
     btn.textContent = opts.label(v);
@@ -3122,13 +3051,13 @@ function bindCycleButton<T extends string>(opts: {
 
 /** SOURCE: ALL → REAL ONLY → NOTIONAL ONLY. "real" drops peers whose
  *  schema registration carried synthetic=true; "notional" keeps only those. */
-function installSourceToggle(): void {
+function installSourceToggle() {
   bindCycleButton({
     id: "fleet-source-toggle",
     dataAttr: "data-source",
     read: (p) => p.source,
     write: (p, source) => ({ ...p, source }),
-    order: ["all", "real", "notional"] as const,
+    order: ["all", "real", "notional"],
     label: (m) => (m === "all" ? "ALL" : m === "real" ? "REAL ONLY" : "NOTIONAL ONLY"),
   });
 }
@@ -3137,13 +3066,13 @@ function installSourceToggle(): void {
  *  backend classed `node_class: "infra"` (router / observer subscriber /
  *  schema-registry / operator-system / chaos / self-declared); "only"
  *  isolates the substrate. Composes with SOURCE. */
-function installInfraToggle(): void {
+function installInfraToggle() {
   bindCycleButton({
     id: "fleet-infra-toggle",
     dataAttr: "data-infra",
     read: (p) => p.infra,
     write: (p, infra) => ({ ...p, infra }),
-    order: ["all", "hide", "only"] as const,
+    order: ["all", "hide", "only"],
     label: (m) => (m === "all" ? "SHOW ALL" : m === "hide" ? "HIDE INFRA" : "ONLY INFRA"),
   });
 }
@@ -3151,23 +3080,23 @@ function installInfraToggle(): void {
 /** TEST: HIDDEN (default) ↔ ONLY. Test publishers are those whose every topic
  *  is loadtest data (the ADR 1103 interim provenance classifier). There is
  *  deliberately no "test alongside operational" state. */
-function installTestToggle(): void {
+function installTestToggle() {
   bindCycleButton({
     id: "fleet-test-toggle",
     dataAttr: "data-test",
     read: (p) => p.test,
     write: (p, test) => ({ ...p, test }),
-    order: ["hide", "only"] as const,
+    order: ["hide", "only"],
     label: (m) => (m === "hide" ? "TEST HIDDEN" : "TEST ONLY"),
   });
 }
 
 /** History-lens window (docs/design/panoscope-history-lens.md): how far back
  *  the view shows peers and topics active within. */
-function installHistoryWindow(): void {
-  const sel = document.getElementById("fleet-window-select") as HTMLSelectElement | null;
+function installHistoryWindow() {
+  const sel = document.getElementById("fleet-window-select");
   if (!sel) return;
-  const sync = (p: ViewParams) => {
+  const sync = (p) => {
     sel.value = String(p.window_hours);
   };
   sel.addEventListener("change", () => {
@@ -3181,10 +3110,10 @@ function installHistoryWindow(): void {
 
 /** SIMPLIFY: every publisher drawn as one unit. Opening a publisher's group
  *  still works while it is on. */
-function installDetailToggle(): void {
-  const btn = document.getElementById("fleet-aggressive-toggle") as HTMLButtonElement | null;
+function installDetailToggle() {
+  const btn = document.getElementById("fleet-aggressive-toggle");
   if (!btn) return;
-  const sync = (p: ViewParams) => {
+  const sync = (p) => {
     const on = p.detail === "simplified";
     btn.setAttribute("aria-pressed", on ? "true" : "false");
     btn.classList.toggle("active", on);
@@ -3199,7 +3128,7 @@ function installDetailToggle(): void {
 /** COLLAPSE ALL / EXPAND ALL. Collapse draws every organisation as one node;
  *  expand returns to the default grouping — no collapsed organisations, no
  *  folded peers, no opened groups. Both stay clickable in any state. */
-function installVendorCollapseControls(renderer: GraphRenderer): void {
+function installVendorCollapseControls(renderer) {
   const collapseBtn = document.getElementById("fleet-vendors-collapse-all");
   const expandBtn = document.getElementById("fleet-vendors-expand-all");
   collapseBtn?.addEventListener("click", () => renderer.collapseAllVendors());
@@ -3211,7 +3140,7 @@ function installVendorCollapseControls(renderer: GraphRenderer): void {
  *    ]       → toggle panel collapse/expand without affecting selection
  *              (lets you peek the full-canvas COP without losing focus)
  */
-function installPanelClose(renderer: GraphRenderer): void {
+function installPanelClose(renderer) {
   const btn = document.getElementById("info-close");
   btn?.addEventListener("click", () => renderer.clearSelection());
 
@@ -3272,7 +3201,7 @@ function installPanelClose(renderer: GraphRenderer): void {
 
 /** Say something small and short-lived over the canvas. Used where a gesture
  *  cannot do what was asked and silence would read as a broken control. */
-function showTransientNote(text: string): void {
+function showTransientNote(text) {
   let note = document.getElementById("transient-note");
   if (!note) {
     note = document.createElement("div");
@@ -3287,7 +3216,7 @@ function showTransientNote(text: string): void {
 
 /** The isolation banner: what is being shown, what is hidden, how to leave.
  *  Rendered after every view and every focus gesture. */
-function renderFocusBanner(renderer: GraphRenderer): void {
+function renderFocusBanner(renderer) {
   const info = renderer.focusInfo();
   let bar = document.getElementById("focus-banner");
   if (!info) {
@@ -3318,7 +3247,7 @@ function renderFocusBanner(renderer: GraphRenderer): void {
 }
 
 /** Stop the auto-refreshing stream timer (called when selection cleared). */
-function stopStream(): void {
+function stopStream() {
   if (streamRefreshHandle !== null) {
     window.clearInterval(streamRefreshHandle);
     streamRefreshHandle = null;
@@ -3343,7 +3272,7 @@ function stopStream(): void {
  *  watch messages only fire while the operator has opted in.
  *  Lifecycle invariant: streamWatchedTopics ⊆ streamCurrentTopics
  *  whenever streamLive is true. */
-function reconcileLiveWatch(next: string[]): void {
+function reconcileLiveWatch(next) {
   if (!streamLive || !__wsClient) {
     return;
   }
@@ -3363,7 +3292,7 @@ function reconcileLiveWatch(next: string[]): void {
 
 /** Send unwatch for every currently-watched topic and clear the
  *  local mirror. Used by stopStream / PAUSE / LIVE-off. */
-function unwatchAllAndClear(): void {
+function unwatchAllAndClear() {
   if (!__wsClient) {
     streamWatchedTopics.clear();
     return;
@@ -3374,7 +3303,7 @@ function unwatchAllAndClear(): void {
   streamWatchedTopics.clear();
 }
 
-function applyStreamLiveButton(): void {
+function applyStreamLiveButton() {
   const btn = document.getElementById("info-stream-live");
   if (!btn) return;
   btn.setAttribute("aria-pressed", String(streamLive));
@@ -3384,7 +3313,7 @@ function applyStreamLiveButton(): void {
 /** Wire the ▶ LIVE button next to ⏸ PAUSE. Opt-in promotion of the
  *  currently-selected stream to notify-driven refresh. See
  *  docs/design/panoscope.md §"LIVE-follow on the stream view". */
-function installStreamLive(): void {
+function installStreamLive() {
   const btn = document.getElementById("info-stream-live");
   if (!btn) return;
   btn.addEventListener("click", () => {
@@ -3409,14 +3338,14 @@ function installStreamLive(): void {
  *  Updates the fleet-bar tier badge + tells the renderer which
  *  animations to gate. The fleet bar's polling timer reads
  *  currentPollMs() so its cadence adapts to the tier too. */
-let currentTier: PerfTier = "live";
-let __watchfulRenderer: GraphRenderer | null = null;
-function installPerformanceMonitor(renderer: GraphRenderer): void {
+let currentTier = "live";
+let __watchfulRenderer = null;
+function installPerformanceMonitor(renderer) {
   __watchfulRenderer = renderer;
   const monitor = new PerformanceMonitor();
   monitor.start();
   const badge = document.getElementById("fleet-tier-badge");
-  const apply = (tier: PerfTier) => {
+  const apply = (tier) => {
     currentTier = tier;
     const policy = POLICY[tier];
     if (badge) {
@@ -3447,7 +3376,7 @@ function installPerformanceMonitor(renderer: GraphRenderer): void {
  *  (c) no edge is selected to whitelist a slice. Without this badge
  *  the operator stares at an apparently-frozen viz and can't tell
  *  fabric-quiet from too-busy-to-draw. */
-function refreshWatchfulBadge(): void {
+function refreshWatchfulBadge() {
   if (!__watchfulRenderer) return;
   const watchful = document.getElementById("fleet-watchful-section");
   const watchfulOn = __watchfulRenderer.isWatchfulWithoutSelection?.() ?? false;
@@ -3464,10 +3393,10 @@ function refreshWatchfulBadge(): void {
     if (badge) badge.textContent = `BUSY · DOTS OFF (${rate}/s)`;
   }
 }
-function currentSnapshotPollMs(): number {
+function currentSnapshotPollMs() {
   return POLICY[currentTier].snapshotPollMs;
 }
-function currentStreamPollMs(): number {
+function currentStreamPollMs() {
   return POLICY[currentTier].streamPollMs;
 }
 
@@ -3483,7 +3412,7 @@ function currentStreamPollMs(): number {
  *  reads "live · Ns ago" so the operator can always answer "are these
  *  numbers true right now?" without guessing. Replaces the prior
  *  silent try/catch that hid every fetch failure. */
-function installFleetBar(): void {
+function installFleetBar() {
   const sidebar = document.getElementById("fleet-stats-sidebar");
   const peers = document.getElementById("fleet-peers");
   const topics = document.getElementById("fleet-topics");
@@ -3594,7 +3523,7 @@ function installFleetBar(): void {
         // the packet-dot gate protects.
         const t = view.totals;
         rate.textContent = t.msg_per_sec.toFixed(2);
-        const r = (window as unknown as { __panoscopeRenderer?: GraphRenderer }).__panoscopeRenderer;
+        const r = window.__panoscopeRenderer;
         r?.setFleetMsgPerSec(t.msg_per_sec);
         peers.textContent = String(t.peers);
         topics.textContent = String(t.topics);
@@ -3625,9 +3554,9 @@ function installFleetBar(): void {
   // One fetch at a time. A request made while one is in flight (a parameter
   // changed) runs once more when it lands, so the latest parameters always
   // get a fetch and requests never stack.
-  let inFlight: Promise<void> | null = null;
+  let inFlight = null;
   let again = false;
-  const refresh = async (): Promise<void> => {
+  const refresh = async () => {
     if (inFlight) {
       again = true;
       return inFlight;
@@ -3647,7 +3576,7 @@ function installFleetBar(): void {
   requestViewNow = () => void refresh();
   // Test hook: the e2e specs change the mocked backend, then ask for a fetch
   // instead of waiting out the poll.
-  (window as unknown as { __panoscopeRefreshView: () => Promise<void> }).__panoscopeRefreshView = refresh;
+  window.__panoscopeRefreshView = refresh;
   void refresh();
   // Continuously update the freshness clock between refreshes so the
   // age ticks visibly — without this, a stuck fetch would freeze both
@@ -3669,9 +3598,9 @@ function installFleetBar(): void {
  *  name, vendor or id; topic pins by key) immediately, then topics inside
  *  groups from /api/view/search. ↑/↓ to navigate, Enter to commit (replace
  *  selection), Cmd+Enter to append. */
-function installSearchOverlay(renderer: GraphRenderer): void {
+function installSearchOverlay(renderer) {
   const overlay = document.getElementById("search-overlay");
-  const input = document.getElementById("search-input") as HTMLInputElement | null;
+  const input = document.getElementById("search-input");
   const matchesEl = document.getElementById("search-matches");
   if (!overlay || !input || !matchesEl) return;
 
@@ -3679,17 +3608,18 @@ function installSearchOverlay(renderer: GraphRenderer): void {
   // group (commit = open the groups holding it, then select its pin). Grouped
   // topics come from the server, which searches every topic the viewer can
   // see, so any substring of any key is findable whatever the grouping.
-  interface Match {
-    id: string;
-    label: string;
-    reveal?: { key: string; publisher: string; group: string };
-  }
+  /**
+   * @typedef {Object} Match
+   * @property {string} id
+   * @property {string} label
+   * @property {{ key: string; publisher: string; group: string; }} [reveal]
+   */
   const LIMIT = 30;
   const SERVER_DEBOUNCE_MS = 150;
-  let activeMatches: Match[] = [];
+  let activeMatches = [];
   let activeIdx = 0;
   let query = 0;
-  let serverTimer: number | null = null;
+  let serverTimer = null;
 
   const close = () => {
     overlay.classList.add("hidden");
@@ -3706,7 +3636,7 @@ function installSearchOverlay(renderer: GraphRenderer): void {
     runQuery(prefill);
   };
   // Expose open(prefill) to the group inspector's escape-hatch.
-  openFleetSearch = (prefill: string) => open(prefill);
+  openFleetSearch = (prefill) => open(prefill);
 
   const paint = () => {
     matchesEl.innerHTML = "";
@@ -3721,10 +3651,10 @@ function installSearchOverlay(renderer: GraphRenderer): void {
     });
   };
 
-  const runQuery = (q: string) => {
+  const runQuery = (q) => {
     const mine = ++query;
     const needle = q.trim().toLowerCase();
-    const items: Match[] = [];
+    const items = [];
     for (const n of renderer.allNodeIds()) {
       if (n.is_singleton_super) continue; // groups are searched by member below
       const isTopic = n.id.startsWith("topic:");
@@ -3737,9 +3667,7 @@ function installSearchOverlay(renderer: GraphRenderer): void {
       // Match across every human-facing handle AND the canonical id, so a
       // substring of the alias / display_name / vendor / UUID hits anywhere.
       const haystack = [label, n.slot_alias, n.display_name, n.vendor, n.id]
-        .filter((s): s is string => typeof s === "string" && s.length > 0)
-        .join(" ")
-        .toLowerCase();
+        .filter((s) => typeof s === "string" && s.length > 0).join(" ").toLowerCase();
       if (needle === "" || haystack.includes(needle)) {
         items.push({ id: n.id, label });
       }
@@ -3757,7 +3685,7 @@ function installSearchOverlay(renderer: GraphRenderer): void {
           if (!res || mine !== query) return;
           const view = renderer.currentView();
           const labelOf = new Map((view?.groups ?? []).map((g) => [g.id, g.label]));
-          const grouped: Match[] = [];
+          const grouped = [];
           for (const h of res.hits) {
             const pin = `topic:${h.key}`;
             if (h.drawn_as === pin) continue; // already matched as a drawn node
@@ -3775,13 +3703,13 @@ function installSearchOverlay(renderer: GraphRenderer): void {
         .catch(() => {
           /* transient — the drawn-node matches stand */
         });
-    }, SERVER_DEBOUNCE_MS) as unknown as number;
+    }, SERVER_DEBOUNCE_MS);
   };
 
   // Update canvas selection AND pivot the side panel for the matched node,
   // so the stream pane follows the search rather than staying on the prior
   // selection.
-  const commitMatch = (m: Match, append: boolean): void => {
+  const commitMatch = (m, append) => {
     if (m.reveal) {
       // A grouped topic: show its topic panel now; the pin is selected when
       // the view that draws it arrives. When the server cannot open it (its
@@ -3852,7 +3780,7 @@ function installSearchOverlay(renderer: GraphRenderer): void {
   const updateActive = () => {
     const children = matchesEl.querySelectorAll(".search-overlay-match");
     children.forEach((el, i) => el.classList.toggle("active", i === activeIdx));
-    const active = children[activeIdx] as HTMLElement | undefined;
+    const active = children[activeIdx];
     active?.scrollIntoView({ block: "nearest" });
   };
 

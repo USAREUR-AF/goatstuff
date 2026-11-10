@@ -5,8 +5,6 @@
 // row filtering) is made server-side, so this file only draws. A 403 or
 // scoped response renders an explicit state, never a blank or a fake.
 
-import "./styles.css";
-import "./pages.css";
 import {
   handleResponse,
   isPageSignedOut,
@@ -20,59 +18,57 @@ const POLL_MS = 2000;
  * consecutive failures. */
 const STALE_AFTER_MS = POLL_MS * 4;
 
-interface Chip {
-  domain: string;
-  state: string;
-  sample_count: number;
-  stale_age?: string;
-}
-interface ClassRow {
-  class: string;
-  label: string;
-  sample_rate: number;
-  target_sample_rate: number;
-  ratio: number;
-  color: string;
-}
-type ClassPane =
-  | { state: "absent" }
-  | { state: "stale"; age: string }
-  | { state: "rows"; rows: ClassRow[] };
-interface ProducerRow {
-  pos: number;
-  anchor: string;
-  display: string;
-  sample_rate: number;
-  byte_rate: number;
-  shares: string;
-  near_limit: boolean;
-  band_label: string;
-  band_color: string;
-  path: string;
-  latency: string;
-}
-interface TopView {
-  scope_tier: string;
-  restricted: boolean;
-  chips: Chip[];
-  classes: ClassPane;
-  site?: string;
-  fabric_active_producers?: number;
-  producers: ProducerRow[];
-  totals: {
-    visible: number;
-    total_msgs: number;
-    total_bytes: number;
-    direct: number;
-    relayed: number;
-    alive: number;
-    dropped: number;
-  };
-  generated_at_ms: number;
-}
+/**
+ * @typedef {Object} Chip
+ * @property {string} domain
+ * @property {string} state
+ * @property {number} sample_count
+ * @property {string} [stale_age]
+ */
+/**
+ * @typedef {Object} ClassRow
+ * @property {string} class
+ * @property {string} label
+ * @property {number} sample_rate
+ * @property {number} target_sample_rate
+ * @property {number} ratio
+ * @property {string} color
+ */
+/**
+ * @typedef {(
+ *   | { state: "absent"; }
+ *   | { state: "stale"; age: string; }
+ *   | { state: "rows"; rows: ClassRow[]; }
+ * )} ClassPane
+ */
+/**
+ * @typedef {Object} ProducerRow
+ * @property {number} pos
+ * @property {string} anchor
+ * @property {string} display
+ * @property {number} sample_rate
+ * @property {number} byte_rate
+ * @property {string} shares
+ * @property {boolean} near_limit
+ * @property {string} band_label
+ * @property {string} band_color
+ * @property {string} path
+ * @property {string} latency
+ */
+/**
+ * @typedef {Object} TopView
+ * @property {string} scope_tier
+ * @property {boolean} restricted
+ * @property {Chip[]} chips
+ * @property {ClassPane} classes
+ * @property {string} [site]
+ * @property {number} [fabric_active_producers]
+ * @property {ProducerRow[]} producers
+ * @property {{ visible: number; total_msgs: number; total_bytes: number; direct: number; relayed: number; alive: number; dropped: number; }} totals
+ * @property {number} generated_at_ms
+ */
 
-const $ = <T extends HTMLElement>(id: string): T =>
-  document.getElementById(id) as T;
+const $ = (id) => document.getElementById(id);
 
 let lastSuccessAt = 0;
 let consecutiveFailures = 0;
@@ -80,9 +76,9 @@ let consecutiveFailures = 0;
  *  "restricted"; read by the schedule through pacingFailures (session.ts). */
 let restrictedStreak = 0;
 let filter = "";
-let lastView: TopView | null = null;
+let lastView = null;
 
-function stateClass(state: string): string {
+function stateClass(state) {
   switch (state) {
     case "green": return "state-green";
     case "amber": return "state-amber";
@@ -92,23 +88,23 @@ function stateClass(state: string): string {
   }
 }
 
-function esc(s: string): string {
+function esc(s) {
   const d = document.createElement("span");
   d.textContent = s;
   return d.innerHTML;
 }
 
-function fmtRate(n: number): string {
+function fmtRate(n) {
   return n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2);
 }
 
-function fmtBytes(n: number): string {
+function fmtBytes(n) {
   if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MiB/s`;
   if (n >= 1024) return `${(n / 1024).toFixed(1)} KiB/s`;
   return `${n.toFixed(0)} B/s`;
 }
 
-function renderChips(chips: Chip[]) {
+function renderChips(chips) {
   $("env-strip").innerHTML = chips
     .map((c) => {
       const stale = c.stale_age ? ` <span class="meta">(stale ${esc(c.stale_age)})</span>` : "";
@@ -121,7 +117,7 @@ function renderChips(chips: Chip[]) {
     .join("");
 }
 
-function renderClasses(pane: ClassPane) {
+function renderClasses(pane) {
   const el = $("class-pane");
   if (pane.state === "absent") {
     el.innerHTML = `<p class="class-note state-dim">unmetered — no fabric-health beat</p>`;
@@ -148,7 +144,7 @@ function renderClasses(pane: ClassPane) {
     .join("");
 }
 
-function renderProducers(view: TopView) {
+function renderProducers(view) {
   const needle = filter.trim().toLowerCase();
   const rows = view.producers.filter(
     (p) =>
@@ -189,7 +185,7 @@ function renderProducers(view: TopView) {
   }
 }
 
-function renderTotals(view: TopView) {
+function renderTotals(view) {
   const t = view.totals;
   const fleet =
     view.fabric_active_producers != null
@@ -200,7 +196,7 @@ function renderTotals(view: TopView) {
     ` · links ${t.direct} direct / ${t.relayed} relayed · presence ${t.alive} alive / ${t.dropped} dropped${fleet}`;
 }
 
-function renderScopeNote(view: TopView) {
+function renderScopeNote(view) {
   const note = $("scope-note");
   if (view.restricted) {
     note.hidden = false;
@@ -212,7 +208,7 @@ function renderScopeNote(view: TopView) {
   }
 }
 
-function render(view: TopView) {
+function render(view) {
   renderScopeNote(view);
   renderChips(view.chips);
   renderClasses(view.classes);
@@ -220,14 +216,14 @@ function render(view: TopView) {
   renderTotals(view);
 }
 
-function setConn(state: "live" | "stale" | "restricted" | "connecting", label: string) {
+function setConn(state, label) {
   const el = $("conn");
   el.dataset.state = state;
   el.textContent = label;
   el.className = `connection-indicator freshness${state === "stale" ? " stale" : ""}`;
 }
 
-function showFullError(title: string, body: string) {
+function showFullError(title, body) {
   $("main").hidden = true;
   const el = $("full-error");
   el.hidden = false;
@@ -257,7 +253,7 @@ async function poll() {
       return;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const view = (await res.json()) as TopView;
+    const view = (await res.json());
     lastView = view;
     lastSuccessAt = Date.now();
     consecutiveFailures = 0;
@@ -280,7 +276,7 @@ async function poll() {
 }
 
 $("producer-filter").addEventListener("input", (e) => {
-  filter = (e.target as HTMLInputElement).value;
+  filter = e.target.value;
   if (lastView) renderProducers(lastView);
 });
 

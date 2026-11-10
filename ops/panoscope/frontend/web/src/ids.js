@@ -10,11 +10,11 @@
 
 const ZID_RE = /^[0-9a-f]{16,32}$/i;
 
-export function looksLikeZid(id: string): boolean {
+export function looksLikeZid(id) {
   return ZID_RE.test(id);
 }
 
-export function shortId(id: string): string {
+export function shortId(id) {
   if (!looksLikeZid(id)) return id;
   return id.length > 8 ? id.slice(-8) : id;
 }

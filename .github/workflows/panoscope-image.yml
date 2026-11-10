@@ -1,6 +1,6 @@
 name: panoscope-image
 # Builds ops/panoscope/Dockerfile — Rust + axum + eclipse-zenoh
-# backend with the TypeScript/D3 frontend bundle embedded via rust-embed —
+# backend with the plain-JavaScript/D3 frontend embedded via rust-embed —
 # and publishes to ghcr.io/usareur-af/panoscope.
 #
 # Per-arch native build + manifest combine, mirroring netbird-mgmt.yml +

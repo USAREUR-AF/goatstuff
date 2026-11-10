@@ -4,47 +4,47 @@
 // dispatches to the caller's handlers. Auto-reconnects on close with
 // linear backoff capped at 5s.
 
-import type { InboundMessage, OutgoingMessage, Snapshot, WsEvent } from "./types.js";
 
-export type ConnectionState = "connecting" | "live" | "lagged" | "closed";
+/**
+ * @typedef {"connecting" | "live" | "lagged" | "closed"} ConnectionState
+ */
 
-export interface WsHandlers {
-  onSnapshot: (s: Snapshot) => void;
-  onDelta: (events: WsEvent[]) => void;
-  onLagged: (missed: number) => void;
-  onStateChange: (s: ConnectionState) => void;
-  /** Fires after each successful (re)connect — gives the caller a
-   *  chance to re-emit any per-connection state the backend doesn't
-   *  persist. Used by LIVE-follow to re-emit the current watch on
-   *  reconnect (per docs/design/panoscope.md lifecycle invariant). */
-  onReady?: () => void;
-  /** Fires when an inbound message fails to JSON-parse OR a downstream
-   *  handler (onSnapshot / onDelta / onLagged) throws. Lets the UI
-   *  surface the failure instead of leaving a half-rendered canvas
-   *  with no signal — a single ReferenceError inside renderer.setSnapshot
-   *  would otherwise blank the viz while the HUD kept ticking from a
-   *  parallel WS-events path, indistinguishable from "fabric is quiet."
-   *
-   *  `reason` is a short human-readable tag (e.g. "JSON parse failed",
-   *  "Handler error on snapshot"); `error` is the original exception. */
-  onError?: (reason: string, error: unknown) => void;
-}
+/**
+ * @typedef {Object} WsHandlers
+ * @property {(s: import("./types.js").Snapshot) => void} onSnapshot
+ * @property {(events: import("./types.js").WsEvent[]) => void} onDelta
+ * @property {(missed: number) => void} onLagged
+ * @property {(s: ConnectionState) => void} onStateChange
+ * @property {() => void} [onReady] Fires after each successful (re)connect — gives the caller a
+ *   chance to re-emit any per-connection state the backend doesn't
+ *   persist. Used by LIVE-follow to re-emit the current watch on
+ *   reconnect (per docs/design/panoscope.md lifecycle invariant).
+ * @property {(reason: string, error: unknown) => void} [onError] Fires when an inbound message fails to JSON-parse OR a downstream
+ *   handler (onSnapshot / onDelta / onLagged) throws. Lets the UI
+ *   surface the failure instead of leaving a half-rendered canvas
+ *   with no signal — a single ReferenceError inside renderer.setSnapshot
+ *   would otherwise blank the viz while the HUD kept ticking from a
+ *   parallel WS-events path, indistinguishable from "fabric is quiet."
+ *
+ *   `reason` is a short human-readable tag (e.g. "JSON parse failed",
+ *   "Handler error on snapshot"); `error` is the original exception.
+ */
 
 import { isPageSignedOut } from "./session.js";
 
 export class WsClient {
-  private url: string;
-  private socket: WebSocket | null = null;
-  private handlers: WsHandlers;
-  private reconnectAttempts = 0;
-  private closed = false;
+  url;
+  socket = null;
+  handlers;
+  reconnectAttempts = 0;
+  closed = false;
 
-  constructor(url: string, handlers: WsHandlers) {
+  constructor(url, handlers) {
     this.url = url;
     this.handlers = handlers;
   }
 
-  connect(): void {
+  connect() {
     this.handlers.onStateChange("connecting");
     const socket = new WebSocket(this.url);
     this.socket = socket;
@@ -56,9 +56,9 @@ export class WsClient {
     });
 
     socket.addEventListener("message", (ev) => {
-      let msg: OutgoingMessage;
+      let msg;
       try {
-        msg = JSON.parse(String(ev.data)) as OutgoingMessage;
+        msg = JSON.parse(String(ev.data));
       } catch (e) {
         console.error("ws: JSON parse error", e, ev.data);
         this.handlers.onError?.("JSON parse failed", e);
@@ -86,7 +86,7 @@ export class WsClient {
     });
   }
 
-  close(): void {
+  close() {
     this.closed = true;
     this.socket?.close();
   }
@@ -94,13 +94,13 @@ export class WsClient {
   /** Send an InboundMessage to the backend. No-op when the socket
    *  isn't open — callers re-emit on the `onReady` hook after
    *  reconnect, so a drop on closed isn't a lost-message problem. */
-  send(msg: InboundMessage): void {
+  send(msg) {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(msg));
     }
   }
 
-  private dispatch(msg: OutgoingMessage): void {
+  dispatch(msg) {
     switch (msg.type) {
       case "snapshot":
         this.handlers.onSnapshot(msg);
@@ -115,7 +115,7 @@ export class WsClient {
     }
   }
 
-  private scheduleReconnect(): void {
+  scheduleReconnect() {
     // A socket refused because the session ended closes immediately, so this
     // path is the websocket half of F-523: without the check it reconnects
     // every 5 s for as long as the tab stays open. The page is already

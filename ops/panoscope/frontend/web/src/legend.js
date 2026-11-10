@@ -5,18 +5,17 @@
 // the compiled-in family-map floor (`family-map`); per-peer coloring
 // rides schema-decl self-registration (see src/schema.rs).
 
-import type { AliasRegistryHealth, Legend } from "./types.js";
 import { handleResponse, isPageSignedOut, pollWithBackoff, shouldPoll } from "./session.js";
 
 const REFRESH_MS = 5000;
 
 export class LegendPanel {
-  private stopPolling: (() => void) | null = null;
+  stopPolling = null;
   /** Consecutive failed refreshes. Drives the back-off, and is reset by the
    *  first refresh that completes. */
-  private consecutiveFailures = 0;
+  consecutiveFailures = 0;
 
-  start(): void {
+  start() {
     void this.fetchOnce();
     // Not setInterval: a failing /api/legend must not be re-requested every
     // REFRESH_MS forever by every open tab.
@@ -27,14 +26,14 @@ export class LegendPanel {
     );
   }
 
-  stop(): void {
+  stop() {
     if (this.stopPolling !== null) {
       this.stopPolling();
       this.stopPolling = null;
     }
   }
 
-  private async fetchOnce(): Promise<void> {
+  async fetchOnce() {
     // Nobody is reading a hidden tab, and a signed-out page has already said
     // so once — neither is worth a request.
     if (!shouldPoll(document.hidden, isPageSignedOut())) return;
@@ -48,7 +47,7 @@ export class LegendPanel {
         this.consecutiveFailures += 1;
         return;
       }
-      const legend = (await resp.json()) as Legend;
+      const legend = (await resp.json());
       this.render(legend);
       this.consecutiveFailures = 0;
     } catch (e) {
@@ -57,7 +56,7 @@ export class LegendPanel {
     }
   }
 
-  private render(legend: Legend): void {
+  render(legend) {
     setText("legend-resolver-status", legend.schema_resolver_status);
     setText(
       "legend-resolver-families",
@@ -74,7 +73,7 @@ export class LegendPanel {
   }
 }
 
-function setText(id: string, text: string): void {
+function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
 }
@@ -88,7 +87,7 @@ function setText(id: string, text: string): void {
  *
  *  A backend older than the honesty arm sends no `alias_registry` — the cell
  *  stays `—` rather than claiming a state we weren't told. */
-function renderAliasRegistry(health: AliasRegistryHealth | undefined): void {
+function renderAliasRegistry(health) {
   const el = document.getElementById("legend-aliases");
   if (!el) return;
 
@@ -99,8 +98,8 @@ function renderAliasRegistry(health: AliasRegistryHealth | undefined): void {
     return;
   }
 
-  let text: string;
-  let title: string;
+  let text;
+  let title;
   switch (health.state) {
     case "ok":
       text = health.aliases === 0 ? "none assigned" : String(health.aliases);
@@ -136,7 +135,7 @@ function renderAliasRegistry(health: AliasRegistryHealth | undefined): void {
 }
 
 /** ` 4m` / ` 2h` for a last-good timestamp; empty when we were never told. */
-function ageSuffix(lastOkMs: number | undefined): string {
+function ageSuffix(lastOkMs) {
   if (lastOkMs === undefined) return "";
   const secs = Math.max(0, Math.round((Date.now() - lastOkMs) / 1000));
   if (secs < 60) return ` ${secs}s`;
@@ -144,6 +143,6 @@ function ageSuffix(lastOkMs: number | undefined): string {
   return ` ${Math.round(secs / 3600)}h`;
 }
 
-function totalDrops(drops: Record<string, number>): number {
+function totalDrops(drops) {
   return Object.values(drops).reduce((acc, n) => acc + n, 0);
 }

@@ -21,27 +21,32 @@
 // gates on data volume; this gates on the device's ability to keep
 // up. Both can independently demote functionality.
 
-export type PerfTier = "live" | "slow" | "degraded" | "austere";
+/**
+ * @typedef {"live" | "slow" | "degraded" | "austere"} PerfTier
+ */
 
-export interface PerfStats {
-  tier: PerfTier;
-  avgFrameMs: number;
-  worstFrameMs: number;
-  framesPerSec: number;
-}
+/**
+ * @typedef {Object} PerfStats
+ * @property {PerfTier} tier
+ * @property {number} avgFrameMs
+ * @property {number} worstFrameMs
+ * @property {number} framesPerSec
+ */
 
-type Listener = (s: PerfStats) => void;
+/**
+ * @typedef {(s: PerfStats) => void} Listener
+ */
 
 export class PerformanceMonitor {
-  private samples: number[] = [];
-  private worstFrameMs = 0;
-  private lastFrameTime = performance.now();
-  private listeners: Listener[] = [];
-  private tier: PerfTier = "live";
-  private running = false;
-  private readonly windowSize = 30;
+  samples = [];
+  worstFrameMs = 0;
+  lastFrameTime = performance.now();
+  listeners = [];
+  tier = "live";
+  running = false;
+  windowSize = 30;
 
-  start(): void {
+  start() {
     if (this.running) return;
     this.running = true;
     this.lastFrameTime = performance.now();
@@ -51,11 +56,11 @@ export class PerformanceMonitor {
     window.setInterval(() => this.evaluate(), 2000);
   }
 
-  onChange(listener: Listener): void {
+  onChange(listener) {
     this.listeners.push(listener);
   }
 
-  current(): PerfStats {
+  current() {
     return {
       tier: this.tier,
       avgFrameMs: this.avg(),
@@ -66,7 +71,7 @@ export class PerformanceMonitor {
     };
   }
 
-  private tick = (): void => {
+  tick = () => {
     if (!this.running) return;
     const now = performance.now();
     const delta = now - this.lastFrameTime;
@@ -77,14 +82,14 @@ export class PerformanceMonitor {
     requestAnimationFrame(this.tick);
   };
 
-  private avg(): number {
+  avg() {
     if (this.samples.length === 0) return 0;
     return this.samples.reduce((a, b) => a + b, 0) / this.samples.length;
   }
 
-  private evaluate(): void {
+  evaluate() {
     const a = this.avg();
-    let newTier: PerfTier;
+    let newTier;
     if (a > 300) newTier = "austere";
     else if (a > 100) newTier = "degraded";
     else if (a > 33) newTier = "slow";
@@ -104,15 +109,7 @@ export class PerformanceMonitor {
 /** Resource-policy lookup table — single source of truth for what
  *  each tier permits. Consult per-feature: pollers, animations, and
  *  DOM-render code all read the same table so behavior is consistent. */
-export const POLICY: Record<PerfTier, {
-  snapshotPollMs: number;
-  streamPollMs: number;
-  packetDots: boolean;
-  forceSim: boolean;
-  showLabelsByDefault: boolean;
-  badgeColor: string;
-  badgeText: string;
-}> = {
+export const POLICY = {
   live: {
     snapshotPollMs: 1500,
     streamPollMs: 250,
