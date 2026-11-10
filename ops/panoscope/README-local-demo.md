@@ -5,10 +5,10 @@ data**, using the same panoscope image as production — no mesh, no Ory, no
 TLS, no cloud. One `docker compose` stack; a single container generates all
 the notional data.
 
-Design background: `docs/design/panoscope.md`
-§"Local containerized demo" and
-[`docs/design/zenoh-trial-fabric-synth-vendors.md`](../../docs/design/zenoh-trial-fabric-synth-vendors.md)
-§"Fleet mode".
+See the [view-model design](../../docs/design/panoscope-view-model.md) for
+how the backend decides what to draw, and the
+[demo roster](../zenoh-trial-peers/synth-vendor/demo-roster.json) for the
+synthetic peers.
 
 ## Prerequisites
 
@@ -79,8 +79,7 @@ by ZID, those internal sessions render as distinct nodes — the whole ecosystem
 from one container.
 
 The peer list is [`../zenoh-trial-peers/synth-vendor/demo-roster.json`](../zenoh-trial-peers/synth-vendor/demo-roster.json),
-baked into the image. It's a projection of the live source of truth,
-`../ansible/group_vars/nova_hosts/synth-vendors.yml`.
+baked into the image. Edit it to change the local demo’s synthetic peers.
 
 ### Customizing the data
 
@@ -101,5 +100,6 @@ for a subscriber-only sink.
 | Edited the roster, no change | `./demo.sh rebuild` — the roster is baked into the image at build time. |
 
 This is dev-only: the router has no auth/TLS and the data is synthetic. It is
-**not** a deployment path — production panoscope is the Ansible role +
-`../compose/nova/docker-compose.yml`.
+**not** a deployment path. For deployment, use the
+[Ansible role](../ansible/roles/panoscope/) and
+[operator runbook](../../docs/operations/panoscope-runbook.md).
