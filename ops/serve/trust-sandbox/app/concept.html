@@ -6,9 +6,184 @@
     <title>Zero-Trust Sandbox — concept</title>
     <meta name="description" content="A focused look at one zero-trust layer: its salient points and an illustration of its anatomy and mechanics." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338e1c4' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/concept.css" />
+    <script type="module" src="/js/concept.js"></script>
   </head>
-  <body>
-    <div id="concept"></div>
-    <script type="module" src="/src/concept.ts"></script>
+  <body class="pg-concept">
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" />
+          </svg>
+        </div>
+        <div><h1><span class="sym" id="c-sym" style="font-size:18px"></span> <span id="c-title"></span></h1><p class="sub">One layer of identity &amp; access, up close.</p></div>
+      </div>
+      <span class="spacer"></span>
+      <a class="navlink" href="/">◀ PLAYGROUND</a>
+      <a class="navlink" href="/glossary.html">📖 GLOSSARY</a>
+      <a class="navlink" href="/vision.html">✦ BIGGER PICTURE</a>
+      <button class="theme-toggle">◐ LIGHT</button>
+    </header>
+
+    <section class="chero">
+      <div class="cn" id="c-n"></div>
+      <div>
+        <div class="tag" id="c-domain"></div>
+        <h2 id="c-title2"></h2>
+        <p class="q" id="c-q"></p>
+      </div>
+    </section>
+
+    <p class="tagline" id="c-tagline"></p>
+
+    <div class="panel span-2">
+      <div class="panel-head"><span class="dot accent"></span><h3>Anatomy &amp; mechanics</h3>
+        <span class="hint">how this aspect actually works</span></div>
+      <div class="anat">
+        <!-- ① NetBird — admission: setup key → a LOCAL profile + credentials → the client daemon -->
+        <div class="cert-wrap" data-gate="netbird" hidden>
+          <div class="cert-left">
+            <div class="node"><div class="nt">Device + setup key</div><div class="ns">a one-time enrollment token</div></div>
+            <div class="signs">enrolls ↓</div>
+            <div class="node amber"><div class="nt">Management</div><div class="ns">validates the key, registers the peer</div></div>
+            <div class="signs">profile written locally ↓</div>
+          </div>
+          <div class="cert-card pulse">
+            <div class="cc-title">the NetBird profile — generated + stored on the device</div>
+            <div class="cc-row"><span class="cc-k">WireGuard private key</span><span class="cc-v">Curve25519, on the device</span><span class="cc-a">never leaves the machine</span></div>
+            <div class="cc-row"><span class="cc-k">public key</span><span class="cc-v">sent to Management</span><span class="cc-a">how other peers find + verify you</span></div>
+            <div class="cc-row"><span class="cc-k">mesh IP</span><span class="cc-v">100.x, assigned</span><span class="cc-a">your address on the overlay</span></div>
+            <div class="cc-row"><span class="cc-k">peers + routes</span><span class="cc-v">pushed by Management</span><span class="cc-a">who you may reach</span></div>
+            <div class="cc-row sig"><span class="cc-k">stored at</span><span class="cc-v">~/.netbird (config + state)</span><span class="cc-a">read by the client daemon</span></div>
+          </div>
+          <div class="cert-mtls">
+            <div class="mt-pair"><div class="node sm">netbird client</div><div class="mt-arrows"><span>⇢</span></div><div class="node sm ring">the mesh</div></div>
+            <div class="mt-cap">the <b>netbird client</b> (daemon) loads the local profile and brings up the <b>WireGuard</b> tunnel to its peers — this is <b>admission, not trust</b></div>
+          </div>
+        </div>
+
+        <!-- ② x509 — the certificate, taken apart -->
+        <div class="cert-wrap" data-gate="cert" hidden>
+          <div class="cert-left">
+            <div class="node amber"><div class="nt">Certificate Authority</div><div class="ns">the trusted signer</div></div>
+            <div class="signs">signs ↓</div>
+          </div>
+          <div class="cert-card pulse">
+            <div class="cc-title">an X.509 certificate, taken apart</div>
+            <div class="cc-row"><span class="cc-k">Subject</span><span class="cc-v">CN = acme-sensors</span><span class="cc-a">the Common Name (CN) — your access anchor</span></div>
+            <div class="cc-row"><span class="cc-k">Subject Alt Name</span><span class="cc-v">urn:goat:__goatnet__:org=acme-sensors,role=OPERATOR</span><span class="cc-a">the identity grammar, in the SAN</span></div>
+            <div class="cc-row"><span class="cc-k">Issuer</span><span class="cc-v">trust-sandbox CA</span><span class="cc-a">who vouched for it</span></div>
+            <div class="cc-row"><span class="cc-k">Validity</span><span class="cc-v">short-lived · auto-expires</span><span class="cc-a">it lapses on its own</span></div>
+            <div class="cc-row"><span class="cc-k">Public key</span><span class="cc-v">the holder’s keypair</span><span class="cc-a">proves possession on connect</span></div>
+            <div class="cc-row sig"><span class="cc-k">CA signature</span><span class="cc-v">signs everything above</span><span class="cc-a">makes it unforgeable</span></div>
+          </div>
+          <div class="cert-mtls">
+            <div class="mt-pair"><div class="node sm">client</div><div class="mt-arrows"><span>⇄</span></div><div class="node sm">server</div></div>
+            <div class="mt-cap"><b>mutual TLS</b><br />both present a cert and verify the other — neither is trusted by address</div>
+          </div>
+        </div>
+
+        <!-- ③ SPIRE — two-step attestation → a short-lived, auto-rotating SVID, taken apart -->
+        <div class="cert-wrap" data-gate="spire" hidden>
+          <div class="cert-left">
+            <div class="node accent"><div class="nt">SPIRE server</div><div class="ns">the issuer + trust root</div></div>
+            <div class="signs">① attests the node ↓</div>
+            <div class="node accent"><div class="nt">Agent</div><div class="ns">on the node — proves the host</div></div>
+            <div class="signs">② attests the workload ↓</div>
+            <div class="node accent"><div class="nt">Workload</div><div class="ns">proven by uid / path / selector</div></div>
+          </div>
+          <div class="cert-card pulse">
+            <div class="cc-title">an SVID — a SPIFFE Verifiable Identity Document (an X.509 cert)</div>
+            <div class="cc-row"><span class="cc-k">SPIFFE ID</span><span class="cc-v">spiffe://trust.sandbox/workload/edge-processor</span><span class="cc-a">the workload's name, in the URI-SAN</span></div>
+            <div class="cc-row"><span class="cc-k">CN</span><span class="cc-v">edge-processor</span><span class="cc-a">the access anchor — matches the Zenoh ACL</span></div>
+            <div class="cc-row"><span class="cc-k">Issuer</span><span class="cc-v">the SPIRE server CA</span><span class="cc-a">the attestation trust root</span></div>
+            <div class="cc-row"><span class="cc-k">Validity</span><span class="cc-v">~60s · auto-rotates</span><span class="cc-a">a leaked one is useless in minutes</span></div>
+            <div class="cc-row"><span class="cc-k">Key</span><span class="cc-v">generated by the agent</span><span class="cc-a">the workload never holds a long-lived secret</span></div>
+            <div class="cc-row sig"><span class="cc-k">how it's earned</span><span class="cc-v">attestation, not configuration</span><span class="cc-a">no password, no copied key</span></div>
+          </div>
+          <div class="cert-mtls">
+            <div class="ttl">
+              <div class="ttl-ring"><span class="ttl-fill"></span></div>
+              <div class="ttl-cap">the agent <b>auto-rotates</b> the SVID continuously — <b>no human in the loop</b></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ④ Ory — human authN: OIDC login → a signed JWT (its own drill-down) → role-gated access -->
+        <div class="flow" data-gate="ory" hidden>
+          <div class="node"><div class="nt">Human</div><div class="ns">a person at a browser</div></div>
+          <div class="conn"><span class="cl">OAuth2 / OIDC login</span><span class="ca">→</span></div>
+          <div class="node accent"><div class="nt">Ory — Kratos + Hydra</div><div class="ns">checks the login, issues a token</div></div>
+          <div class="conn"><span class="ca">→</span></div>
+          <div class="node amber"><div class="nt">a signed JWT</div><div class="ns">who you are + your role</div></div>
+          <div class="conn flow-anim"><span class="cl green-t">read by web services</span><span class="ca">⇢</span></div>
+          <div class="node ring"><div class="nt">role-gated access</div><div class="ns">view · operate · admin</div></div>
+        </div>
+
+        <!-- ⑤ Zenoh ACL — PEP on the path, PDP decides by matching the CN; default-deny -->
+        <div class="acl-wrap" data-gate="acl" hidden>
+          <div class="acl-top">
+            <div class="node"><div class="nt">a write</div><div class="ns">carries its Common Name<br /><span class="mono">CN = acme-sensors</span></div></div>
+            <div class="conn"><span class="ca">→</span></div>
+            <div class="pep"><div class="pep-bar"></div><div class="pep-l">Enforcement point<br /><span>(PEP) · on the path</span></div></div>
+            <div class="acl-branch">
+              <div class="branch ok"><span class="ca">→</span><div class="node green sm">subscriber · write lands</div></div>
+              <div class="branch no"><span class="ca">✕</span><div class="node pink sm">a wrong Common Name → silently dropped<br /><span class="ns">(no error returns)</span></div></div>
+            </div>
+          </div>
+          <div class="acl-pdp">
+            <div class="updash"></div>
+            <div class="node accent sm">Policy decision point (PDP) · <b>default-DENY</b><div class="ns">match the Common Name → a granted anchor?</div></div>
+          </div>
+        </div>
+
+        <div class="anat-note">
+          <span data-gate="netbird" hidden>Admission is established <b>once</b> at onboarding — independent of the identity below. Being on the mesh is not trust.</span>
+          <span data-gate="cert" hidden>A signed identity you present <b>per connection</b> — a scoped, time-limited, revocable keycard.</span>
+          <span data-gate="spire" hidden>SPIFFE is a standard for workload identity; SPIRE implements it. Identity is <b>earned by attestation</b> and re-proven continuously — a leaked credential is useless within minutes.</span>
+          <span data-gate="ory" hidden>Ory authenticates the human + role — it does <b>not</b> issue. A role authorizes admin actions, like a CA mint for a machine. SPIRE issues workload identities automatically by attestation — <b>no human in the loop</b>.</span>
+          <span data-gate="acl" hidden>The per-write decision, <b>keyed to the identity</b> above. A denied write is silent — the sender is told nothing.</span>
+        </div>
+      </div>
+      <a class="go-deeper" id="c-deeper" hidden>
+        Go deeper — the anatomy &amp; the actual algorithms <span class="gd-arrow">↗</span></a>
+    </div>
+
+    <div class="grid" style="margin-top:16px">
+      <div class="panel">
+        <div class="panel-head"><span class="dot amber"></span><h3>The salient points</h3></div>
+        <ul class="points" id="c-points">
+        </ul>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="dot green"></span><h3>How it composes with the rest</h3></div>
+        <p class="composes" id="c-composes"></p>
+        <p class="composes-note">These five aspects are <b>complementary and coordinated</b>, not a sequence you pass
+          through. A real action uses only the ones that apply — a machine write uses <span class="sym sym-N">N</span><span class="sym sym-M">M</span><span class="sym sym-D">D</span>, a workload <span class="sym sym-N">N</span><span class="sym sym-W">W</span><span class="sym sym-D">D</span>, a human signing in to act <span class="sym sym-N">N</span><span class="sym sym-H">H</span>.</p>
+      </div>
+    </div>
+
+    <div class="panel span-2 limits-panel" style="margin-top:16px">
+      <div class="panel-head"><span class="dot" style="background:var(--amber);box-shadow:0 0 10px var(--amber)"></span>
+        <h3>Why this isn't enough on its own</h3>
+        <span class="hint">the gap the other aspects fill</span></div>
+      <p class="limits" id="c-limits"></p>
+      <p class="limits-foot">That gap is the whole reason there are five complementary aspects rather than one. Keep
+        only this one and a specific protection disappears — which is exactly what the
+        <a href="/">playground</a> lets you prove by changing a single thing and watching what breaks.</p>
+    </div>
+
+    <nav class="aspect-nav">
+      <a class="navlink" id="c-prev"></a>
+      <a class="navlink" id="c-next"></a>
+    </nav>
+
+    <footer class="foot">
+      A focused look at one aspect · <a href="/">back to the playground</a> to exercise it live.
+    </footer>
+  </div>
   </body>
 </html>

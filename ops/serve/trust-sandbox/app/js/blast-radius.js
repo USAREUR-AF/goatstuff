@@ -1,23 +1,22 @@
-<script setup lang="ts">
+// SPDX-License-Identifier: Apache-2.0
 // "Limit the blast radius." Two side-by-side illustrations of the SAME incident
 // (synced to a shared clock) — a flat network where one slip spreads to
 // everything, and a zero-trust fabric where the very same slip is contained to
 // one room. Almost every incident here is human-rooted (a phished login, a
 // config blunder); the point isn't "we stop every mistake" — it's "when one
-// happens, it goes nowhere." Rendered one world per <BlastRadius world="…"/> so
+// happens, it goes nowhere." Rendered one world per mountBlastRadius() call so
 // each has room to breathe (the two-in-one version was too cramped).
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { h, setText } from './common.js'
 
-const props = defineProps<{ world?: 'flat' | 'zero' }>()
-const world = props.world ?? 'zero'
+// mountBlastRadius(root, 'flat' | 'zero') builds the canvas + controls inside root.
+export function mountBlastRadius(root, worldArg) {
+const world = worldArg ?? 'zero'
 const isFlat = world === 'flat'
-const canvas = ref<HTMLCanvasElement | null>(null)
-const playing = ref(true)
-let ctx: CanvasRenderingContext2D | null = null
+let playing = true
+let ctx = null
 let raf = 0, W = 760, H = 380
 
-interface Incident { id: string; label: string; src: 'human' | 'system'; cause: string; catch: string; radius: string; origin: number }
-const INCIDENTS: Incident[] = [
+const INCIDENTS = [
   { id: 'phish', label: 'A phished operator login', src: 'human', cause: 'social engineering — someone clicked a convincing fake', catch: 'short-lived credential + every action re-proven', radius: 'one session — and it expires on its own', origin: 9 },
   { id: 'open', label: 'A service left open by mistake', src: 'human', cause: 'a config blunder — exposed with no auth', catch: 'default-deny: no identity, no access', radius: 'nothing — the door opens onto a wall', origin: 3 },
   { id: 'leak', label: 'A leaked machine certificate', src: 'human', cause: 'a key copied to the wrong place', catch: 'narrowly scoped cert, cut at the mesh', radius: "one machine's lane — nothing else", origin: 14 },
@@ -31,14 +30,14 @@ const NODES = Array.from({ length: N }, (_, i) => {
   return { gx: 0.10 + (cx / (COLS - 1)) * 0.80, gy: 0.16 + (cy / (ROWS - 1)) * 0.68 }
 })
 
-function color(n: string): string { const c = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return c || '#888' }
-function lerp(a: number, b: number, u: number) { return a + (b - a) * Math.max(0, Math.min(1, u)) }
-function ease(u: number) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2 }
-function resize() { const c = canvas.value!; W = c.clientWidth; H = c.clientHeight; const d = window.devicePixelRatio || 1; c.width = W * d; c.height = H * d; ctx = c.getContext('2d'); ctx?.scale(d, d) }
+function color(n) { const c = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return c || '#888' }
+function lerp(a, b, u) { return a + (b - a) * Math.max(0, Math.min(1, u)) }
+function ease(u) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2 }
+function resize() { const c = canvas; W = c.clientWidth; H = c.clientHeight; const d = window.devicePixelRatio || 1; c.width = W * d; c.height = H * d; ctx = c.getContext('2d'); ctx?.scale(d, d) }
 
 const CYCLE = 8200
 function draw() {
-  if (!playing.value) return
+  if (!playing) return
   raf = requestAnimationFrame(draw)
   if (!ctx) return
   const c = ctx, now = performance.now()  // shared wall clock → both worlds show the same incident
@@ -119,26 +118,18 @@ function draw() {
   }
 }
 
-function mix(a: string, b: string, u: number): string { const pa = parse(a), pb = parse(b); if (!pa || !pb) return a; return `rgb(${Math.round(lerp(pa[0], pb[0], u))},${Math.round(lerp(pa[1], pb[1], u))},${Math.round(lerp(pa[2], pb[2], u))})` }
-function parse(s: string): [number, number, number] | null { s = s.trim(); if (s.startsWith('#')) { const h = s.slice(1); const x = h.length === 3 ? h.split('').map((c) => c + c).join('') : h; return [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2, 4), 16), parseInt(x.slice(4, 6), 16)] } const m = s.match(/rgba?\(([^)]+)\)/); if (m) { const pp = m[1].split(',').map((v) => parseFloat(v)); return [pp[0], pp[1], pp[2]] } return null }
-function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath() }
+function mix(a, b, u) { const pa = parse(a), pb = parse(b); if (!pa || !pb) return a; return `rgb(${Math.round(lerp(pa[0], pb[0], u))},${Math.round(lerp(pa[1], pb[1], u))},${Math.round(lerp(pa[2], pb[2], u))})` }
+function parse(s) { s = s.trim(); if (s.startsWith('#')) { const h = s.slice(1); const x = h.length === 3 ? h.split('').map((c) => c + c).join('') : h; return [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2, 4), 16), parseInt(x.slice(4, 6), 16)] } const m = s.match(/rgba?\(([^)]+)\)/); if (m) { const pp = m[1].split(',').map((v) => parseFloat(v)); return [pp[0], pp[1], pp[2]] } return null }
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath() }
 
-function toggle() { playing.value = !playing.value; if (playing.value) raf = requestAnimationFrame(draw) }
-function restart() { if (!playing.value) { playing.value = true; raf = requestAnimationFrame(draw) } }
-onMounted(() => { resize(); window.addEventListener('resize', resize); raf = requestAnimationFrame(draw) })
-onBeforeUnmount(() => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize) })
-</script>
+function toggle() { playing = !playing; if (playing) raf = requestAnimationFrame(draw); paint() }
+function restart() { if (!playing) { playing = true; raf = requestAnimationFrame(draw) } paint() }
 
-<template>
-  <div>
-    <canvas ref="canvas" class="viz" style="height:380px"></canvas>
-    <div class="viz-controls">
-      <button class="sm" @click="toggle">{{ playing ? '❙❙ pause' : '▶ play' }}</button>
-      <button class="sm ghost" @click="restart">↺</button>
-    </div>
-  </div>
-</template>
-
-<style scoped>
-.viz-controls { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-</style>
+const canvas = h('canvas', { class: 'viz', style: { height: '380px' } })
+const playBtn = h('button', { class: 'sm', onclick: toggle })
+root.classList.add('blast-radius')
+root.append(canvas, h('div', { class: 'viz-controls' }, playBtn, h('button', { class: 'sm ghost', onclick: restart }, '↺')))
+function paint() { setText(playBtn, playing ? '❙❙ pause' : '▶ play') }
+paint()
+resize(); window.addEventListener('resize', resize); raf = requestAnimationFrame(draw)
+}

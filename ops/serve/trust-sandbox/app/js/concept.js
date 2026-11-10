@@ -1,21 +1,12 @@
-<script setup lang="ts">
-import { ref, computed } from 'vue'
-import ConceptViz from './components/ConceptViz.vue'
-import GlossaryPopup from './components/GlossaryPopup.vue'
-
-const theme = ref(document.documentElement.getAttribute('data-theme') || 'dark')
-function toggleTheme() {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  document.documentElement.setAttribute('data-theme', theme.value)
-  localStorage.setItem('tsbx-theme', theme.value)
-}
+// SPDX-License-Identifier: Apache-2.0
+// concept.html?gate=<id> — one aspect of identity & access, up close. The five
+// anatomy diagrams are static HTML (one shown per gate); the text comes from here.
+import { initTheme, h } from './common.js'
+import { initGlossPopup } from './gloss-popup.js'
 
 // the five aspects of identity & access — each its own focused page.
-interface Aspect {
-  id: string; n: string; title: string; domain: string; q: string; tagline: string
-  points: string[]; composes: string; limits: string
-}
-const ASPECTS: Aspect[] = [
+// Entry shape: { id, n, title, domain, q, tagline, points[], composes, limits }
+const ASPECTS = [
   {
     id: 'netbird', n: 'N', title: 'Network admission', domain: 'NetBird · machines · entry',
     q: 'Are you on the mesh at all?',
@@ -85,113 +76,29 @@ const ASPECTS: Aspect[] = [
 ]
 
 const id = new URLSearchParams(location.search).get('gate') || 'netbird'
-const idx = computed(() => Math.max(0, ASPECTS.findIndex((a) => a.id === id)))
-const a = computed(() => ASPECTS[idx.value])
-const prev = computed(() => ASPECTS[(idx.value + ASPECTS.length - 1) % ASPECTS.length])
-const next = computed(() => ASPECTS[(idx.value + 1) % ASPECTS.length])
+const idx = Math.max(0, ASPECTS.findIndex((x) => x.id === id))
+const a = ASPECTS[idx]
+const prev = ASPECTS[(idx + ASPECTS.length - 1) % ASPECTS.length]
+const next = ASPECTS[(idx + 1) % ASPECTS.length]
 
 // Each aspect has a third-layer drill-down (anatomy + algorithms) in deep.html.
-const DEEP_TOPIC: Record<string, string> = { netbird: 'netbird', cert: 'cert', spire: 'svid', ory: 'jwt', acl: 'acl' }
-const deepTopic = computed(() => DEEP_TOPIC[a.value.id])
-</script>
+const DEEP_TOPIC = { netbird: 'netbird', cert: 'cert', spire: 'svid', ory: 'jwt', acl: 'acl' }
+const deepTopic = DEEP_TOPIC[a.id]
 
-<template>
-  <div class="wrap">
-    <header class="topbar">
-      <div class="brand">
-        <div class="mark">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" />
-          </svg>
-        </div>
-        <div><h1><span class="sym" :class="'sym-' + a.n" style="font-size:18px">{{ a.n }}</span> {{ a.title }}</h1><p class="sub">One layer of identity &amp; access, up close.</p></div>
-      </div>
-      <span class="spacer" />
-      <a class="navlink" href="/">◀ PLAYGROUND</a>
-      <a class="navlink" href="/glossary.html">📖 GLOSSARY</a>
-      <a class="navlink" href="/vision.html">✦ BIGGER PICTURE</a>
-      <button class="theme-toggle" @click="toggleTheme"><span v-if="theme==='dark'">◐ LIGHT</span><span v-else>◑ DARK</span></button>
-    </header>
-
-    <section class="chero">
-      <div class="cn">{{ a.n }}</div>
-      <div>
-        <div class="tag">{{ a.domain }}</div>
-        <h2>{{ a.title }}</h2>
-        <p class="q">“{{ a.q }}”</p>
-      </div>
-    </section>
-
-    <p class="tagline">{{ a.tagline }}</p>
-
-    <div class="panel span-2">
-      <div class="panel-head"><span class="dot accent" /><h3>Anatomy &amp; mechanics</h3>
-        <span class="hint">how this aspect actually works</span></div>
-      <ConceptViz :gate="a.id" />
-      <a v-if="deepTopic" class="go-deeper" :href="'/deep.html?topic=' + deepTopic">
-        Go deeper — the anatomy &amp; the actual algorithms <span class="gd-arrow">↗</span></a>
-    </div>
-
-    <div class="grid" style="margin-top:16px">
-      <div class="panel">
-        <div class="panel-head"><span class="dot amber" /><h3>The salient points</h3></div>
-        <ul class="points">
-          <li v-for="(pt, i) in a.points" :key="i"><span class="bullet" /><span>{{ pt }}</span></li>
-        </ul>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><span class="dot green" /><h3>How it composes with the rest</h3></div>
-        <p class="composes">{{ a.composes }}</p>
-        <p class="composes-note">These five aspects are <b>complementary and coordinated</b>, not a sequence you pass
-          through. A real action uses only the ones that apply — a machine write uses <span class="sym sym-N">N</span><span class="sym sym-M">M</span><span class="sym sym-D">D</span>, a workload <span class="sym sym-N">N</span><span class="sym sym-W">W</span><span class="sym sym-D">D</span>, a human signing in to act <span class="sym sym-N">N</span><span class="sym sym-H">H</span>.</p>
-      </div>
-    </div>
-
-    <div class="panel span-2 limits-panel" style="margin-top:16px">
-      <div class="panel-head"><span class="dot" style="background:var(--amber);box-shadow:0 0 10px var(--amber)" />
-        <h3>Why this isn't enough on its own</h3>
-        <span class="hint">the gap the other aspects fill</span></div>
-      <p class="limits">{{ a.limits }}</p>
-      <p class="limits-foot">That gap is the whole reason there are five complementary aspects rather than one. Keep
-        only this one and a specific protection disappears — which is exactly what the
-        <a href="/">playground</a> lets you prove by changing a single thing and watching what breaks.</p>
-    </div>
-
-    <nav class="aspect-nav">
-      <a :href="'/concept.html?gate=' + prev.id" class="navlink">◀ {{ prev.n }} {{ prev.title }}</a>
-      <a :href="'/concept.html?gate=' + next.id" class="navlink">{{ next.n }} {{ next.title }} ▶</a>
-    </nav>
-
-    <footer class="foot">
-      A focused look at one aspect · <a href="/">back to the playground</a> to exercise it live.
-    </footer>
-    <GlossaryPopup />
-  </div>
-</template>
-
-<style scoped>
-.chero { display: flex; gap: 22px; align-items: center; margin: 6px 2px 14px; padding-bottom: 14px; border-bottom: var(--seam) solid var(--line-soft); }
-.chero .cn { font-size: clamp(40px, 7vw, 72px); font-weight: 700; color: var(--accent); line-height: 1; opacity: .9; }
-.chero h2 { font-size: clamp(20px, 3.4vw, 30px); margin: 6px 0 8px; }
-.chero .q { margin: 0; color: var(--ink); font-size: 16px; font-weight: 500; }
-.tagline { color: var(--ink); font-size: 15px; line-height: 1.6; max-width: 78ch; margin: 0 0 16px;
-  border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); padding-left: 12px; }
-.points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-.points li { display: flex; gap: 11px; align-items: flex-start; font-size: 13.5px; color: var(--ink-dim); line-height: 1.5; }
-.points .bullet { flex: none; margin-top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-.composes { color: var(--ink-dim); font-size: 13.5px; line-height: 1.55; margin: 0 0 12px; }
-.composes-note { color: var(--ink-faint); font-size: 12.5px; line-height: 1.5; margin: 0; }
-/* the "why this alone isn't enough" panel is the capstone — warm caution accent */
-.limits-panel { border-color: color-mix(in srgb, var(--amber) 28%, var(--line)); border-left: 4px solid var(--amber);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--amber) 8%, var(--panel)), var(--panel-2)); }
-.limits { color: var(--ink); font-size: 14px; line-height: 1.6; margin: 0 0 10px; }
-.limits-foot { color: var(--ink-dim); font-size: 12.5px; line-height: 1.5; margin: 0; }
-.aspect-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 16px;
-  border-top: var(--seam) solid var(--line-soft); flex-wrap: wrap; }
-.go-deeper { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; padding: 9px 14px;
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 9%, var(--panel-2)); color: var(--accent);
-  font-size: 13px; font-weight: 600; text-decoration: none; transition: border-color .15s, background .15s; }
-.go-deeper:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--panel-2)); }
-.go-deeper .gd-arrow { font-size: 14px; }
-</style>
+const $ = (sel) => document.getElementById(sel)
+initTheme()
+const sym = $('c-sym'); sym.classList.add('sym-' + a.n); sym.textContent = a.n
+$('c-title').textContent = a.title
+$('c-n').textContent = a.n
+$('c-domain').textContent = a.domain
+$('c-title2').textContent = a.title
+$('c-q').textContent = `“${a.q}”`
+$('c-tagline').textContent = a.tagline
+for (const el of document.querySelectorAll('.anat [data-gate]')) el.hidden = el.dataset.gate !== a.id
+if (deepTopic) { const d = $('c-deeper'); d.href = '/deep.html?topic=' + deepTopic; d.hidden = false }
+$('c-points').append(...a.points.map((pt) => h('li', null, h('span', { class: 'bullet' }), h('span', null, pt))))
+$('c-composes').textContent = a.composes
+$('c-limits').textContent = a.limits
+const p = $('c-prev'); p.href = '/concept.html?gate=' + prev.id; p.textContent = `◀ ${prev.n} ${prev.title}`
+const n = $('c-next'); n.href = '/concept.html?gate=' + next.id; n.textContent = `${next.n} ${next.title} ▶`
+initGlossPopup()

@@ -1,9 +1,9 @@
-<script setup lang="ts">
+// SPDX-License-Identifier: Apache-2.0
 // One world of the "wall / no-inside" story, drawn LARGE and full-width. The
-// vision page renders two of these in separate sections (world="castle" and
-// world="zero") so each illustration has room to breathe and be expressive —
+// vision page renders two of these in separate sections ('castle' and
+// 'zero') so each illustration has room to breathe and be expressive —
 // the ZTA sibling of the Zenoh sandbox's community canvas (a designed story,
-// not live data). Each <TrustViz> is an independent component with its own
+// not live data). Each mountTrustViz() call is an independent instance with its own
 // clock, so the two worlds tell their own stories at their own pace.
 //
 //  • castle: a walled keep with a FRONT GATE and a BACK DOOR. Three scenes
@@ -15,15 +15,15 @@
 //  • zero: no inside at all. Every interaction is its OWN relationship —
 //    established one at a time, mutually proven (two-way), encrypted, used for
 //    a single action, then GONE. No standing access, no lateral movement.
-import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { useVizControls, VIZ_SPEEDS } from '../composables/vizControls'
+import { createVizControls, VIZ_SPEEDS } from './viz-controls.js'
+import { h, setText } from './common.js'
 
-const props = defineProps<{ world?: 'castle' | 'zero' }>()
-const world = props.world ?? 'castle'
-const canvas = ref<HTMLCanvasElement | null>(null)
-let ctx: CanvasRenderingContext2D | null = null
+// mountTrustViz(root, 'castle' | 'zero') builds the canvas + controls inside root.
+export function mountTrustViz(root, worldArg) {
+const world = worldArg ?? 'castle'
+let ctx = null
 let W = 900, H = 460
-const caption = ref(world === 'castle'
+let caption = (world === 'castle'
   ? 'One wall, one gate — and once inside, open hallways to every room.'
   : 'No inside to roam: every action is its own verified, two-way, vanishing link.')
 
@@ -54,7 +54,7 @@ const ZERO = [
 ]
 
 // deterministic pseudo-random (no Math.random — keeps the render stable + replay-safe)
-function h1(i: number) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x) }
+function h1(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x) }
 // THE OLD WAY's interior is an "ocean": a dense field of services + data stores,
 // jittered on a grid so it reads rich and organic. The whole point is that once
 // you're past the wall, ALL of this is reachable — nothing here protects itself.
@@ -65,7 +65,7 @@ const FIELD = Array.from({ length: FC * FR }, (_, i) => {
   const gy = (r + 0.5) / FR + (h1(i + 99) * 2 - 1) * 0.44 / FR
   return { gx: 0.04 + gx * 0.92, gy: 0.06 + gy * 0.88, rad: 0.5 + h1(i + 7) * 1.15, depth: 0.38 + h1(i + 33) * 0.62 }
 })
-const WEB: [number, number][] = []
+const WEB = []
 for (let r = 0; r < FR; r++) for (let c = 0; c < FC; c++) {
   const i = r * FC + c
   if (c < FC - 1) WEB.push([i, i + 1])
@@ -77,21 +77,20 @@ for (let r = 0; r < FR; r++) for (let c = 0; c < FC; c++) {
 // only ever reaches the handful it has links to (~15% of the field), one at a time.
 const ZERO_TOUCH = FIELD.map((_, i) => i).filter((i) => h1(i + 5) < 0.16)
 
-function color(n: string): string { const c = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return c || '#888' }
-function lerp(a: number, b: number, u: number) { return a + (b - a) * Math.max(0, Math.min(1, u)) }
-function ease(u: number) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2 }
-function resize() { const c = canvas.value!; W = c.clientWidth; H = c.clientHeight; const d = window.devicePixelRatio || 1; c.width = W * d; c.height = H * d; ctx = c.getContext('2d'); ctx?.scale(d, d) }
+function color(n) { const c = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return c || '#888' }
+function lerp(a, b, u) { return a + (b - a) * Math.max(0, Math.min(1, u)) }
+function ease(u) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2 }
+function resize() { const c = canvas; W = c.clientWidth; H = c.clientHeight; const d = window.devicePixelRatio || 1; c.width = W * d; c.height = H * d; ctx = c.getContext('2d'); ctx?.scale(d, d) }
 
 const CYCLE = 9000
 const SCENES = world === 'castle' ? CASTLE : ZERO
-const sceneTags = (SCENES as Array<{ tag: string }>).map((s) => s.tag)
-interface Box { x: number; y: number; w: number; h: number }
+const sceneTags = SCENES.map((s) => s.tag)
 
-function render(now: number) {
+function render(now) {
   if (!ctx) return
   ctx.clearRect(0, 0, W, H)
   const pad = 18, titleH = 26
-  const box: Box = { x: pad + (world === 'castle' ? 8 : 6), y: titleH, w: W - pad * 2 - 16, h: H - titleH - 32 }
+  const box = { x: pad + (world === 'castle' ? 8 : 6), y: titleH, w: W - pad * 2 - 16, h: H - titleH - 32 }
 
   ctx.font = '600 12px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'left'
   if (world === 'castle') { ctx.fillStyle = color('--ink-dim'); ctx.fillText('TRUST BY LOCATION — the walled keep', pad, 16) }
@@ -103,24 +102,24 @@ function render(now: number) {
   const cphase = (now % CYCLE) / CYCLE
   if (world === 'castle') {
     const p = CASTLE[idx]; drawCastle(box, p, cphase)
-    caption.value = cphase < 0.17 ? `Scene ${p.scene} — ${p.title}.` : `${cap(p.label)} — ${p.castle}.`
+    caption = cphase < 0.17 ? `Scene ${p.scene} — ${p.title}.` : `${cap(p.label)} — ${p.castle}.`
   } else {
     const p = ZERO[idx]
     const accessU = ease(Math.min(1, Math.max(0, (cphase - 0.04) / 0.56)))
     const outcomeU = ease(Math.min(1, Math.max(0, (cphase - 0.60) / 0.30)))
     drawZero(box, p, accessU, outcomeU)
-    caption.value = `${cap(p.label)} — ${p.zero}.`
+    caption = `${cap(p.label)} — ${p.zero}.`
   }
 }
-function cap(s: string) { return s.charAt(0).toUpperCase() + s.slice(1) }
-function scaleOf(b: Box) { return Math.min(1.9, Math.max(1, b.w / 470)) }
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1) }
+function scaleOf(b) { return Math.min(1.9, Math.max(1, b.w / 470)) }
 
 // ── THE OLD WAY: a walled keep, one scene at a time ──────────────────────────
 // Each vignette: (1) a clear title card orients the viewer; (2) the keep fades
 // in; (3) ONLY the entrance in use is revealed — the front gate opens on proper
 // credentials, or the back door is hidden until an intruder finds it unguarded.
-function drawCastle(b: Box, p: typeof CASTLE[number] | null, cphase: number) {
-  const c = ctx!, s = scaleOf(b)
+function drawCastle(b, p, cphase) {
+  const c = ctx, s = scaleOf(b)
   const line = color('--line'), soft = color('--line-soft'), faint = color('--ink-faint')
   const green = color('--green'), pink = color('--pink'), amber = color('--amber'), ink = color('--ink')
   const entry = p?.entry ?? 'front', mode = p?.mode ?? 'roam', tone = p?.tone ?? 'ok'
@@ -162,7 +161,7 @@ function drawCastle(b: Box, p: typeof CASTLE[number] | null, cphase: number) {
   const dmin = Math.min(...dists), dmax = Math.max(...dists)
   const distN = dists.map((d) => (d - dmin) / (dmax - dmin || 1))
   const prog = roaming ? accessU : outcomeU
-  const reachAt = (i: number) => Math.max(0, Math.min(1, (prog * 1.3 - distN[i]) / 0.26))
+  const reachAt = (i) => Math.max(0, Math.min(1, (prog * 1.3 - distN[i]) / 0.26))
   const wash = mode === 'flood' ? pink : (tone === 'stale' ? amber : green)
 
   c.globalAlpha = revealU  // whole keep fades in after the title card
@@ -243,8 +242,8 @@ function drawCastle(b: Box, p: typeof CASTLE[number] | null, cphase: number) {
 }
 
 // ── ZERO TRUST: one ephemeral, two-way, encrypted link at a time ─────────────
-function drawZero(b: Box, p: typeof ZERO[number] | null, accessU: number, outcomeU: number) {
-  const c = ctx!, s = scaleOf(b)
+function drawZero(b, p, accessU, outcomeU) {
+  const c = ctx, s = scaleOf(b)
   const line = color('--line'), soft = color('--line-soft'), faint = color('--ink-faint')
   const accent = color('--accent'), green = color('--green'), pink = color('--pink'), amber = color('--amber')
   const originX = b.x + 6 * s, originY = b.y + b.h * 0.5
@@ -260,7 +259,7 @@ function drawZero(b: Box, p: typeof ZERO[number] | null, accessU: number, outcom
   const target = (p?.id === 'wrong') ? far : ZT
 
   // legit actor: ephemeral links to ~15% of the field, ONE at a time — never all
-  let activeIdx = -1, local = 0; const served = new Set<number>()
+  let activeIdx = -1, local = 0; const served = new Set()
   if (mode === 'verified') {
     const f = accessU * ZERO_TOUCH.length, k = Math.min(ZERO_TOUCH.length - 1, Math.floor(f))
     local = f - k; activeIdx = ZERO_TOUCH[k]
@@ -317,8 +316,8 @@ function drawZero(b: Box, p: typeof ZERO[number] | null, accessU: number, outcom
 // one mediated relationship: form (I prove to you) → verify (you prove back,
 // encrypted) → use once → vanish. Bidirectional pulses + a padlock make it
 // clear this is not standing access.
-function drawEphemeralLink(r: { x: number; y: number }, ox: number, oy: number, local: number, accent: string, green: string, faint: string, s: number) {
-  const c = ctx!
+function drawEphemeralLink(r, ox, oy, local, accent, green, faint, s) {
+  const c = ctx
   const env = local < 0.15 ? local / 0.15 : local > 0.72 ? Math.max(0, (1 - local) / 0.28) : 1  // fade in/out → "vanishes"
   c.strokeStyle = mix(accent, green, Math.min(1, local * 1.4)); c.globalAlpha = 0.85 * env; c.lineWidth = 2.2 * s
   c.setLineDash([4, 4]); c.lineDashOffset = -performance.now() / 28
@@ -334,59 +333,52 @@ function drawEphemeralLink(r: { x: number; y: number }, ox: number, oy: number, 
   c.fillText(local < 0.5 ? 'proving…' : local < 0.78 ? 'verified · encrypted' : 'link gone', r.x, r.y - 16 * s); c.globalAlpha = 1
 }
 
-function padlock(c: CanvasRenderingContext2D, x: number, y: number, sz: number, col: string) {
+function padlock(c, x, y, sz, col) {
   c.save(); c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 1.4
   c.beginPath(); c.arc(x, y - sz * 0.5, sz * 0.55, Math.PI, 0); c.stroke()  // shackle
   c.globalAlpha = 0.85; rr(c, x - sz * 0.7, y - sz * 0.1, sz * 1.4, sz * 1.2, 1.5); c.fill(); c.globalAlpha = 1; c.restore()
 }
 
-function mix(a: string, b: string, u: number): string { const pa = parse(a), pb = parse(b); if (!pa || !pb) return a; return `rgb(${Math.round(lerp(pa[0], pb[0], u))},${Math.round(lerp(pa[1], pb[1], u))},${Math.round(lerp(pa[2], pb[2], u))})` }
-function withA(col: string, a: number): string { const p = parse(col); return p ? `rgba(${p[0]},${p[1]},${p[2]},${a})` : col }
-function parse(s: string): [number, number, number] | null { s = s.trim(); if (s.startsWith('#')) { const h = s.slice(1); const x = h.length === 3 ? h.split('').map((c) => c + c).join('') : h; return [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2, 4), 16), parseInt(x.slice(4, 6), 16)] } const m = s.match(/rgba?\(([^)]+)\)/); if (m) { const p = m[1].split(',').map((v) => parseFloat(v)); return [p[0], p[1], p[2]] } return null }
-function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath() }
+function mix(a, b, u) { const pa = parse(a), pb = parse(b); if (!pa || !pb) return a; return `rgb(${Math.round(lerp(pa[0], pb[0], u))},${Math.round(lerp(pa[1], pb[1], u))},${Math.round(lerp(pa[2], pb[2], u))})` }
+function withA(col, a) { const p = parse(col); return p ? `rgba(${p[0]},${p[1]},${p[2]},${a})` : col }
+function parse(s) { s = s.trim(); if (s.startsWith('#')) { const h = s.slice(1); const x = h.length === 3 ? h.split('').map((c) => c + c).join('') : h; return [parseInt(x.slice(0, 2), 16), parseInt(x.slice(2, 4), 16), parseInt(x.slice(4, 6), 16)] } const m = s.match(/rgba?\(([^)]+)\)/); if (m) { const p = m[1].split(',').map((v) => parseFloat(v)); return [p[0], p[1], p[2]] } return null }
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath() }
 
-const { playing, progress, speedIdx, scene, toggle, setSpeed, pickScene, scrubTo, onScrubStart, onScrubEnd, sceneIndex } =
-  useVizControls(CYCLE, SCENES.length, render)
-onMounted(() => { resize(); window.addEventListener('resize', resize) })
-onBeforeUnmount(() => { window.removeEventListener('resize', resize) })
-</script>
+// ── the DOM: canvas, play/scrub/speed bar, scenario chips, caption ──────────
+const canvas = h('canvas', { class: 'viz', style: { height: '460px' } })
+const playBtn = h('button', { class: 'vb-play' })
+const scrub = h('input', { class: 'scrub', type: 'range', min: '0', max: '1', step: '0.001', 'aria-label': 'scrub timeline' })
+const speedBtns = VIZ_SPEEDS.map((sp, i) => h('button', { class: 'spd', onclick: () => { ctl.setSpeed(i); paint() } }, `${sp}×`))
+const autoBtn = h('button', { class: 'sc', onclick: () => { ctl.pickScene(-1); paint() } }, '⟳ auto')
+const sceneBtns = sceneTags.map((t, i) => h('button', { class: 'sc', onclick: () => { ctl.pickScene(i); paint() } }, t))
+const capEl = h('div', { class: 'viz-cap' }, caption)
+root.classList.add('trust-viz')
+root.append(
+  canvas,
+  h('div', { class: 'viz-bar' }, playBtn, scrub, h('div', { class: 'speeds' }, speedBtns)),
+  h('div', { class: 'scenes' }, h('span', { class: 'sc-lbl' }, 'scenario'), autoBtn, sceneBtns),
+  capEl,
+)
+function paint() {
+  setText(playBtn, ctl.playing ? '❙❙' : '▶'); playBtn.title = ctl.playing ? 'pause' : 'play'
+  speedBtns.forEach((b, i) => b.classList.toggle('on', ctl.speedIdx === i))
+  autoBtn.classList.toggle('on', ctl.scene < 0)
+  sceneBtns.forEach((b, i) => b.classList.toggle('on', ctl.scene === i))
+}
+playBtn.addEventListener('click', () => { ctl.toggle(); paint() })
+let scrubbing = false
+scrub.addEventListener('pointerdown', () => { scrubbing = true; ctl.onScrubStart() })
+scrub.addEventListener('pointerup', () => { scrubbing = false; ctl.onScrubEnd() })
+scrub.addEventListener('input', () => ctl.scrubTo(+scrub.value))
 
-<template>
-  <div>
-    <canvas ref="canvas" class="viz" style="height:460px"></canvas>
-    <div class="viz-bar">
-      <button class="vb-play" @click="toggle" :title="playing ? 'pause' : 'play'">{{ playing ? '❙❙' : '▶' }}</button>
-      <input class="scrub" type="range" min="0" max="1" step="0.001" :value="progress"
-             @pointerdown="onScrubStart" @pointerup="onScrubEnd"
-             @input="scrubTo(+($event.target as HTMLInputElement).value)" aria-label="scrub timeline" />
-      <div class="speeds">
-        <button v-for="(sp, i) in VIZ_SPEEDS" :key="sp" class="spd" :class="{ on: speedIdx === i }" @click="setSpeed(i)">{{ sp }}×</button>
-      </div>
-    </div>
-    <div class="scenes">
-      <span class="sc-lbl">scenario</span>
-      <button class="sc" :class="{ on: scene < 0 }" @click="pickScene(-1)">⟳ auto</button>
-      <button v-for="(t, i) in sceneTags" :key="t" class="sc" :class="{ on: scene === i }" @click="pickScene(i)">{{ t }}</button>
-    </div>
-    <div class="viz-cap">{{ caption }}</div>
-  </div>
-</template>
-
-<style scoped>
-.viz-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.vb-play { flex: none; width: 30px; height: 26px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); color: var(--ink); font-size: 11px; cursor: pointer; }
-.vb-play:hover { border-color: var(--accent); color: var(--accent); }
-.scrub { flex: 1; height: 5px; -webkit-appearance: none; appearance: none; background: var(--line); border-radius: 999px; cursor: pointer; }
-.scrub::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel); cursor: grab; }
-.scrub::-moz-range-thumb { width: 14px; height: 14px; border: 2px solid var(--panel); border-radius: 50%; background: var(--accent); cursor: grab; }
-.speeds { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-.spd { background: var(--panel-2); color: var(--ink-dim); border: none; border-left: 1px solid var(--line); padding: 4px 7px; font-family: var(--font-mono); font-size: 10.5px; cursor: pointer; }
-.spd:first-child { border-left: none; }
-.spd.on { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
-.scenes { display: flex; align-items: center; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
-.sc-lbl { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); margin-right: 2px; }
-.sc { background: var(--panel-2); color: var(--ink-dim); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 11px; cursor: pointer; transition: border-color .15s, color .15s; }
-.sc:hover { border-color: var(--accent); color: var(--ink); }
-.sc.on { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); color: var(--accent); }
-.viz-cap { color: var(--ink-dim); font-size: 13px; margin-top: 9px; min-height: 18px; }
-</style>
+const ctl = createVizControls(CYCLE, SCENES.length, (now) => {
+  render(now)
+  if (!scrubbing) scrub.value = String(ctl.progress)
+  setText(capEl, caption)
+})
+const sceneIndex = () => ctl.sceneIndex()
+paint()
+resize()
+window.addEventListener('resize', resize)
+ctl.start()
+}
