@@ -9,11 +9,6 @@
 #
 # format: <repo-relative package.json path> | <dependency name>
 
-ops/panoscope/frontend/package.json | @playwright/test
-ops/panoscope/frontend/package.json | @types/d3
-ops/panoscope/frontend/package.json | d3
-ops/panoscope/frontend/package.json | typescript
-ops/panoscope/frontend/package.json | vite
 ops/serve/trust-sandbox/app/package.json | @vitejs/plugin-vue
 ops/serve/trust-sandbox/app/package.json | vite
 ops/serve/trust-sandbox/app/package.json | vue

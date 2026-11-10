@@ -32,7 +32,7 @@ export const FETCH_EMA_ALPHA = 0.3;
  * floor (2× poll of cadence slack + 4× the observed fetch EMA). With
  * emaFetchMs = 0 this equals 4× poll exactly.
  */
-export function staleAgeFloorMs(pollMs: number, emaFetchMs: number): number {
+export function staleAgeFloorMs(pollMs, emaFetchMs) {
   return Math.max(4 * pollMs, 2 * pollMs + 4 * emaFetchMs);
 }
 
@@ -43,12 +43,7 @@ export function staleAgeFloorMs(pollMs: number, emaFetchMs: number): number {
  *  - `ageMs > staleAgeFloorMs(...)` — the "alive but pathologically slow /
  *    hung without throwing" backstop, now latency-aware.
  */
-export function isStale(opts: {
-  consecutiveFailures: number;
-  ageMs: number;
-  pollMs: number;
-  emaFetchMs: number;
-}): boolean {
+export function isStale(opts) {
   return (
     opts.consecutiveFailures >= 2 ||
     opts.ageMs > staleAgeFloorMs(opts.pollMs, opts.emaFetchMs)
@@ -61,10 +56,10 @@ export function isStale(opts: {
  * the real link immediately instead of decaying up from a meaningless 0.
  */
 export function foldFetchEma(
-  prevEmaMs: number,
-  sampleMs: number,
+  prevEmaMs,
+  sampleMs,
   alpha = FETCH_EMA_ALPHA,
-): number {
+) {
   return prevEmaMs === 0 ? sampleMs : alpha * sampleMs + (1 - alpha) * prevEmaMs;
 }
 
@@ -81,10 +76,10 @@ export function foldFetchEma(
 
 /** Observed median inter-sample gap (ms) from a newest-first timestamp
  *  list — one topic's natural publish interval. 0 when <2 samples. */
-export function medianIntervalMs(tsList: Array<number | undefined>): number {
-  const ts = tsList.filter((t): t is number => typeof t === "number");
+export function medianIntervalMs(tsList) {
+  const ts = tsList.filter((t) => typeof t === "number");
   if (ts.length < 2) return 0;
-  const gaps: number[] = [];
+  const gaps = [];
   for (let i = 0; i < ts.length - 1; i++) gaps.push(ts[i] - ts[i + 1]);
   gaps.sort((a, b) => a - b);
   return gaps[Math.floor(gaps.length / 2)];
@@ -97,9 +92,9 @@ export function medianIntervalMs(tsList: Array<number | undefined>): number {
  *  contribute nothing; 0 when no topic has two samples, which the
  *  caller maps to the unknown-interval floor. Input order is free. */
 export function streamIntervalMs(
-  entries: Array<{ topic: string; ts_ms: number | undefined }>,
-): number {
-  const byTopic = new Map<string, number[]>();
+  entries,
+) {
+  const byTopic = new Map();
   for (const e of entries) {
     if (typeof e.ts_ms !== "number") continue;
     const list = byTopic.get(e.topic);

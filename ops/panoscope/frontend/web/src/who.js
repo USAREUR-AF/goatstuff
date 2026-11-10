@@ -6,8 +6,6 @@
 // derived rows verbatim and shows explicit restricted / portal-down
 // states, never a blank or a silently-empty roster.
 
-import "./styles.css";
-import "./pages.css";
 import {
   handleResponse,
   isPageSignedOut,
@@ -19,50 +17,47 @@ import {
 const POLL_MS = 10_000;
 const STALE_AFTER_MS = POLL_MS * 4;
 
-interface WhoRow {
-  anchor: string;
-  name: string;
-  kind: string;
-  affiliation: string;
-  nation: string;
-  wire_state: string;
-  recon_reason: string;
-  status: string;
-  status_color: string;
-  on_mesh: boolean;
-  connected: boolean;
-  last_seen_unix: number;
-  writes: number;
-  reads: number;
-  /// Furthest onboarding step the portal reports positive evidence for. Empty
-  /// = the portal reported nothing (no progress row, or a portal predating the
-  /// field) — render `unknown`, never "did not start".
-  onboarding_stage: string;
-  live: string;
-  live_age?: string;
-  drop_count?: number;
-  sample_rate?: number;
-  byte_rate?: number;
-  shares: string;
-  near_limit: boolean;
-  band_label: string;
-  band_color: string;
-}
-interface WhoView {
-  portal_state: string;
-  roster_age?: string;
-  rows: WhoRow[];
-  totals: {
-    rows: number; online: number; strays: number; cut_off: number; no_grants: number;
-    unfinished_onboarding: number;
-  };
-  notes: string[];
-  freshness?: { generated_at: string; member_count: number };
-  generated_at_ms: number;
-}
+/**
+ * @typedef {Object} WhoRow
+ * @property {string} anchor
+ * @property {string} name
+ * @property {string} kind
+ * @property {string} affiliation
+ * @property {string} nation
+ * @property {string} wire_state
+ * @property {string} recon_reason
+ * @property {string} status
+ * @property {string} status_color
+ * @property {boolean} on_mesh
+ * @property {boolean} connected
+ * @property {number} last_seen_unix
+ * @property {number} writes
+ * @property {number} reads
+ * @property {string} onboarding_stage Furthest onboarding step the portal reports positive evidence for. Empty
+ *   = the portal reported nothing (no progress row, or a portal predating the
+ *   field) — render `unknown`, never "did not start".
+ * @property {string} live
+ * @property {string} [live_age]
+ * @property {number} [drop_count]
+ * @property {number} [sample_rate]
+ * @property {number} [byte_rate]
+ * @property {string} shares
+ * @property {boolean} near_limit
+ * @property {string} band_label
+ * @property {string} band_color
+ */
+/**
+ * @typedef {Object} WhoView
+ * @property {string} portal_state
+ * @property {string} [roster_age]
+ * @property {WhoRow[]} rows
+ * @property {{ rows: number; online: number; strays: number; cut_off: number; no_grants: number; unfinished_onboarding: number; }} totals
+ * @property {string[]} notes
+ * @property {{ generated_at: string; member_count: number; }} [freshness]
+ * @property {number} generated_at_ms
+ */
 
-const $ = <T extends HTMLElement>(id: string): T =>
-  document.getElementById(id) as T;
+const $ = (id) => document.getElementById(id);
 
 let lastSuccessAt = 0;
 let consecutiveFailures = 0;
@@ -70,16 +65,16 @@ let consecutiveFailures = 0;
  *  "restricted"; read by the schedule through pacingFailures (session.ts). */
 let restrictedStreak = 0;
 let filter = "";
-let selected: string | null = null;
-let lastView: WhoView | null = null;
+let selected = null;
+let lastView = null;
 
-function esc(s: string): string {
+function esc(s) {
   const d = document.createElement("span");
   d.textContent = s;
   return d.innerHTML;
 }
 
-function stateClass(color: string): string {
+function stateClass(color) {
   switch (color) {
     case "green": return "state-green";
     case "amber": return "state-amber";
@@ -96,7 +91,7 @@ function stateClass(color: string): string {
 // field — and that is UNKNOWN, not "did not start". Rendering it as a dimmed
 // "unknown" keeps the difference visible instead of laundering a gap in
 // instrumentation into a claim about a person.
-function onboardingCell(r: WhoRow): string {
+function onboardingCell(r) {
   if (!r.onboarding_stage) {
     return '<span class="state-dim" title="The portal reported no onboarding stage for this anchor — no progress row, or a portal predating the field. This is unknown, not a claim that they never started.">unknown</span>';
   }
@@ -108,12 +103,12 @@ function onboardingCell(r: WhoRow): string {
   return `<span class="state-amber" title="Furthest step with positive evidence. Short of publishing.">${esc(r.onboarding_stage)}</span>`;
 }
 
-function statusLabel(r: WhoRow): string {
+function statusLabel(r) {
   if (r.status === "stray" && r.recon_reason === "unregistered-key") return "stray?";
   return r.status;
 }
 
-function fmtLastSeen(unix: number): string {
+function fmtLastSeen(unix) {
   if (unix <= 0) return "—";
   const s = Math.floor(Date.now() / 1000) - unix;
   if (s < 0) return "—";
@@ -123,14 +118,14 @@ function fmtLastSeen(unix: number): string {
   return `${Math.floor(s / 86_400)}d ago`;
 }
 
-function liveCell(r: WhoRow): string {
+function liveCell(r) {
   if (r.live === "alive") return `<span class="state-green">alive</span>`;
   if (r.live === "dropped")
     return `<span class="state-amber">dropped ×${r.drop_count ?? 0}</span>`;
   return `<span class="state-dim">unmetered</span>`;
 }
 
-function rowMatches(r: WhoRow, needle: string): boolean {
+function rowMatches(r, needle) {
   return (
     r.name.toLowerCase().includes(needle) ||
     r.anchor.toLowerCase().includes(needle) ||
@@ -141,7 +136,7 @@ function rowMatches(r: WhoRow, needle: string): boolean {
   );
 }
 
-function render(view: WhoView) {
+function render(view) {
   const note = $("portal-note");
   if (view.portal_state === "disabled") {
     note.hidden = false;
@@ -204,11 +199,11 @@ function render(view: WhoView) {
     `${fresh}`;
 }
 
-function shorten(anchor: string): string {
+function shorten(anchor) {
   return /^[0-9a-f-]{32,36}$/i.test(anchor) ? `${anchor.slice(0, 4)}…` : anchor;
 }
 
-async function showDetail(anchor: string) {
+async function showDetail(anchor) {
   selected = anchor;
   if (lastView) render(lastView);
   const pane = $("who-detail");
@@ -230,7 +225,7 @@ async function showDetail(anchor: string) {
       return;
     }
     const w = await res.json();
-    const grants = (list: { topic: string; layer: string; reason: string }[]) =>
+    const grants = (list) =>
       list.length
         ? `<ul class="grant-list">${list
             .map(
@@ -252,21 +247,21 @@ async function showDetail(anchor: string) {
       ${w.recon_reason ? `<dt>recon</dt><dd class="state-amber">${esc(w.recon_reason)}</dd>` : ""}
       <dt>writes (${w.writes.length})</dt><dd>${grants(w.writes)}</dd>
       <dt>reads (${w.reads.length})</dt><dd>${grants(w.reads)}</dd>
-      ${w.notes?.length ? `<dt>notes</dt><dd>${w.notes.map((n: string) => esc(n)).join("<br>")}</dd>` : ""}
+      ${w.notes?.length ? `<dt>notes</dt><dd>${w.notes.map((n) => esc(n)).join("<br>")}</dd>` : ""}
     </dl>${microscopeBtn}`;
   } catch {
     body.innerHTML = `<p class="state-amber">portal query timed out — retry from the row</p>`;
   }
 }
 
-function setConn(state: string, label: string) {
+function setConn(state, label) {
   const el = $("conn");
   el.dataset.state = state;
   el.textContent = label;
   el.className = `connection-indicator freshness${state === "stale" ? " stale" : ""}`;
 }
 
-function showFullError(title: string, bodyText: string) {
+function showFullError(title, bodyText) {
   $("main").hidden = true;
   const el = $("full-error");
   el.hidden = false;
@@ -290,7 +285,7 @@ async function poll() {
       return;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const view = (await res.json()) as WhoView;
+    const view = (await res.json());
     lastView = view;
     lastSuccessAt = Date.now();
     consecutiveFailures = 0;
@@ -329,11 +324,11 @@ const INBOUND = new URLSearchParams(window.location.search);
 const wantIdentity = INBOUND.get("identity") ?? INBOUND.get("handle") ?? "";
 let inboundApplied = false;
 
-function applyInbound(view: WhoView) {
+function applyInbound(view) {
   if (!wantIdentity || inboundApplied) return;
   inboundApplied = true;
   const needle = wantIdentity.toLowerCase();
-  const box = $<HTMLInputElement>("who-filter");
+  const box = $("who-filter");
   box.value = wantIdentity;
   filter = wantIdentity;
   const matches = view.rows.filter((r) => rowMatches(r, needle));
@@ -356,13 +351,13 @@ function applyInbound(view: WhoView) {
 }
 
 $("who-filter").addEventListener("input", (e) => {
-  filter = (e.target as HTMLInputElement).value;
+  filter = e.target.value;
   if (lastView) render(lastView);
 });
 
 $("who-table").addEventListener("click", (e) => {
-  const tr = (e.target as HTMLElement).closest("tr[data-anchor]");
-  if (tr) void showDetail((tr as HTMLElement).dataset.anchor!);
+  const tr = e.target.closest("tr[data-anchor]");
+  if (tr) void showDetail(tr.dataset.anchor);
 });
 
 void poll();

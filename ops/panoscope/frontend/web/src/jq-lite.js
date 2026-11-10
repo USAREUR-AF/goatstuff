@@ -34,24 +34,39 @@
 // error banner shows the literal parser message + the column where parsing
 // stalled.
 
-export type JsonValue = null | boolean | number | string | JsonValue[] | { [k: string]: JsonValue };
+/**
+ * @typedef {(
+ *   | null
+ *   | boolean
+ *   | number
+ *   | string
+ *   | JsonValue[]
+ *   | { [k: string]: JsonValue; }
+ * )} JsonValue
+ */
 
-export type CompiledFilter = (input: JsonValue) => JsonValue[];
+/**
+ * @typedef {(input: JsonValue) => JsonValue[]} CompiledFilter
+ */
 
-export interface CompileError {
-  message: string;
-  col: number;
-}
+/**
+ * @typedef {Object} CompileError
+ * @property {string} message
+ * @property {number} col
+ */
 
-export interface CompileOk {
-  filter: CompiledFilter;
-}
+/**
+ * @typedef {Object} CompileOk
+ * @property {CompiledFilter} filter
+ */
 
-export type CompileResult = CompileOk | { error: CompileError };
+/**
+ * @typedef {CompileOk | { error: CompileError; }} CompileResult
+ */
 
 /** Compile `src` into a filter or return a structured error. Empty / whitespace
  *  source compiles to identity. */
-export function compileFilter(src: string): CompileResult {
+export function compileFilter(src) {
   const trimmed = src.trim();
   if (trimmed.length === 0) {
     return { filter: (v) => [v] };
@@ -68,7 +83,7 @@ export function compileFilter(src: string): CompileResult {
     if (e instanceof ParseError) {
       return { error: { message: e.message, col: e.col } };
     }
-    return { error: { message: (e as Error).message ?? String(e), col: 0 } };
+    return { error: { message: e.message ?? String(e), col: 0 } };
   }
 }
 
@@ -76,21 +91,24 @@ export function compileFilter(src: string): CompileResult {
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-type Token =
-  | { type: "dot"; col: number }
-  | { type: "lbracket"; col: number }
-  | { type: "rbracket"; col: number }
-  | { type: "lparen"; col: number }
-  | { type: "rparen"; col: number }
-  | { type: "pipe"; col: number }
-  | { type: "ident"; value: string; col: number }
-  | { type: "number"; value: number; col: number }
-  | { type: "string"; value: string; col: number }
-  | { type: "op"; value: "==" | "!=" | "<" | "<=" | ">" | ">="; col: number }
-  | { type: "eof"; col: number };
+/**
+ * @typedef {(
+ *   | { type: "dot"; col: number; }
+ *   | { type: "lbracket"; col: number; }
+ *   | { type: "rbracket"; col: number; }
+ *   | { type: "lparen"; col: number; }
+ *   | { type: "rparen"; col: number; }
+ *   | { type: "pipe"; col: number; }
+ *   | { type: "ident"; value: string; col: number; }
+ *   | { type: "number"; value: number; col: number; }
+ *   | { type: "string"; value: string; col: number; }
+ *   | { type: "op"; value: "==" | "!=" | "<" | "<=" | ">" | ">="; col: number; }
+ *   | { type: "eof"; col: number; }
+ * )} Token
+ */
 
-function tokenize(src: string): Token[] {
-  const tokens: Token[] = [];
+function tokenize(src) {
+  const tokens = [];
   let i = 0;
   const peekCh = (off = 0) => src[i + off];
   while (i < src.length) {
@@ -163,21 +181,28 @@ function tokenize(src: string): Token[] {
 // Parser + AST
 // ---------------------------------------------------------------------------
 
-type Expr =
-  | { kind: "identity" }
-  | { kind: "field"; name: string; from: Expr }
-  | { kind: "index"; idx: number; from: Expr }
-  | { kind: "iterate"; from: Expr }
-  | { kind: "pipe"; left: Expr; right: Expr }
-  | { kind: "select"; predicate: Expr }
-  | { kind: "compare"; op: "==" | "!=" | "<" | "<=" | ">" | ">="; left: Expr; right: Expr }
-  | { kind: "literal"; value: JsonValue };
+/**
+ * @typedef {(
+ *   | { kind: "identity"; }
+ *   | { kind: "field"; name: string; from: Expr; }
+ *   | { kind: "index"; idx: number; from: Expr; }
+ *   | { kind: "iterate"; from: Expr; }
+ *   | { kind: "pipe"; left: Expr; right: Expr; }
+ *   | { kind: "select"; predicate: Expr; }
+ *   | { kind: "compare"; op: "==" | "!=" | "<" | "<=" | ">" | ">="; left: Expr; right: Expr; }
+ *   | { kind: "literal"; value: JsonValue; }
+ * )} Expr
+ */
 
 class ParseError extends Error {
-  constructor(message: string, public col: number) { super(message); }
+  col;
+  constructor(message, col) {
+    super(message);
+    this.col = col;
+  }
 }
 
-function formatTok(t: Token): string {
+function formatTok(t) {
   if (t.type === "eof") return "<end>";
   if (t.type === "ident" || t.type === "string") return `'${t.value}'`;
   if (t.type === "number") return String(t.value);
@@ -187,16 +212,21 @@ function formatTok(t: Token): string {
 
 class Parser {
   pos = 0;
-  constructor(public tokens: Token[], public src: string) {}
-  peek(off = 0): Token { return this.tokens[this.pos + off]; }
-  next(): Token { return this.tokens[this.pos++]; }
-  eat(type: Token["type"]): Token {
+  tokens;
+  src;
+  constructor(tokens, src) {
+    this.tokens = tokens;
+    this.src = src;
+  }
+  peek(off = 0) { return this.tokens[this.pos + off]; }
+  next() { return this.tokens[this.pos++]; }
+  eat(type) {
     const t = this.peek();
     if (t.type !== type) throw new ParseError(`expected ${type}, got ${formatTok(t)}`, t.col);
     return this.next();
   }
 
-  parsePipe(): Expr {
+  parsePipe() {
     let left = this.parseComparison();
     while (this.peek().type === "pipe") {
       this.next();
@@ -206,17 +236,17 @@ class Parser {
     return left;
   }
 
-  parseComparison(): Expr {
+  parseComparison() {
     const left = this.parseTerm();
     if (this.peek().type === "op") {
-      const op = this.next() as Extract<Token, { type: "op" }>;
+      const op = this.next();
       const right = this.parseTerm();
       return { kind: "compare", op: op.value, left, right };
     }
     return left;
   }
 
-  parseTerm(): Expr {
+  parseTerm() {
     const t = this.peek();
     if (t.type === "ident" && t.value === "select") {
       this.next();
@@ -247,7 +277,7 @@ class Parser {
     throw new ParseError(`expected expression, got ${formatTok(t)}`, t.col);
   }
 
-  parsePath(from: Expr): Expr {
+  parsePath(from) {
     let cur = from;
     // Leading dot may be either a standalone identity (`.`) or the start of
     // a field/index chain (`.foo`, `.[0]`, etc.).
@@ -285,13 +315,13 @@ class Parser {
 // Evaluator
 // ---------------------------------------------------------------------------
 
-function evalExpr(expr: Expr, input: JsonValue): JsonValue[] {
+function evalExpr(expr, input) {
   switch (expr.kind) {
     case "identity": return [input];
     case "literal": return [expr.value];
     case "field": {
       const ins = evalExpr(expr.from, input);
-      const out: JsonValue[] = [];
+      const out = [];
       for (const v of ins) {
         if (v !== null && typeof v === "object" && !Array.isArray(v)) {
           out.push(expr.name in v ? v[expr.name] : null);
@@ -303,7 +333,7 @@ function evalExpr(expr: Expr, input: JsonValue): JsonValue[] {
     }
     case "index": {
       const ins = evalExpr(expr.from, input);
-      const out: JsonValue[] = [];
+      const out = [];
       for (const v of ins) {
         if (Array.isArray(v)) {
           const i = expr.idx < 0 ? v.length + expr.idx : expr.idx;
@@ -316,7 +346,7 @@ function evalExpr(expr: Expr, input: JsonValue): JsonValue[] {
     }
     case "iterate": {
       const ins = evalExpr(expr.from, input);
-      const out: JsonValue[] = [];
+      const out = [];
       for (const v of ins) {
         if (Array.isArray(v)) out.push(...v);
         else if (v !== null && typeof v === "object") out.push(...Object.values(v));
@@ -326,7 +356,7 @@ function evalExpr(expr: Expr, input: JsonValue): JsonValue[] {
     }
     case "pipe": {
       const lefts = evalExpr(expr.left, input);
-      const out: JsonValue[] = [];
+      const out = [];
       for (const v of lefts) out.push(...evalExpr(expr.right, v));
       return out;
     }
@@ -338,7 +368,7 @@ function evalExpr(expr: Expr, input: JsonValue): JsonValue[] {
     case "compare": {
       const lefts = evalExpr(expr.left, input);
       const rights = evalExpr(expr.right, input);
-      const out: JsonValue[] = [];
+      const out = [];
       for (const l of lefts) {
         for (const r of rights) {
           out.push(applyCompare(expr.op, l, r));
@@ -349,11 +379,11 @@ function evalExpr(expr: Expr, input: JsonValue): JsonValue[] {
   }
 }
 
-function isTruthy(v: JsonValue): boolean {
+function isTruthy(v) {
   return v !== null && v !== false;
 }
 
-function applyCompare(op: string, l: JsonValue, r: JsonValue): boolean {
+function applyCompare(op, l, r) {
   switch (op) {
     case "==": return jsonEqual(l, r);
     case "!=": return !jsonEqual(l, r);
@@ -365,7 +395,7 @@ function applyCompare(op: string, l: JsonValue, r: JsonValue): boolean {
   }
 }
 
-function jsonEqual(a: JsonValue, b: JsonValue): boolean {
+function jsonEqual(a, b) {
   if (a === b) return true;
   if (a === null || b === null) return false;
   if (typeof a !== typeof b) return false;
@@ -373,15 +403,15 @@ function jsonEqual(a: JsonValue, b: JsonValue): boolean {
     return a.length === b.length && a.every((v, i) => jsonEqual(v, b[i]));
   }
   if (typeof a === "object" && typeof b === "object") {
-    const ka = Object.keys(a as object);
-    const kb = Object.keys(b as object);
+    const ka = Object.keys(a);
+    const kb = Object.keys(b);
     if (ka.length !== kb.length) return false;
-    return ka.every((k) => jsonEqual((a as Record<string, JsonValue>)[k], (b as Record<string, JsonValue>)[k]));
+    return ka.every((k) => jsonEqual(a[k], b[k]));
   }
   return false;
 }
 
-function jsonCompare(a: JsonValue, b: JsonValue): number {
+function jsonCompare(a, b) {
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "string" && typeof b === "string") return a < b ? -1 : a > b ? 1 : 0;
   // Cross-type comparisons return 0 — same conservative behavior as jq's

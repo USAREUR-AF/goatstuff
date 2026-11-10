@@ -15,23 +15,18 @@
 // field, or any machine path — it only changes the word shown. Mirror of
 // the portal lexicon (docs/design/portal-lexicon.md §"Panoscope").
 
-import type { Legend } from "./types.js";
 
-export interface Lexicon {
-  /** participant noun, lower singular ("vendor" / "org") */
-  org: string;
-  /** participant noun, lower plural ("vendors" / "orgs") */
-  orgs: string;
-  /** participant noun, upper singular ("VENDOR" / "ORG") */
-  orgUpper: string;
-  /** participant noun, upper plural ("VENDORS" / "ORGS") */
-  orgsUpper: string;
-  /** fabric label for the title + subtitle (for example "<site> fabric") */
-  fabricLabel: string;
-}
+/**
+ * @typedef {Object} Lexicon
+ * @property {string} org participant noun, lower singular ("vendor" / "org")
+ * @property {string} orgs participant noun, lower plural ("vendors" / "orgs")
+ * @property {string} orgUpper participant noun, upper singular ("VENDOR" / "ORG")
+ * @property {string} orgsUpper participant noun, upper plural ("VENDORS" / "ORGS")
+ * @property {string} fabricLabel fabric label for the title + subtitle (for example "<site> fabric")
+ */
 
 /** Mutable singleton — default wording until the first legend response. */
-export const LEX: Lexicon = {
+export const LEX = {
   org: "vendor",
   orgs: "vendors",
   orgUpper: "VENDOR",
@@ -41,7 +36,7 @@ export const LEX: Lexicon = {
 
 /** Update `LEX` in place from a legend payload + re-apply title/subtitle.
  *  Tolerant of an older backend that omits `lexicon` (keeps defaults). */
-export function applyLexicon(legend: Legend): void {
+export function applyLexicon(legend) {
   const l = legend.lexicon;
   if (!l) return;
   if (l.org) LEX.org = l.org;
@@ -55,7 +50,7 @@ export function applyLexicon(legend: Legend): void {
   // dev server, or a dist built before the tokens landed). No-op when the
   // tokens were already resolved server-side.
   document.title = `panoscope — ${LEX.fabricLabel}`;
-  const subtitle = document.querySelector<HTMLElement>("header .subtitle");
+  const subtitle = document.querySelector("header .subtitle");
   if (subtitle) {
     subtitle.textContent = `Data Common Operating Picture · ${LEX.fabricLabel}`;
   }

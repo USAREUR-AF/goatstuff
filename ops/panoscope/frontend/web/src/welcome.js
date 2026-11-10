@@ -17,31 +17,31 @@
 // vendors publishing yet" from "router unreachable" from "schema
 // resolver in fallback."
 
-import type { ConnectionState } from "./ws.js";
-import type { Legend } from "./types.js";
 
-export type StateBadge = "ok" | "wait" | "warn" | "fail";
+/**
+ * @typedef {"ok" | "wait" | "warn" | "fail"} StateBadge
+ */
 
-export interface WelcomeStatus {
-  /** False until a view has actually been received. Before that the page
-   *  knows nothing about the fabric, and must not say it is empty. */
-  answered: boolean;
-  ws: ConnectionState;
-  resolver: Legend["schema_resolver_status"] | null;
-  resolverFamilies: number;
-  nodeCount: number;
-  edgeCount: number;
-  lastEventMs: number | null;
-}
+/**
+ * @typedef {Object} WelcomeStatus
+ * @property {boolean} answered False until a view has actually been received. Before that the page
+ *   knows nothing about the fabric, and must not say it is empty.
+ * @property {import("./ws.js").ConnectionState} ws
+ * @property {import("./types.js").Legend["schema_resolver_status"] | null} resolver
+ * @property {number} resolverFamilies
+ * @property {number} nodeCount
+ * @property {number} edgeCount
+ * @property {number | null} lastEventMs
+ */
 
 const SOURCE_DOCS_URL =
   "https://github.com/usareur-af/goatcore/blob/main/docs/design/panoscope.md";
 
 export class WelcomePanel {
-  private card: HTMLDivElement;
-  private pill: HTMLButtonElement;
-  private rows: Record<string, HTMLElement> = {};
-  private dismissed = false;
+  card;
+  pill;
+  rows = {};
+  dismissed = false;
   // Auto-dismiss is a ONE-SHOT — fires once on first data, with a small
   // readable delay, and never again. Prior behaviour re-fired on every
   // ws delta, so clicking the pill flashed the card open for <1 s
@@ -49,13 +49,13 @@ export class WelcomePanel {
   // "card should currently be visible" (dismissed) from "the one-shot
   // auto-dismiss has already happened" (autoDismissed). Once
   // autoDismissed is true, only operator clicks control visibility.
-  private autoDismissed = false;
+  autoDismissed = false;
   // How long the card stays up on first load before the one-shot
   // auto-dismiss fires. Picked to be long enough to read the four
   // connection-state rows without feeling like a wall.
-  private readonly AUTO_DISMISS_DELAY_MS = 4000;
+  AUTO_DISMISS_DELAY_MS = 4000;
 
-  constructor(parent: HTMLElement) {
+  constructor(parent) {
     this.card = document.createElement("div");
     this.card.className = "welcome-card";
     this.card.innerHTML = this.cardHtml();
@@ -78,7 +78,7 @@ export class WelcomePanel {
     this.cacheRows();
   }
 
-  private cardHtml(): string {
+  cardHtml() {
     return `
       <header class="welcome-header">
         <h1>panoscope</h1>
@@ -155,9 +155,9 @@ export class WelcomePanel {
     `;
   }
 
-  private cacheRows(): void {
+  cacheRows() {
     for (const id of ["row-ws", "row-zenoh", "row-resolver", "row-counts", "row-render"]) {
-      const el = this.card.querySelector(`#${id}`) as HTMLElement | null;
+      const el = this.card.querySelector(`#${id}`);
       if (el) this.rows[id] = el;
     }
   }
@@ -167,12 +167,12 @@ export class WelcomePanel {
    *  be dismissed; this row is quiet + persistent, so an operator who
    *  reopens the STATUS panel after dismissing the banner can still
    *  see that the last snapshot failed to render. */
-  noteRenderError(reason: string, err: unknown): void {
+  noteRenderError(reason, err) {
     const message = err instanceof Error ? err.message : String(err);
     this.setRow("row-render", "fail", `${reason}: ${message}`);
   }
 
-  update(status: WelcomeStatus): void {
+  update(status) {
     // WS row
     this.setRow("row-ws", this.wsBadge(status.ws), this.wsLabel(status.ws));
 
@@ -264,16 +264,16 @@ export class WelcomePanel {
     }
   }
 
-  private setRow(id: string, state: StateBadge, label: string): void {
+  setRow(id, state, label) {
     const row = this.rows[id];
     if (!row) return;
-    const badge = row.querySelector(".welcome-badge") as HTMLElement | null;
-    const lbl = row.querySelector(".welcome-status-label") as HTMLElement | null;
+    const badge = row.querySelector(".welcome-badge");
+    const lbl = row.querySelector(".welcome-status-label");
     if (badge) badge.setAttribute("data-state", state);
     if (lbl) lbl.textContent = label;
   }
 
-  private wsBadge(s: ConnectionState): StateBadge {
+  wsBadge(s) {
     switch (s) {
       case "live":
         return "ok";
@@ -286,7 +286,7 @@ export class WelcomePanel {
     }
   }
 
-  private wsLabel(s: ConnectionState): string {
+  wsLabel(s) {
     switch (s) {
       case "live":
         return "Connected. Streaming flow deltas.";
@@ -299,14 +299,14 @@ export class WelcomePanel {
     }
   }
 
-  private dismiss(animate: boolean): void {
+  dismiss(animate) {
     this.dismissed = true;
     this.card.classList.toggle("welcome-card-fade", animate);
     this.card.classList.add("welcome-card-hidden");
     this.pill.classList.remove("hidden");
   }
 
-  private reopen(): void {
+  reopen() {
     this.dismissed = false;
     this.card.classList.remove("welcome-card-hidden", "welcome-card-fade");
     this.pill.classList.add("hidden");

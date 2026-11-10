@@ -16,22 +16,24 @@
 // Pure data — no d3, no page — so the contract is locked deterministically,
 // mirroring src/edge-guard.ts.
 
-/** Minimal node shape: only the id participates in the topology signature. */
-export interface SigNode {
-  id: string;
-}
+/**
+ * Minimal node shape: only the id participates in the topology signature.
+ * @typedef {Object} SigNode
+ * @property {string} id
+ */
 
-/** Minimal edge shape. source/target may be plain id strings (as built each
- *  poll) or the node objects d3's forceLink rewrites them into after .links().
- *  Both shapes resolve to the same id so the signature is stable across the
- *  d3 mutation, exactly like edge-guard's edgeEndpointId. */
-export interface SigEdge {
-  source: string | { id: string };
-  target: string | { id: string };
-  topic: string;
-}
+/**
+ * Minimal edge shape. source/target may be plain id strings (as built each
+ * poll) or the node objects d3's forceLink rewrites them into after .links().
+ * Both shapes resolve to the same id so the signature is stable across the
+ * d3 mutation, exactly like edge-guard's edgeEndpointId.
+ * @typedef {Object} SigEdge
+ * @property {string | { id: string; }} source
+ * @property {string | { id: string; }} target
+ * @property {string} topic
+ */
 
-function endpointId(ep: string | { id: string }): string {
+function endpointId(ep) {
   return typeof ep === "string" ? ep : ep.id;
 }
 
@@ -39,9 +41,9 @@ function endpointId(ep: string | { id: string }): string {
  *  edge source|target|topic set. Sorted so node/edge ordering churn (which is
  *  not a topology change) doesn't trip a reheat. */
 export function topologySignature(
-  nodes: readonly SigNode[],
-  edges: readonly SigEdge[],
-): { nodeSig: string; edgeSig: string } {
+  nodes,
+  edges,
+) {
   const nodeSig = nodes
     .map((n) => n.id)
     .sort()
@@ -56,8 +58,8 @@ export function topologySignature(
 /** True when either signature differs from the previously-rendered one. An
  *  empty previous signature (first frame) always reads as changed → reheats. */
 export function topologyChanged(
-  prev: { nodeSig: string; edgeSig: string },
-  next: { nodeSig: string; edgeSig: string },
-): boolean {
+  prev,
+  next,
+) {
   return prev.nodeSig !== next.nodeSig || prev.edgeSig !== next.edgeSig;
 }
