@@ -28,10 +28,22 @@ The upstream demo remains the reference for *what the API can do*; we own the *e
 
 ## Stack
 
-Vite + Vue 3 + `@eclipse-zenoh/zenoh-ts@1.9.0`, with `vite-plugin-wasm` +
-`vite-plugin-top-level-await` and build target `esnext` (the combo proven out bringing v0
-live — the zenoh-ts client needs WASM + TLA). Vue's reactivity is exactly what the live
-feeds and flow animations want. Static build → nginx, same Dockerfile shape.
+Hand-written HTML, CSS and ES modules, served by nginx as they are in the tree
+(`ops/serve/zenoh-sandbox/app/`: `index.html`, `community.html`, `css/`, `js/`). There is
+no framework, no build step and no package manager. `js/zenoh.js` holds the session and
+the state of everything declared on it; each panel is one module that renders from that
+state when it changes.
+
+The one third-party browser library is the Zenoh client, `@eclipse-zenoh/zenoh-ts@1.9.0`.
+It is a single vendored file, `app/vendor/zenoh-ts/zenoh-ts.js`, committed with the
+package versions, tarball hashes and license texts beside it. The package as published
+cannot be loaded by a browser directly (it imports its dependencies by bare name and its
+key-expression code is a WebAssembly module in bundler format), so
+`ops/serve/zenoh-sandbox/vendor-tool/regenerate.sh` produces the file: it downloads the
+pinned tarballs, verifies each SHA-512 and bundles them into one ES module with the
+WebAssembly embedded, using esbuild's Go API. The output is byte-for-byte reproducible,
+and CI rebuilds it on every change to the sandbox and fails if the committed file
+differs.
 
 ## Three pillars (built as phases)
 
@@ -127,9 +139,9 @@ products attach at the edge, do the one thing they're great at, and the communit
 compounds the rest. Products shown are **notional/illustrative** — no real-vendor
 claims, no invented metrics.
 
-Built as a second Vite entry (`community.html` → `src/community.ts` → `Community.vue`)
-sharing the same `style.css` design system and the same image; nginx serves it
-directly (`try_files $uri`). The Dockerfile asserts both pages emit.
+Built as a second page (`community.html` → `js/community.js` → `js/community-viz.js`)
+sharing the same `css/style.css` design system and the same image; nginx serves it
+directly (`try_files $uri`).
 
 ## Non-goals
 
@@ -139,20 +151,20 @@ directly (`try_files $uri`). The Dockerfile asserts both pages emit.
 
 ## Build + deploy
 
-Same as v0: `ops/serve/zenoh-sandbox/Dockerfile` builds the app (now from in-repo source
-under `app/` rather than fetching upstream) → nginx; CI publishes the image; the
-`zenoh-sandbox` Ansible role deploys it; SHA-pin per ADR 0859. Iterate phase by phase, each
-a normal PR.
+`ops/serve/zenoh-sandbox/Dockerfile` copies the static files under `app/` into an nginx
+image; CI publishes the image; the `zenoh-sandbox` Ansible role deploys it; SHA-pin per
+ADR 0859. nginx tells the browser to revalidate `.js` and `.css` on every load and never
+to cache `.html`, because the file names carry no content hash. Iterate phase by phase,
+each a normal PR.
 
 ## Offline / field demo
 
 For demoing on a laptop with **no internet and no Docker** (Docker Desktop is too heavy —
 it swaps), `ops/serve/zenoh-sandbox/local/` runs the whole sandbox as a couple of native
-processes: the prebuilt static app served by a stdlib-only python server (sets the
-`application/wasm` MIME the zenoh-ts client needs), plus the standalone
-`zenoh-bridge-remote-api` router on `:10000` (the app's localhost default). One online
-`prep.sh` (build app + fetch the matching router binary, both gitignored) ahead of time;
-then `serve.sh` runs fully offline. Same app and same isolated/disposable model as
+processes: the static app, served from `app/` as committed by a stdlib-only python
+server, plus the standalone `zenoh-bridge-remote-api` router on `:10000` (the app's
+localhost default). One online `prep.sh` (fetch the matching router binary, gitignored)
+ahead of time; then `serve.sh` runs fully offline. Same app and same isolated/disposable model as
 `sandbox.nova` — only the delivery differs. See `ops/serve/zenoh-sandbox/local/README.md`.
 
 ## References
