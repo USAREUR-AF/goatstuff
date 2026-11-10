@@ -1,5 +1,5 @@
-# Base-image refresh (goatcore ADR 1220) for the role only this repository
-# defines, node-build. goatcore's Dependabot refreshes the roles goatcore owns
+# Base-image refresh (goatcore ADR 1220) for this repository's node-build role
+# and standalone Dataflows runtime. goatcore refreshes the roles it owns
 # (rust-build, runtime-cc); this repository copies them from goatcore main
 # (base-images-shared.yml, .github/scripts/base-images-shared.sh --fix). The role
 # file pins one base by digest; Dependabot opens a PR when the pinned tag has a newer
@@ -11,6 +11,7 @@ updates:
   - package-ecosystem: docker
     directories:
       - /ops/base-images/node-build
+      - /ops/serve/dataflows
     schedule:
       interval: weekly
       day: monday
