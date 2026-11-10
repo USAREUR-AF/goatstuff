@@ -9,9 +9,6 @@
 #
 # format: <repo-relative package.json path> | <dependency name>
 
-ops/serve/trust-sandbox/app/package.json | @vitejs/plugin-vue
-ops/serve/trust-sandbox/app/package.json | vite
-ops/serve/trust-sandbox/app/package.json | vue
 ops/serve/zenoh-sandbox/app/package.json | @vitejs/plugin-vue
 ops/serve/zenoh-sandbox/app/package.json | vite
 ops/serve/zenoh-sandbox/app/package.json | vite-plugin-top-level-await

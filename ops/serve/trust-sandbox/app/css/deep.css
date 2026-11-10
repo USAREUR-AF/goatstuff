@@ -1,0 +1,39 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* deep.html — page styles. */
+.pg-deep .chero { display: flex; gap: 22px; align-items: center; margin: 6px 2px 14px; padding-bottom: 14px; border-bottom: var(--seam) solid var(--line-soft); }
+.pg-deep .chero .cn { font-size: clamp(34px, 6vw, 60px); font-weight: 800; color: var(--accent); line-height: 1; opacity: .9; font-family: var(--font-mono); }
+.pg-deep .chero h2 { font-size: clamp(20px, 3.4vw, 30px); margin: 6px 0 6px; }
+.pg-deep .chero .q { margin: 0; color: var(--ink); font-size: 16px; font-weight: 500; }
+.pg-deep .lede { color: var(--ink); font-size: 15px; line-height: 1.6; max-width: 80ch; margin: 0 0 18px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); padding-left: 12px; }
+.pg-deep .panel { margin-bottom: 16px; }
+.pg-deep .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.pg-deep .grid2 .panel { margin-bottom: 0; }
+.pg-deep .pp { margin: 0; color: var(--ink-dim); font-size: 13.5px; line-height: 1.6; }
+.pg-deep .pp + .pp { margin-top: 10px; }
+.pg-deep .pp b { color: var(--ink); }
+.pg-deep .code { font-family: var(--font-mono); font-size: 13px; background: var(--panel-2); border: var(--seam) solid var(--line);
+  border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; color: var(--accent); overflow-x: auto; }
+.pg-deep .jwt-seg { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-weight: 700; margin-bottom: 10px; font-size: 14px; }
+.pg-deep .jwt-seg .dotsep { color: var(--ink-faint); }
+.pg-deep .jwt-seg .s-h { color: var(--ask); background: color-mix(in srgb, var(--ask) 16%, transparent); padding: 4px 12px; border-radius: 6px; }
+.pg-deep .jwt-seg .s-p { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); padding: 4px 12px; border-radius: 6px; }
+.pg-deep .jwt-seg .s-s { color: var(--green); background: color-mix(in srgb, var(--green) 16%, transparent); padding: 4px 12px; border-radius: 6px; }
+.pg-deep .kv { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pg-deep .kv td { padding: 7px 8px; border-bottom: var(--seam) solid var(--line-soft); vertical-align: top; color: var(--ink-dim); line-height: 1.5; }
+.pg-deep .kv .k { color: var(--ink); font-weight: 600; white-space: nowrap; width: 1%; padding-right: 16px; }
+.pg-deep .kv b { color: var(--ink); }
+.pg-deep .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; color: var(--ink-dim); font-size: 13.5px; line-height: 1.55; }
+.pg-deep .steps b { color: var(--ink); }
+.pg-deep .std, .pg-deep .ours { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.pg-deep .std { color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 45%, var(--line)); }
+.pg-deep .ours { color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line)); }
+.pg-deep .std-panel { border-left: 4px solid var(--green); }
+.pg-deep .now-soon { border-left: 4px solid var(--accent); }
+.pg-deep .badge-now, .pg-deep .badge-soon { display: inline-block; font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: .05em; padding: 1px 6px; border-radius: 5px; margin-right: 7px; vertical-align: middle; }
+.pg-deep .badge-now { color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 50%, transparent); }
+.pg-deep .badge-soon { color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); }
+.pg-deep .pp a.xlink { color: var(--accent); text-decoration: none; border-bottom: 1px dotted color-mix(in srgb, var(--accent) 55%, transparent); }
+.pg-deep .pp a.xlink:hover { border-bottom-style: solid; }
+.pg-deep .foot { margin-top: 24px; }

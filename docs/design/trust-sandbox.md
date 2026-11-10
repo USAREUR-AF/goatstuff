@@ -13,7 +13,7 @@ and respawned** freely, with identity re-verified cryptographically every time.
 
 It is the identity-and-permission sibling of the Zenoh learning sandbox
 (`zenoh-sandbox.md` / [`zenoh-sandbox-ux.md`](zenoh-sandbox-ux.md)):
-same warm/tacticool Vite+Vue3 experience, same active+passive shape, same
+same warm/tacticool experience, same active+passive shape, same
 "it's *real*, not a cartoon" bar. Where the Zenoh sandbox teaches *what pub/sub is*,
 this teaches *why every layer of identity is load-bearing*.
 
@@ -325,7 +325,7 @@ browser (localhost:8100)
 
 ### Containers
 
-1. **`trust-sandbox-web`** — nginx serving the Vite+Vue3 SPA (source under
+1. **`trust-sandbox-web`** — nginx serving the static pages (source under
    `ops/serve/trust-sandbox/app/`). Talks to the orchestrator over same-host `/api`,
    and to `zenohd` over `/ws` (`@eclipse-zenoh/zenoh-ts@1.9.0`, the proven Zenoh-sandbox
    pattern) to render the live fabric viz — so the visitor *sees* a permitted write land
@@ -383,8 +383,9 @@ browser (localhost:8100)
 
 ## Stack + build
 
-Mirrors the Zenoh sandbox: Vite + Vue 3 + the shared warm/tacticool design tokens
-(dark+light), static build → nginx. The live fabric viz is a canvas fed by the
+Hand-written HTML, CSS and ES modules with the shared warm/tacticool design tokens
+(dark+light), served as they are by nginx — no framework, no build step, no package
+manager. The live fabric viz is a canvas fed by the
 orchestrator's `/ws` event stream (real observer samples + gate verdicts) — not
 `zenoh-ts`, see the architecture refinement note. The orchestrator is a small
 Rust/axum service built to a SHA-pinned image. All four images the hosted
