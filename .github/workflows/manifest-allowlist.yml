@@ -1,0 +1,57 @@
+name: manifest-allowlist
+
+# A new language, framework or package manager needs a written reason and a
+# named owner before it lands (goatdocs docs/design/engineering-baseline.md).
+# ops/ci/check-manifest-allowlist.py refuses a build or package manifest that
+# ops/ci/manifest-allowlist.txt does not list with an owner and a reason, and
+# a package.json dependency that is not an exact version unless
+# ops/ci/manifest-version-exceptions.txt lists it (shrink-only).
+#
+# Doctrine P6: the guard proves itself RED on planted violations
+# (--self-test) before its verdict on the real tree is trusted.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/manifest-allowlist.yml'
+      - 'ops/ci/check-manifest-allowlist.py'
+      - 'ops/ci/manifest-allowlist.txt'
+      - 'ops/ci/manifest-version-exceptions.txt'
+      - '**/package.json'
+      - '**/package-lock.json'
+      - '**/pnpm-lock.yaml'
+      - '**/yarn.lock'
+      - '**/bun.lock'
+      - '**/bun.lockb'
+      - '**/Cargo.toml'
+      - '**/go.mod'
+      - '**/pyproject.toml'
+      - '**/requirements*.txt'
+      - '**/Gemfile'
+      - '**/build.gradle'
+      - '**/build.gradle.kts'
+      - '**/Package.swift'
+      - '**/composer.json'
+      - '**/deno.json'
+      - '**/deno.jsonc'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: "self-test: guard proves RED on planted violations first (P6)"
+        run: python3 ops/ci/check-manifest-allowlist.py --self-test
+      - name: every manifest is allowlisted and every package.json dependency is exact
+        run: python3 ops/ci/check-manifest-allowlist.py

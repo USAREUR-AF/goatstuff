@@ -1,0 +1,24 @@
+# package.json dependencies that are not yet an exact version. Read by
+# ops/ci/check-manifest-allowlist.py (rule M4).
+#
+# Every dependency and devDependency in a package.json is an exact version
+# (1.60.0, never ^1.60.0). The lines below were not exact when the check
+# landed. SHRINK-ONLY: pin one and its line becomes stale, and the check fails
+# until the line is removed. Do not add a line to make a new dependency pass;
+# pin it.
+#
+# format: <repo-relative package.json path> | <dependency name>
+
+ops/panoscope/frontend/package.json | @playwright/test
+ops/panoscope/frontend/package.json | @types/d3
+ops/panoscope/frontend/package.json | d3
+ops/panoscope/frontend/package.json | typescript
+ops/panoscope/frontend/package.json | vite
+ops/serve/trust-sandbox/app/package.json | @vitejs/plugin-vue
+ops/serve/trust-sandbox/app/package.json | vite
+ops/serve/trust-sandbox/app/package.json | vue
+ops/serve/zenoh-sandbox/app/package.json | @vitejs/plugin-vue
+ops/serve/zenoh-sandbox/app/package.json | vite
+ops/serve/zenoh-sandbox/app/package.json | vite-plugin-top-level-await
+ops/serve/zenoh-sandbox/app/package.json | vite-plugin-wasm
+ops/serve/zenoh-sandbox/app/package.json | vue
