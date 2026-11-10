@@ -43,14 +43,15 @@ def download(url: str) -> bytes:
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 data = resp.read(MAX_TARBALL + 1)
-            break
-        except OSError as err:  # a dropped connection; the hash check below guards the content
+        except OSError as err:  # a dropped connection; verify() guards the content
             if attempt == ATTEMPTS:
                 raise SystemExit(f"fetch: {url}: {err}")
             time.sleep(2 * attempt)
-    if len(data) > MAX_TARBALL:
-        raise SystemExit(f"fetch: {url} is larger than {MAX_TARBALL} bytes")
-    return data
+            continue
+        if len(data) > MAX_TARBALL:
+            raise SystemExit(f"fetch: {url} is larger than {MAX_TARBALL} bytes")
+        return data
+    raise SystemExit(f"fetch: {url}: no attempt was made")
 
 
 def verify(name: str, data: bytes, integrity: str) -> None:
