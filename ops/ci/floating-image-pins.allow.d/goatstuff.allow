@@ -12,7 +12,6 @@ ops/goat-topology/Dockerfile rust:1-bookworm   # 2026-09-22 seed
 ops/panoscope/docker-compose.dev.yml eclipse/zenoh:1.9.0   # 2026-09-22 seed
 ops/panoscope/docker-compose.dev.yml panoscope:dev   # 2026-09-22 seed
 ops/panoscope/docker-compose.dev.yml synth-vendor:dev   # 2026-09-22 seed
-ops/serve/dataflows/Dockerfile nginx:alpine   # 2026-09-22 seed
 ops/serve/goat-map/Dockerfile python:3.12-slim-bookworm   # 2026-09-22 seed
 ops/serve/trust-sandbox/app/Dockerfile nginx:1.27-alpine   # 2026-09-22 seed
 ops/serve/trust-sandbox/deploy/Dockerfile.caddy caddy:2.10-alpine   # 2026-09-22 seed
