@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Local-dev compose for the zenoh-sandbox — web app + router.
-# No Node, no platform binary, no mesh. Works on Windows/Mac/Linux via Docker
+# No platform binary, no mesh. Works on Windows/Mac/Linux via Docker
 # Desktop; the router Dockerfile bakes the remote_api plugin in at build time
 # (download from zenoh-ts 1.9.0 release, SHA256-verified; supports amd64 + arm64).
 #
@@ -12,7 +12,7 @@
 #   docker compose -f ops/serve/zenoh-sandbox/docker-compose.dev.yml up --build
 #   open http://localhost:8099
 #
-# First build downloads the remote_api plugin (~10 MB) and the Node build image.
+# First build downloads the remote_api plugin (~10 MB) and the base images.
 # Subsequent starts are instant (all layers cached).
 #
 # Design: docs/design/zenoh-sandbox.md
