@@ -1,0 +1,102 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* concept.html — page styles, then the per-aspect anatomy diagram (.anat). */
+.pg-concept .chero { display: flex; gap: 22px; align-items: center; margin: 6px 2px 14px; padding-bottom: 14px; border-bottom: var(--seam) solid var(--line-soft); }
+.pg-concept .chero .cn { font-size: clamp(40px, 7vw, 72px); font-weight: 700; color: var(--accent); line-height: 1; opacity: .9; }
+.pg-concept .chero h2 { font-size: clamp(20px, 3.4vw, 30px); margin: 6px 0 8px; }
+.pg-concept .chero .q { margin: 0; color: var(--ink); font-size: 16px; font-weight: 500; }
+.pg-concept .tagline { color: var(--ink); font-size: 15px; line-height: 1.6; max-width: 78ch; margin: 0 0 16px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); padding-left: 12px; }
+.pg-concept .points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.pg-concept .points li { display: flex; gap: 11px; align-items: flex-start; font-size: 13.5px; color: var(--ink-dim); line-height: 1.5; }
+.pg-concept .points .bullet { flex: none; margin-top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.pg-concept .composes { color: var(--ink-dim); font-size: 13.5px; line-height: 1.55; margin: 0 0 12px; }
+.pg-concept .composes-note { color: var(--ink-faint); font-size: 12.5px; line-height: 1.5; margin: 0; }
+/* the "why this alone isn't enough" panel is the capstone — warm caution accent */
+.pg-concept .limits-panel { border-color: color-mix(in srgb, var(--amber) 28%, var(--line)); border-left: 4px solid var(--amber);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--amber) 8%, var(--panel)), var(--panel-2)); }
+.pg-concept .limits { color: var(--ink); font-size: 14px; line-height: 1.6; margin: 0 0 10px; }
+.pg-concept .limits-foot { color: var(--ink-dim); font-size: 12.5px; line-height: 1.5; margin: 0; }
+.pg-concept .aspect-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 16px;
+  border-top: var(--seam) solid var(--line-soft); flex-wrap: wrap; }
+.pg-concept .go-deeper { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; padding: 9px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel-2)); color: var(--accent);
+  font-size: 13px; font-weight: 600; text-decoration: none; transition: border-color .15s, background .15s; }
+.pg-concept .go-deeper:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--panel-2)); }
+.pg-concept .go-deeper .gd-arrow { font-size: 14px; }
+
+/* anatomy diagram */
+.anat { padding: 6px 2px; }
+.anat .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; padding: 14px 0; }
+.anat .node { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1.4px solid var(--line); border-radius: 10px;
+  padding: 12px 16px; text-align: center; min-width: 110px; }
+.anat .node.sm { padding: 8px 12px; min-width: 0; font-size: 12px; }
+.anat .node.accent { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.anat .node.amber { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); }
+.anat .node.green { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); }
+.anat .node.pink { border-color: color-mix(in srgb, var(--pink) 55%, var(--line)); }
+.anat .node.ring { border-style: dashed; border-radius: 999px; }
+.anat .node .nt { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.anat .node .ns { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+.anat .node .ns.mono, .anat .mono { font-family: var(--font-mono); }
+.anat .pulse { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); animation: pulse 2.4s var(--ease) infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); } 50% { box-shadow: 0 0 16px -2px color-mix(in srgb, var(--accent) 55%, transparent); } }
+.anat .conn { display: flex; flex-direction: column; align-items: center; min-width: 60px; }
+.anat .conn .cl { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); letter-spacing: .03em; text-align: center; max-width: 96px; line-height: 1.3; }
+.anat .conn .cl.green-t { color: var(--green); }
+.anat .conn .ca { color: var(--ink-dim); font-size: 18px; line-height: 1; }
+.anat .conn.flow-anim .ca { color: var(--accent); animation: nudge 1.4s var(--ease) infinite; }
+@keyframes nudge { 0%,100% { transform: translateX(0); opacity: .7; } 50% { transform: translateX(3px); opacity: 1; } }
+
+/* cert anatomy */
+.anat .cert-wrap { display: grid; grid-template-columns: auto 1fr auto; gap: 20px; align-items: center; padding: 10px 0; }
+@media (max-width: 760px) { .anat .cert-wrap { grid-template-columns: 1fr; } }
+.anat .cert-left { text-align: center; }
+.anat .cert-left .signs { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); margin-top: 8px; }
+.anat .cert-card { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1.5px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 12px; padding: 14px 16px; }
+.anat .cc-title { font-weight: 600; font-size: 13px; margin-bottom: 10px; }
+.anat .cc-row { display: grid; grid-template-columns: 110px 1fr; gap: 2px 12px; padding: 5px 0; border-top: 1px solid var(--line-soft); }
+.anat .cc-row .cc-k { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint); letter-spacing: .04em; text-transform: uppercase; align-self: center; }
+.anat .cc-row .cc-v { font-family: var(--font-mono); font-size: 12px; color: var(--ink); word-break: break-all; }
+.anat .cc-row .cc-a { grid-column: 2; font-size: 10.5px; color: var(--ink-faint); font-style: italic; }
+.anat .cc-row.sig .cc-v { color: var(--green); }
+.anat .cert-mtls { text-align: center; }
+.anat .mt-pair { display: flex; align-items: center; gap: 8px; justify-content: center; }
+.anat .mt-arrows { color: var(--green); font-size: 18px; }
+.anat .mt-cap { font-size: 11px; color: var(--ink-dim); margin-top: 8px; line-height: 1.4; max-width: 150px; }
+.anat .mt-cap b { color: var(--accent); }
+
+/* spire ttl ring */
+.anat .ttl { display: flex; flex-direction: column; align-items: center; min-width: 90px; }
+.anat .ttl-ring { width: 52px; height: 52px; border-radius: 50%; border: 4px solid var(--line); position: relative; overflow: hidden; }
+.anat .ttl-ring .ttl-fill { position: absolute; inset: -4px; border-radius: 50%; border: 4px solid var(--accent);
+  clip-path: inset(0 0 0 0); animation: ttl 4s linear infinite; }
+@keyframes ttl { 0% { transform: rotate(0deg); opacity: 1; } 85% { opacity: 1; } 92% { opacity: .2; border-color: var(--green); } 100% { transform: rotate(360deg); opacity: 1; border-color: var(--accent); } }
+.anat .ttl-cap { font-size: 10.5px; color: var(--ink-dim); margin-top: 8px; text-align: center; line-height: 1.4; }
+.anat .ttl-cap b { color: var(--accent); }
+
+/* ory jwt card */
+.anat .jwt { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1.5px solid color-mix(in srgb, var(--amber) 50%, var(--line)); border-radius: 10px; padding: 10px 14px; }
+.anat .jwt-t { font-weight: 600; font-size: 12px; margin-bottom: 6px; }
+.anat .jwt-r { display: flex; gap: 14px; font-family: var(--font-mono); font-size: 11px; }
+.anat .jwt-r span:first-child { color: var(--ink-faint); width: 48px; }
+.anat .jwt-r span:last-child { color: var(--ink); }
+
+/* acl pdp/pep */
+.anat .acl-wrap { padding: 8px 0; }
+.anat .acl-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.anat .pep { display: flex; align-items: center; gap: 8px; }
+.anat .pep .pep-bar { width: 4px; height: 70px; background: var(--ink-dim); border-radius: 2px; }
+.anat .pep .pep-l { font-family: var(--font-mono); font-size: 10px; color: var(--ink-dim); }
+.anat .pep .pep-l span { color: var(--ink-faint); }
+.anat .acl-branch { display: flex; flex-direction: column; gap: 10px; }
+.anat .branch { display: flex; align-items: center; gap: 8px; }
+.anat .branch .ca { font-size: 18px; }
+.anat .branch.ok .ca { color: var(--green); }
+.anat .branch.no .ca { color: var(--pink); }
+.anat .acl-pdp { display: flex; flex-direction: column; align-items: center; margin-top: 10px; }
+.anat .acl-pdp .updash { width: 0; height: 18px; border-left: 1.5px dashed var(--accent); }
+.anat .acl-pdp .node b { color: var(--accent); }
+
+.anat .anat-note { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); color: var(--ink-dim); font-size: 13px; line-height: 1.55; text-align: center; }
+.anat .anat-note b { color: var(--ink); }

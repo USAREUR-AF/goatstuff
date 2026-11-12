@@ -11,7 +11,7 @@
 // keep the rest — degrade the slice, never the surface.
 
 import { test, expect } from "@playwright/test";
-import { partitionDanglingEdges, edgeEndpointId } from "../src/edge-guard.js";
+import { partitionDanglingEdges, edgeEndpointId } from "../web/src/edge-guard.js";
 
 test("the ZAGROS failure: a single dangling edge is dropped, the rest survive", () => {
   const nodeIds = new Set(["alpha", "beta"]);

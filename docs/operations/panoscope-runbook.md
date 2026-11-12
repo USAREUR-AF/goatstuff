@@ -310,20 +310,12 @@ rendered. On any new goatnet standup, re-apply the inspection surfaces
   (check the oauth2-proxy env / config).
 - Clear browser cookies for `*.nova.netbird.nova.example` and retry.
 
-### `cargo build` failure on a fresh checkout
+### Frontend changes do not show up after `cargo build`
 
-If the build complains about `frontend/dist/`:
-
-```bash
-cd ops/panoscope/frontend
-npm install
-npm run build
-cd ..
-cargo build --release
-```
-
-The build.rs auto-invokes `npm run build` when `npm` is on PATH; the
-manual two-step is for environments without Node.
+The pages are embedded from `ops/panoscope/frontend/web/` at compile
+time; there is no frontend build step. build.rs makes cargo rebuild
+when a file there changes. If a change still does not show up, touch
+`ops/panoscope/build.rs` and rebuild.
 
 ## 10. Tear-down
 

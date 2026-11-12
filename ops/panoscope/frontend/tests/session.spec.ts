@@ -13,7 +13,7 @@ import {
   pollWithBackoff,
   shouldPoll,
   shouldReload,
-} from "../src/session.js";
+} from "../web/src/session.js";
 
 test("401 is signed out; 403 and the rest are not", () => {
   expect(isSignedOut(401)).toBe(true);

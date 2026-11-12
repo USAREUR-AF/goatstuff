@@ -1,12 +1,14 @@
 name: panoscope-frontend-test
 
-# Typecheck + playwright e2e for the panoscope SPA. Path-filtered so
+# Playwright e2e for the panoscope web pages. Path-filtered so
 # only frontend-touching PRs pay the runtime. The e2e spec mocks the
 # Rust backend end-to-end (WebSocket via addInitScript, REST via
 # page.route) so this job does not depend on a built panoscope binary
 # or a live Zenoh fabric; it's a pure frontend gate against the click-
 # rhythm regression class (search-overlay desync + multi-selection
-# collapse trap). See ops/panoscope/frontend/tests/.
+# collapse trap). See ops/panoscope/frontend/tests/. The pages are plain
+# JavaScript served as files (ops/panoscope/frontend/web/); there is no
+# typecheck or build step, and npm installs only @playwright/test.
 
 on:
   # A guard, not a publisher: it runs on the pull request, and a squash merge puts
@@ -26,7 +28,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  typecheck-and-e2e:
+  e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
@@ -44,14 +46,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-
-      - name: Build production bundle (smoke)
-        run: npm run build
 
       - name: Run e2e spec
         run: npx playwright test --reporter=list

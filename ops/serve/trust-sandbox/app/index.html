@@ -6,9 +6,245 @@
     <title>Zero-Trust Sandbox — feel why every layer is load-bearing</title>
     <meta name="description" content="A live, local playground for zero-trust identity. Pick who you are, knock a layer out, and watch a specific protection break — or create, rotate, and revoke identity on the fly." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338e1c4' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <script type="module" src="/js/playground.js"></script>
   </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+  <body class="pg-playground">
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" />
+          </svg>
+        </div>
+        <div>
+          <h1>ZERO-TRUST&nbsp;SANDBOX</h1>
+          <p class="sub">The zero-trust foundation of the __GOATNET__ Backbone — made hands-on.</p>
+        </div>
+      </div>
+      <span class="spacer"></span>
+      <a class="navlink" href="/vision.html" title="The bigger picture">✦ THE BIGGER PICTURE</a>
+      <a class="navlink" href="/glossary.html" title="Plain-language definitions">📖 GLOSSARY</a>
+      <button class="theme-toggle">◐ LIGHT</button>
+    </header>
+
+    <section class="hero">
+      <h2>There's no <span class="accent">"inside"</span> to get into.</h2>
+      <p class="lede">The zero-trust foundation of the <b>__GOATNET__ Backbone</b> — notional and ephemeral here, but every layer mirrors the real design. Don't take our word for it:</p>
+      <ul class="hero-do">
+        <li><span class="hd-k">Be someone, act for real</span> — pick a principal, run a true end-to-end action, watch which aspects apply.</li>
+        <li><span class="hd-k">Break something</span> — go stale, flood, write out of your lane, drop enrollment — and watch the right aspect catch it and name what it protected.</li>
+        <li><span class="hd-k">Run identity live</span> — as an admin, mint, rotate, and revoke on the fly.</li>
+      </ul>
+      <p class="hero-take">Most of what goes wrong isn't an attack — it's ordinary and human. The same checks that would
+        stop an attacker contain it just as well.</p>
+    </section>
+
+    <div class="callout">
+      <span>🧪</span>
+      <span><b>Throwaway + fully local.</b> Real CA, real SPIRE, real OIDC, a real access decision — running on this
+        machine, peering with nothing. <code>docker compose down -v</code> wipes it. Nothing here is real, ever.</span>
+    </div>
+
+    <!-- status bar — the real components running locally -->
+    <div class="panel span-2" style="margin-bottom:16px">
+      <div class="statusbar">
+        <span class="tag" style="margin-right:4px">LIVE COMPONENTS</span>
+        <span class="layerled down" id="led-zenoh"><span class="led"></span> FABRIC</span>
+        <span class="layerled down" id="led-spire"><span class="led"></span> SPIRE</span>
+        <span class="layerled down" id="led-hydra"><span class="led"></span> ORY</span>
+        <span class="layerled represented"><span class="led"></span> NETBIRD (represented)</span>
+        <span class="spacer"></span>
+        <span class="who" data-when="in" hidden>signed in: <b class="js-me"></b> · <span class="js-groups"></span>
+          <button class="sm ghost" data-act="signout">sign out</button></span>
+        <span class="who notsignedin" data-when="out">Not signed in ·
+          <button class="linklike" data-act="signin">Sign in (Ory)</button> to unlock admin actions below</span>
+      </div>
+    </div>
+
+    <!-- the five-gate integrity panel -->
+    <div class="panel span-2 gates-panel" style="margin-bottom:16px">
+      <div class="panel-head"><span class="dot accent"></span><h3>Five aspects of identity &amp; access</h3>
+        <span class="hint">complementary &amp; coordinated — not a sequence; an action uses only the ones that apply · click any for its anatomy</span></div>
+      <div class="gates" id="gates">
+        <!-- the five aspects: rendered by js/playground.js (renderGates) -->
+      </div>
+      <p class="gates-note">They coordinate; they aren't a sequence you pass through. An action uses only the aspects that
+        apply — a machine write uses <span class="sym sym-N">N</span><span class="sym sym-M">M</span><span class="sym sym-D">D</span>,
+        a workload <span class="sym sym-N">N</span><span class="sym sym-W">W</span><span class="sym sym-D">D</span>, a human
+        signing in to act <span class="sym sym-N">N</span><span class="sym sym-H">H</span>. Run an attempt below to see it live.</p>
+      <canvas class="viz" id="viz-main" style="height:150px;margin-top:6px"></canvas>
+      <div class="viz-cap">On each attempt the aspects that apply light up with a real verdict; the marker stops where one refused it. Amber blips are real writes the observer saw land.</div>
+    </div>
+
+    <main class="grid">
+      <!-- the unified identity model: who you are + what you do -->
+      <div class="panel">
+        <div class="panel-head"><span class="dot amber"></span><h3>Who are you?</h3>
+          <span class="hint">two kinds of principal act here</span></div>
+        <p class="whoami-intro">A <b>human</b> signs in with <b>Ory</b> — the single sign-on that gates the mesh's
+          browser tools (dashboards, viewers, consoles). Most access is just <b>viewing and operating</b>; your
+          <b>role</b> decides the rest, and an <b>admin</b> role additionally lets you issue, rotate, and revoke
+          identities (what you can try below). A <b>machine</b> or <b>process</b> is a different thing — an identity you
+          <b>act as</b> to write to the fabric.</p>
+
+        <!-- human -->
+        <div class="whoami-group">
+          <div class="wg-label">Human <span class="wg-sub">Ory · single sign-on + your role</span></div>
+          <div class="signed" data-when="in" hidden>Signed in as <b class="js-me"></b> · <span class="js-groups"></span>
+            <button class="sm ghost" data-act="signout">sign out</button></div>
+          <button class="sm primary" data-when="out" data-act="signin">Sign in (Ory)</button>
+          <div class="wg-hint">Then “Identity, on the fly” (right) unlocks mint / rotate / revoke — ADMIN only.</div>
+        </div>
+
+        <!-- machine / process -->
+        <div class="whoami-group">
+          <div class="wg-label">Machine or process <span class="wg-sub">an identity you act as · to write</span></div>
+          <div class="cards" id="cards">
+            <!-- machine / process identities: rendered by js/playground.js (renderCards) -->
+          </div>
+          <div class="field" style="margin-top:12px"><label>Change one thing (the knockout)</label>
+            <div class="chips" id="chips">
+              <!-- conditions: rendered by js/playground.js (renderChips) -->
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="primary" id="attempt-btn">▶ Attempt to write</button>
+          </div>
+          <div class="result" id="result-main" hidden></div>
+          <div class="who" id="grammar" style="margin-top:10px" hidden>identity grammar:
+            <b class="mono" id="grammar-v"></b></div>
+        </div>
+      </div>
+
+      <!-- the two issuance paths -->
+      <div class="panel">
+        <div class="panel-head"><span class="dot green"></span><h3>Identity, on the fly</h3>
+          <span class="hint">autonomy + dynamism · ADMIN only</span></div>
+        <p class="blurb" style="color:var(--ink-dim);font-size:12.5px;margin:0 0 12px">
+          As an <b>admin human</b>, issuing, rotating, and revoking identity is fast and local — not a slow central queue.
+        </p>
+
+        <!-- access-state call to action: this is itself aspect ④ at work -->
+        <div class="admin-cta" id="admin-cta">
+          <button class="primary sm" data-when="out" data-act="signin">🔑 Sign in to unlock</button>
+          <span class="cta-hint" data-when="out">these are locked until a human signs in (Ory). Pick <b>alice-admin</b> — she has the ADMIN role.</span>
+          <span class="cta-hint" data-when="in" hidden>Signed in as <b class="js-me"></b> (<span class="js-groups"></span>) — but only an
+            <b>ADMIN</b> may issue. That refusal <i>is</i> the <span class="sym sym-H">H</span> aspect (human + role) doing its job.</span>
+          <button class="sm ghost" data-when="in" data-act="switch" hidden>switch to alice-admin</button>
+        </div>
+
+        <div class="field disabled-veil" id="mint-field"><label>anchor</label>
+          <select id="mint-anchor">
+            <option value="acme-sensors">acme-sensors (org system)</option>
+            <option value="sensor-gw">sensor-gw (backing service)</option>
+          </select>
+        </div>
+        <div class="row disabled-veil" id="mint-row">
+          <button class="primary" id="mint-btn" disabled title="first issuance">Mint</button>
+          <button id="rotate-btn" disabled title="re-key, same anchor">Rotate</button>
+          <button class="danger" id="revoke-btn" disabled>Revoke (mesh-first)</button>
+        </div>
+        <div class="result" id="mint-msg" style="margin-top:12px" hidden><div class="summary"></div></div>
+        <div class="lifecycle-deep">
+          <a href="/deep.html?topic=rotate">↻ How rotation works</a>
+          <a href="/deep.html?topic=revoke">⊘ How revocation works</a>
+        </div>
+
+        <div class="panel-head" style="margin-top:20px"><span class="dot ask"></span><h3 style="font-size:13px">SPIRE — still valid right now?</h3></div>
+        <div class="svid" id="svid" hidden>
+          <div><div class="ttl" id="svid-ttl"></div><div class="tag">until SVID rotates</div></div>
+          <div style="flex:1">
+            <div class="mono" id="svid-id" style="font-size:11px;color:var(--ink-dim)"></div>
+            <div class="bar"><span id="svid-bar"></span></div>
+          </div>
+        </div>
+        <div class="who" id="svid-none">SPIRE not issuing yet — the workload path lights up once the agent attests.</div>
+      </div>
+
+      <!-- private DNS + burn-respawn -->
+      <div class="panel span-2">
+        <div class="panel-head"><span class="dot accent"></span><h3>A name tells you <i>where</i> — not whether to trust</h3>
+          <span class="hint">private mesh DNS · burn &amp; respawn</span></div>
+        <p class="dns-intro"><b>A name tells you where to go — not whether to trust what's there.</b> Every connection
+          re-checks identity for itself, so <code>sensor-gw.trust.local</code> only has to point to an address.</p>
+        <ul class="dns-notes">
+          <li><span class="dn-k">The name never vouches for the endpoint</span> — even a correct address just points you
+            somewhere; the service there still has to prove who it is on connect. (The lookup isn't tamperable either:
+            inside the private mesh it rides the encrypted, authenticated tunnel. The only DNS that lives outside the
+            mesh is the one-time network enrollment, and that adds DNSSEC on top of the other checks.)</li>
+          <li><span class="dn-k">The payoff</span> — tear a service down and stand a fresh one up under the <b>same
+            name</b> any time; nobody changes the address they use, because the new one re-proves its own identity.</li>
+        </ul>
+        <p class="dns-go">Try it in order:</p>
+        <ol class="dns-steps">
+          <li>
+            <button class="sm" id="dns-resolve">① Look up the name</button>
+            <span class="hint2">A name gives you an address — and nothing more.</span>
+          </li>
+          <li>
+            <button class="sm primary" id="dns-burn-good">② Replace it with a fresh, real service</button>
+            <span class="hint2">New service, new credential, same name — watch it <b>still work</b>, because the new one re-proved itself.</span>
+          </li>
+          <li>
+            <button class="sm danger" id="dns-burn-bad">③ Replace it with an impostor</button>
+            <span class="hint2">Same name, same address — but no valid identity. Watch the connection get <b>refused</b>; the name didn't help it.</span>
+          </li>
+        </ol>
+        <div class="who" id="dns-addrs" style="margin-top:4px" hidden></div>
+        <div class="result" id="dns-msg" style="margin-top:8px" hidden>
+          <div class="summary"></div></div>
+        <p class="dns-take"><b>The takeaway:</b> the name is just an address. Trust comes from identity, re-checked
+          every time — which is exactly why a service can be swapped, patched, or moved in seconds without anyone
+          ever trusting the wrong thing.</p>
+      </div>
+
+      <!-- activity log -->
+      <div class="panel">
+        <div class="panel-head"><span class="dot amber"></span><h3>Activity</h3>
+          <span class="hint">real events from the orchestrator</span></div>
+        <div class="logwrap" id="log">
+          <div class="who" id="log-empty">Run an attempt or mint an identity — real events land here.</div>
+        </div>
+      </div>
+
+      <!-- honesty matrix -->
+      <div class="panel">
+        <div class="panel-head"><span class="dot green"></span><h3>Live vs represented</h3>
+          <span class="hint">honest by construction</span></div>
+        <table class="matrix">
+          <tr><th>Layer</th><th>State</th><th></th></tr>
+          <tr><td class="lyr">x509 cert (CA)</td><td><span class="pill live">LIVE</span></td><td class="d">real CA, real mTLS handshake</td></tr>
+          <tr><td class="lyr">SPIRE / SVID</td><td><span class="pill live">LIVE</span></td><td class="d">real attestation + rotation</td></tr>
+          <tr><td class="lyr">Zenoh ACL</td><td><span class="pill live">LIVE</span></td><td class="d">real allow / silent-deny</td></tr>
+          <tr><td class="lyr">Ory JWT + role</td><td><span class="pill live">LIVE</span></td><td class="d">real OIDC; role gates issuance</td></tr>
+          <tr><td class="lyr">Ory credential store</td><td><span class="pill rep">REPR</span></td><td class="d">demo-persona picker stands in for Kratos passwords/MFA</td></tr>
+          <tr><td class="lyr">Private DNS</td><td><span class="pill live">LIVE</span></td><td class="d">real CoreDNS resolve + re-point</td></tr>
+          <tr><td class="lyr">NetBird / WireGuard</td><td><span class="pill rep">REPR</span></td><td class="d">a browser can't do the WG handshake — shown, never faked</td></tr>
+        </table>
+      </div>
+    </main>
+
+    <footer class="foot">
+      A teaching miniature that runs the real components · isolated, disposable, peers with nothing.<br />
+      New here? Start with <a href="/vision.html">the bigger picture</a>, then come back and knock a layer out.
+    </footer>
+    <!-- live gating viz, surfaced at the trigger so you don't have to scroll up -->
+    <div class="viz-overlay" id="viz-overlay" hidden>
+      <div class="viz-modal">
+        <div class="vm-head">
+          <span class="dot accent"></span><h3>Your attempt, live</h3>
+          <span class="vm-sub" id="vm-sub"></span>
+          <button class="vm-close" id="vm-close" aria-label="close">✕</button>
+        </div>
+        <canvas class="viz" id="viz-overlay-canvas" style="height:150px"></canvas>
+        <div class="vm-status" id="vm-status" hidden>running a real attempt…</div>
+        <div class="result" id="result-overlay" hidden></div>
+        <div class="vm-foot">The aspects that apply light up with a real verdict; the marker stops where one
+          refused it. <span class="vm-dismiss">Esc / click outside to dismiss</span></div>
+      </div>
+    </div>
+  </div>
   </body>
 </html>

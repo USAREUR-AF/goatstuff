@@ -19,6 +19,7 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
+use panoscope_core::AuditEvent;
 use tracing::debug;
 
 use crate::check::{Check, CheckKind, Cost};
@@ -31,6 +32,55 @@ const ID: &str = "flow-rate";
 const NAME: &str = "Flow-rate";
 const WINDOW_15M_MS: i64 = 15 * 60 * 1000;
 const WINDOW_1H_MS: i64 = 60 * 60 * 1000;
+
+/// The two rolling counts, folded from the audit stream one event at a time.
+/// Holds no events.
+struct FlowCounts {
+    now_ms: i64,
+    /// `Some(key)` for a topic target: exact match.
+    topic: Option<String>,
+    /// `Some(prefix)` for a system target: `<vendor>/<system>` prefix match.
+    system_prefix: Option<String>,
+    last_15m: u64,
+    last_1h: u64,
+}
+
+impl FlowCounts {
+    fn new(now_ms: i64, topic: Option<String>, system_prefix: Option<String>) -> Self {
+        Self {
+            now_ms,
+            topic,
+            system_prefix,
+            last_15m: 0,
+            last_1h: 0,
+        }
+    }
+
+    fn observe(&mut self, ev: &AuditEvent) {
+        if let Some(topic) = &self.topic {
+            if ev.key_expr != *topic {
+                return;
+            }
+        }
+        // Anchor-aware: a system target stays `<vendor>/<system>` while
+        // slot-pool wire keys carry a leading UUID anchor.
+        if let Some(prefix) = &self.system_prefix {
+            if !ev.key_expr.starts_with(prefix.as_str())
+                && !panoscope_core::strip_anchor(&ev.key_expr).starts_with(prefix.as_str())
+            {
+                return;
+            }
+        }
+        let Some(ts) = ev.ts_unix_ms() else { return };
+        let age = self.now_ms - ts;
+        if age <= WINDOW_1H_MS {
+            self.last_1h += 1;
+        }
+        if age <= WINDOW_15M_MS {
+            self.last_15m += 1;
+        }
+    }
+}
 
 #[async_trait]
 impl Check for FlowRateCheck {
@@ -62,49 +112,26 @@ impl Check for FlowRateCheck {
             return CheckOutcome::skipped(ID, format!("target value missing {} prefix", ctx.org));
         }
 
-        let (events, _stats) = match ctx.audit.recent_events(1, Some(vendor)).await {
-            Ok(r) => r,
-            Err(e) => {
-                debug!(error = %e, "flow-rate: audit_tail recent_events failed");
-                return CheckOutcome::skipped(ID, format!("audit-tail error: {e}"));
-            }
-        };
-
-        let now_ms = Utc::now().timestamp_millis();
-        let mut last_15m = 0u64;
-        let mut last_1h = 0u64;
-
         let filter_topic = matches!(target.kind, TargetKind::Topic);
         let filter_system = matches!(target.kind, TargetKind::System);
         let topic_key = &target.value;
         // System target filters by `<vendor>/<system>/...` prefix.
-        let system_prefix = if filter_system {
-            target.value.clone()
-        } else {
-            String::new()
-        };
+        let mut counts = FlowCounts::new(
+            Utc::now().timestamp_millis(),
+            filter_topic.then(|| topic_key.clone()),
+            filter_system.then(|| target.value.clone()),
+        );
 
-        for ev in &events {
-            if filter_topic && ev.key_expr != *topic_key {
-                continue;
-            }
-            // Anchor-aware: a system target stays `<vendor>/<system>` while
-            // slot-pool wire keys carry a leading UUID anchor.
-            if filter_system
-                && !ev.key_expr.starts_with(&system_prefix)
-                && !panoscope_core::strip_anchor(&ev.key_expr).starts_with(&system_prefix)
-            {
-                continue;
-            }
-            let Some(ts) = ev.ts_unix_ms() else { continue };
-            let age = now_ms - ts;
-            if age <= WINDOW_1H_MS {
-                last_1h += 1;
-            }
-            if age <= WINDOW_15M_MS {
-                last_15m += 1;
-            }
+        // Folded as the tail streams: the window is never held in memory.
+        if let Err(e) = ctx
+            .audit
+            .stream_recent_events(1, Some(vendor), |ev| counts.observe(&ev))
+            .await
+        {
+            debug!(error = %e, "flow-rate: audit_tail stream_recent_events failed");
+            return CheckOutcome::skipped(ID, format!("audit-tail error: {e}"));
         }
+        let (last_15m, last_1h) = (counts.last_15m, counts.last_1h);
 
         let summary = format!(
             "{last_15m} event{} in last 15m · {last_1h} in last 1h.",
@@ -181,5 +208,49 @@ mod tests {
         assert!(c.applies_to().contains(&TargetKind::Vendor));
         assert!(c.applies_to().contains(&TargetKind::Topic));
         assert!(c.applies_to().contains(&TargetKind::System));
+    }
+
+    fn ev_at(key: &str, ts_ms: i64) -> AuditEvent {
+        AuditEvent {
+            vendor: key.split('/').next().unwrap_or_default().to_string(),
+            key_expr: key.to_string(),
+            ts: chrono::DateTime::from_timestamp_millis(ts_ms)
+                .unwrap()
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            src_zid: String::new(),
+            payload_hash: String::new(),
+            payload_len: 1,
+            payload_bytes_b64: None,
+            audit_subscriber_id: String::new(),
+        }
+    }
+
+    /// A busy hour folds to two counters: every event in the right bucket,
+    /// filters applied, nothing retained.
+    #[test]
+    fn busy_hour_folds_to_counts() {
+        const N: i64 = 240_000;
+        let now = 1_800_000_000_000i64;
+        let mut topic = FlowCounts::new(now, Some("drs/a/v1".into()), None);
+        let mut system = FlowCounts::new(now, None, Some("drs/a".into()));
+        let mut vendor = FlowCounts::new(now, None, None);
+        for i in 0..N {
+            // Spread evenly over the last hour: a quarter in the last 15 min.
+            let ts = now - (i * WINDOW_1H_MS) / N;
+            let key = match i % 3 {
+                0 => "drs/a/v1",
+                1 => "0b6e1c2a3f4d4e5f8a9b0c1d2e3f4a5b/drs/a/v2",
+                _ => "drs/b/v1",
+            };
+            let e = ev_at(key, ts);
+            topic.observe(&e);
+            system.observe(&e);
+            vendor.observe(&e);
+        }
+        assert_eq!(vendor.last_1h, N as u64);
+        assert_eq!(vendor.last_15m, (N / 4) as u64 + 1);
+        assert_eq!(topic.last_1h, ((N + 2) / 3) as u64);
+        assert_eq!(system.last_1h, (N / 3 * 2) as u64);
+        assert!(std::mem::size_of::<FlowCounts>() < 128);
     }
 }

@@ -17,7 +17,7 @@ v0.0.1-alpha — backend complete; frontend + deployment pending:
 - 82Q.2 Zenoh client + topology / flow model + admin + data tails ✅
 - 82Q.3 axum HTTP + WebSocket (full + /legend) ✅
 - 82Q.4 Schema resolver with portal API + embedded fallback ✅
-- 82Q.5 Vite TS / D3 frontend ✅
+- 82Q.5 D3 frontend (plain JavaScript modules, no build step) ✅
 - 82Q.6 rust-embed bundling ✅
 - 82Q.7 docker-compose + Ansible + Traefik wiring ✅
 - 82Q.8 Smoke deploy on nova-a — pending (operator-fired)
@@ -50,23 +50,21 @@ v0.0.1-alpha — backend complete; frontend + deployment pending:
   coalescing tick (configurable via `PANOSCOPE_WS_COALESCE_MS`). Lossy
   broadcast — slow consumers receive a `lagged` warning and are
   expected to fetch `/api/snapshot` to resync.
-- [`frontend/`](frontend/) — Vite + TypeScript + D3 v7 SPA. Force-
-  directed graph with role-color nodes, schema-color edges, packet-dot
-  animation per sampled publish, EMA-thickness edge encoding, bottom-
-  strip legend panel. Built into `dist/` via `npm run build`.
+- [`frontend/`](frontend/) — the web pages: plain HTML, CSS and
+  JavaScript modules in `frontend/web/`, with d3 v7 as one vendored
+  file. Force-directed graph with role-color nodes, schema-color edges,
+  packet-dot animation per sampled publish, EMA-thickness edge
+  encoding, bottom-strip legend panel. No build step; npm is used only
+  for the Playwright tests.
 - [`src/embed.rs`](src/embed.rs) + [`build.rs`](build.rs) — rust-embed
-  bundle pulling `frontend/dist/` into the Rust binary at compile
-  time. build.rs auto-invokes `npm run build` if `npm` is on PATH and
-  the dist is stale or missing; falls back to a placeholder index.html
-  for build environments without Node (with a clear "run `npm run
-  build` first" message). axum `.fallback()` serves the SPA — `/`
-  returns index.html, `/assets/<file>` returns bundled assets with
-  the right Content-Type, unknown paths fall back to index.html for
-  client-side routing.
+  inlines `frontend/web/` into the Rust binary at compile time; build.rs
+  makes cargo rebuild when a file there changes. axum `.fallback()`
+  serves the pages — `/` returns index.html, `/src/<file>` returns the
+  file with the right Content-Type, unknown paths fall back to
+  index.html for client-side routing.
 - [`Dockerfile`](Dockerfile) + [`docker-compose.dev.yml`](docker-compose.dev.yml)
-  — multi-stage container build (node-build stage for the
-  frontend bundle → rust-build stage for the binary → distroless
-  runtime-cc; bases by role in `ops/base-images/`) and a local-dev compose that pairs panoscope
+  — multi-stage container build (rust-build stage for the binary,
+  with `frontend/web/` embedded → distroless runtime-cc; bases by role in `ops/base-images/`) and a local-dev compose that pairs panoscope
   with an upstream `eclipse/zenoh:1.9.0` router on the loopback. Run
   `docker compose -f docker-compose.dev.yml up --build` to see
   panoscope render against synthetic traffic.

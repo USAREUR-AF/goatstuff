@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>panoscope — __LEX_FABRIC__</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header>
+      <span class="brand">PANOSCOPE</span>
+      <span class="separator">·</span>
+      <span class="subtitle">Data Common Operating Picture · __LEX_FABRIC__</span>
+      <nav class="page-nav">
+        <a href="/" class="active">COP</a>
+        <a href="/top">TOP</a>
+        <a href="/who">WHO</a>
+      <a href="/access">ACCESS</a>
+      </nav>
+      <span class="connection-indicator" id="connection-indicator" data-state="connecting">
+        connecting…
+      </span>
+    </header>
+    <div class="fleet-bar" id="fleet-bar">
+      <span class="fleet-section" id="fleet-tier-section">
+        <span class="fleet-label">tier</span>
+        <span class="fleet-tier-badge" id="fleet-tier-badge" data-tier="live">LIVE</span>
+      </span>
+      <span class="fleet-section" id="fleet-source-section">
+        <span class="fleet-label">source</span>
+        <button type="button" id="fleet-source-toggle" class="fleet-tier-badge" data-source="all" aria-label="Cycle source filter: ALL → REAL ONLY → NOTIONAL ONLY">ALL</button>
+      </span>
+      <span class="fleet-section" id="fleet-window-section">
+        <span class="fleet-label">window</span>
+        <select id="fleet-window-select" class="fleet-tier-badge fleet-window-select" aria-label="History window — how far back the COP shows publishers active within (live bright, quiet faded)">
+          <option value="168">7d</option>
+          <option value="72">3d</option>
+          <option value="48">48h</option>
+          <option value="24">24h</option>
+          <option value="12">12h</option>
+          <option value="6">6h</option>
+          <option value="1">1h</option>
+        </select>
+      </span>
+      <span class="fleet-section" id="fleet-aggressive-section">
+        <span class="fleet-label">view</span>
+        <button type="button" id="fleet-aggressive-toggle" class="fleet-tier-badge" aria-pressed="false" aria-label="Aggressive simplified view — roll every publisher's whole fanout (all its topics, including distinct one-offs) into one bundle per publisher. Click a bundle to drill back in.">SIMPLIFY</button>
+      </span>
+      <span class="fleet-section" id="fleet-infra-section">
+        <span class="fleet-label">infra</span>
+        <button type="button" id="fleet-infra-toggle" class="fleet-tier-badge" data-infra="all" aria-label="Cycle infra filter: SHOW ALL → HIDE INFRA → ONLY INFRA. Show, hide, or isolate underlying infrastructure (router, observer subscriber, schema-registry, operator-system, chaos generator)">SHOW&nbsp;ALL</button>
+      </span>
+      <span class="fleet-section" id="fleet-test-section">
+        <span class="fleet-label">test</span>
+        <button type="button" id="fleet-test-toggle" class="fleet-tier-badge" data-test="hide" aria-label="Toggle test data: HIDDEN (default — test publishers excluded from every operational view) or ONLY (the dedicated test-only view, test publishers alone). Test data is never mixed into ALL. A test publisher is one whose every topic is loadtest data (ADR 1103 provenance filter).">TEST&nbsp;HIDDEN</button>
+      </span>
+      <span class="fleet-section" id="fleet-vendor-section">
+        <span class="fleet-label">__LEX_ORGS__</span>
+        <button type="button" id="fleet-vendors-collapse-all" class="fleet-tier-badge" data-vendor-action="collapse-all" aria-label="Collapse every __LEX_ORG__ into its super-node">COLLAPSE&nbsp;ALL</button>
+        <button type="button" id="fleet-vendors-expand-all" class="fleet-tier-badge" data-vendor-action="expand-all" aria-label="Expand every __LEX_ORG__ super-node back to its peers">EXPAND&nbsp;ALL</button>
+      </span>
+      <span class="fleet-section">
+        <button type="button" id="fleet-legend-toggle" class="fleet-tier-badge" aria-label="Open visual legend" data-tier="live">LEGEND</button>
+      </span>
+      <!-- Self-aware degradation: explanatory badge that appears only
+           when the fleet-rate gate (renderer.isWatchfulWithoutSelection)
+           is currently hiding packet-dots because aggregate rate is in
+           the 50-200 msg/s watchful band AND no edge is selected. Lets
+           the operator distinguish "fabric is quiet" from "fabric is
+           too busy to draw every dot — select an edge to see flow." -->
+      <span class="fleet-section" id="fleet-watchful-section" aria-live="polite">
+        <span class="fleet-label">flow</span>
+        <span class="fleet-watchful-badge" id="fleet-watchful-badge"
+              title="Fleet rate exceeds packet-dot threshold (50 msg/s). Select an edge to see its flow.">
+          WATCHFUL · SELECT TO SEE FLOW
+        </span>
+      </span>
+      <!-- Saturated rate gate: aggregate >200 msg/s, so ALL packet-dots are
+           off (edge-thickness carries the load) regardless of selection.
+           Distinct from WATCHFUL — there's nothing to select to bring dots
+           back; the fabric is genuinely this busy. -->
+      <span class="fleet-section" id="fleet-saturated-section" aria-live="polite">
+        <span class="fleet-label">flow</span>
+        <span class="fleet-watchful-badge fleet-saturated-badge" id="fleet-saturated-badge"
+              title="Fleet rate exceeds the packet-dot ceiling (200 msg/s). Dots are off; edge thickness shows relative load.">
+          BUSY · DOTS OFF >200/s
+        </span>
+      </span>
+      <span class="fleet-section" style="margin-left:auto">
+        <button type="button" id="fleet-keys-toggle" class="fleet-tier-badge" aria-label="Open keyboard shortcuts panel (? to toggle)" data-tier="live" title="Keyboard shortcuts — press ? to toggle">KEYS&nbsp;[&nbsp;?&nbsp;]</button>
+      </span>
+    </div>
+
+    <!-- Left sidebar: fleet stats stacked vertically. Floats over the
+         graph canvas in the upper-left so the top bar stays sparse. -->
+    <aside class="fleet-stats-sidebar" id="fleet-stats-sidebar">
+      <div class="fleet-stat">
+        <div class="fleet-stat-label">peers</div>
+        <div class="fleet-stat-value" id="fleet-peers">0</div>
+      </div>
+      <div class="fleet-stat">
+        <div class="fleet-stat-label">topics</div>
+        <div class="fleet-stat-value" id="fleet-topics">0</div>
+      </div>
+      <div class="fleet-stat">
+        <div class="fleet-stat-label">msg/s</div>
+        <div class="fleet-stat-value" id="fleet-rate">0.00</div>
+      </div>
+      <div class="fleet-stat">
+        <div class="fleet-stat-label">total</div>
+        <div class="fleet-stat-value" id="fleet-total">0</div>
+      </div>
+      <div class="fleet-stat">
+        <div class="fleet-stat-label">__LEX_ORGS__</div>
+        <div class="fleet-stat-value" id="fleet-vendors">0</div>
+      </div>
+      <!-- Self-aware staleness — main.ts updates this on every fleet-bar
+           refresh attempt: "live · 1s ago" on success, "STALE · 4s ago"
+           when the fetch fails or the last success is older than 4× the
+           current snapshot poll interval. The sidebar gains a `.stale`
+           class in the same code path so the values themselves desaturate. -->
+      <div class="fleet-stat-freshness" id="fleet-stat-freshness">live</div>
+      <!-- Click hint: the entire sidebar is clickable to open the
+           diagnostics overlay (cadences, tier semantics, what each
+           metric actually means + sources, WS state, build SHA). -->
+      <div class="fleet-stat-diagnostics-hint" id="fleet-stat-diagnostics-hint" aria-hidden="true">click for diagnostics</div>
+    </aside>
+
+    <main>
+      <svg id="graph" aria-label="fabric topology graph"></svg>
+      <aside id="info-panel" class="info-panel hidden">
+        <button type="button" id="info-close" class="info-close" aria-label="Close panel">×</button>
+        <button type="button" id="info-uuid-toggle" class="info-uuid-toggle" data-expand="short" aria-label="Toggle full vs shortened UUIDs in this panel">UUID·short</button>
+        <nav id="info-breadcrumb" class="info-breadcrumb hidden" aria-label="Inspection trail"></nav>
+        <h3 id="info-title">Peer</h3>
+        <dl id="info-body"></dl>
+        <section id="info-stream" class="info-stream hidden">
+          <h4>
+            STREAM &nbsp;<span id="info-stream-topic-label" class="info-stream-topic-label"></span>
+            <button type="button" id="info-stream-live" class="info-stream-pause" aria-pressed="false" title="LIVE-follow: refresh on every wire sample (opt-in; otherwise refresh follows the tier-adaptive poll cadence)">▶ LIVE</button>
+            <button type="button" id="info-stream-pause" class="info-stream-pause" aria-pressed="false">⏸ PAUSE</button>
+          </h4>
+          <div id="info-stream-scope-host" class="info-stream-scope-host hidden"></div>
+          <div class="info-stream-mode-row">
+            <div role="group" class="info-stream-mode" aria-label="Stream view mode">
+              <button type="button" id="info-stream-mode-raw" class="info-stream-mode-btn" aria-pressed="true">RAW</button>
+              <button type="button" id="info-stream-mode-decoded" class="info-stream-mode-btn" aria-pressed="false">DECODED</button>
+            </div>
+            <span id="info-stream-schema-badge" class="info-stream-schema-badge hidden" role="status"></span>
+            <span id="info-stream-state-summary" class="info-stream-state-summary hidden" role="status"></span>
+          </div>
+          <div id="info-stream-toolkit" class="info-stream-toolkit hidden">
+            <div class="info-stream-toolkit-row">
+              <label class="info-stream-toolkit-label" for="info-stream-filter">jq</label>
+              <input
+                type="text"
+                id="info-stream-filter"
+                class="info-stream-filter"
+                placeholder=".field   .arr[]   select(.kind == &quot;track&quot;) | .lat"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div role="group" class="info-stream-mode" aria-label="JSON format">
+                <button type="button" id="info-stream-fmt-pretty" class="info-stream-mode-btn" aria-pressed="true">PRETTY</button>
+                <button type="button" id="info-stream-fmt-compact" class="info-stream-mode-btn" aria-pressed="false">COMPACT</button>
+              </div>
+            </div>
+            <div id="info-stream-filter-error" class="info-stream-filter-error hidden"></div>
+          </div>
+          <div id="info-stream-body" class="info-stream-body" role="log" aria-live="polite"></div>
+        </section>
+      </aside>
+      <div id="search-overlay" class="search-overlay hidden">
+        <label class="search-overlay-label" for="search-input">FIND · peer / topic / __LEX_ORG__</label>
+        <input id="search-input" type="text" autocomplete="off" placeholder="type to filter…" />
+        <div class="search-overlay-hint">↵ pick highlighted · ↑↓ move · esc cancel · cmd+↵ / cmd+click append</div>
+        <div class="search-overlay-matches" id="search-matches"></div>
+      </div>
+
+      <!-- Fleet-stats diagnostics popup — opened by clicking anywhere on
+           the left fleet-stats sidebar OR by pressing `i`. Closed by
+           `Esc`, the × button, OR clicking back into the main COP canvas
+           (the graph is the "back" surface; any open side overlay steps
+           aside on a canvas click). Four sections, each prefixed with a
+           one-sentence lede: LIVE STATE (live values rendered in accent
+           green via .diag-live-value), WHAT EACH METRIC MEANS, HOW THIS
+           UPDATES (cadences + safety rails behind the counters), PERF
+           TIERS (with italic on-screen notes describing what each tier
+           looks like on the live page). 1 Hz refresh while open. -->
+      <div id="fleet-diagnostics-overlay" class="fleet-diagnostics-overlay hidden">
+        <button type="button" id="fleet-diagnostics-close" class="legend-close" aria-label="Close diagnostics">×</button>
+        <h3>FLEET&nbsp;DIAGNOSTICS</h3>
+
+        <section class="legend-section-block">
+          <h4>LIVE STATE</h4>
+          <p class="diag-section-lede">What this browser session is seeing right now. Refreshes once a second while this overlay is open.</p>
+          <ul class="legend-list keys-list" id="fleet-diag-live">
+            <li><span class="legend-key">tier</span><span class="legend-desc"><span id="fleet-diag-tier" class="diag-live-value">—</span> — perf state driving polling cadences + viz fidelity (see PERF TIERS).</span></li>
+            <li><span class="legend-key">ws</span><span class="legend-desc"><span id="fleet-diag-ws" class="diag-live-value">—</span> — WebSocket delta-stream state. Drives the top-bar connection indicator (<code>open · live</code> / <code>open · quiet</code> / <code>reconnecting</code> / <code>closed</code>).</span></li>
+            <li><span class="legend-key">last event</span><span class="legend-desc"><span id="fleet-diag-last-event" class="diag-live-value">—</span> — time since the last delta event arrived over the WS. Past 10&nbsp;s the indicator dims to <code>live · quiet</code>.</span></li>
+            <li><span class="legend-key">snapshot poll</span><span class="legend-desc"><span id="fleet-diag-poll" class="diag-live-value">—</span> — current <code>/api/snapshot</code> HTTP cadence; tier-gated.</span></li>
+            <li><span class="legend-key">stale threshold</span><span class="legend-desc"><span id="fleet-diag-threshold" class="diag-live-value">—</span> — past this age the sidebar shows STALE. 4× the current poll interval.</span></li>
+            <li><span class="legend-key">running</span><span class="legend-desc"><span id="fleet-diag-image" class="diag-live-value">—</span> — image SHA the backend is running. Matches <code>ghcr.io/usareur-af/panoscope:sha-&lt;short&gt;</code>.</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>WHAT EACH METRIC MEANS</h4>
+          <p class="diag-section-lede">Definitions for the five compact counters on the fleet-stats sidebar — what gets counted, what doesn't.</p>
+          <ul class="legend-list keys-list">
+            <li><span class="legend-key">PEERS</span><span class="legend-desc">Distinct application peers in the current snapshot. Excludes topic-virtual nodes (the broker pins). Source: <code>/api/snapshot</code> nodes where <code>role !== "topic"</code>.</span></li>
+            <li><span class="legend-key">TOPICS</span><span class="legend-desc">Unique <code>key_expr</code> strings from snapshot edges. Server-side singleton fold counts each fold-group as ONE entry (a 1898-entity vendor-c namespace = 1 here, not 1898). Source: <code>distinct snap.edges[].topic</code>.</span></li>
+            <li><span class="legend-key">MSG/S</span><span class="legend-desc">Fleet aggregate publish rate. Sum of per-edge <code>projected_eps</code>: events <em>counted</em> per one-second bucket, smoothed by an exponential moving average (time constant in the diag panel). A count, not an average of one-over-gap — the latter reads a bursty publisher at ~3× its rate. Matches the fabric-health meter on /top. Source: <code>sum(snap.edges[].projected_eps)</code> over unique (source, topic).</span></li>
+            <li><span class="legend-key">TOTAL</span><span class="legend-desc">Cumulative samples observed since container start. Survives restart via MinIO audit-replay over the last 168&nbsp;h. Source: <code>/api/stats.data_samples_recorded</code>. Hover the value to see full-precision count.</span></li>
+            <li><span class="legend-key">__LEX_ORGS_UPPER__</span><span class="legend-desc">Distinct logical-__LEX_ORG__ names. Prefers schema-decl <code>vendor</code> field; falls back to <code>peer_id</code> prefix for partner peers that don't carry a schema-decl. Source: derived from <code>snap.nodes</code>.</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>HOW THIS UPDATES</h4>
+          <p class="diag-section-lede">Cadences + safety rails between the backend and this browser tab. Explains the otherwise-invisible plumbing behind the numbers.</p>
+          <ul class="legend-list keys-list">
+            <li><span class="legend-key">snapshot</span><span class="legend-desc">One HTTP fetcher (this sidebar's poll, tier-cadenced); canvas renderer + welcome panel subscribe to the same fetch via an in-page pub/sub bus. No fan-out fetch storms on the connection pool.</span></li>
+            <li><span class="legend-key">snapshotPollMs</span><span class="legend-desc">Tier-gated HTTP poll cadence: LIVE&nbsp;1500&nbsp;ms · SLOW&nbsp;3000&nbsp;ms · DEGRADED&nbsp;5000&nbsp;ms · AUSTERE&nbsp;30000&nbsp;ms.</span></li>
+            <li><span class="legend-key">streamPollMs</span><span class="legend-desc">Side-panel decoded-sample stream refresh: LIVE&nbsp;250&nbsp;ms · SLOW&nbsp;750&nbsp;ms · DEGRADED&nbsp;10&nbsp;s · AUSTERE&nbsp;manual only.</span></li>
+            <li><span class="legend-key">WS coalesce</span><span class="legend-desc">100&nbsp;ms server-side delta-batching: the browser receives at most one delta payload per 100&nbsp;ms regardless of underlying publish rate.</span></li>
+            <li><span class="legend-key">fetch timeout</span><span class="legend-desc">Hard 8&nbsp;s per HTTP request via <code>AbortSignal.timeout()</code>. Past this the fetch aborts; the freshness gate treats it as one failure. Caps the wait so a hung backend can't hold a connection slot.</span></li>
+            <li><span class="legend-key">freshness gate</span><span class="legend-desc">Sidebar shows STALE when either: (a) two consecutive HTTP refresh attempts failed, or (b) snapshot age &gt; 4× the current poll interval.</span></li>
+            <li><span class="legend-key">EMA τ</span><span class="legend-desc">time constant for the per-edge <code>projected_eps</code> moving average (value in the diag panel below). Each closed one-second bucket folds its count into the average; a topic that just spiked from 0 to 10&nbsp;evt/s reads ~6.3&nbsp;evt/s after one τ.</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>PERF TIERS (what changes)</h4>
+          <p class="diag-section-lede">Each tier answers a specific kind of "broken or just busy" — they surface degradation instead of leaving a frozen-looking viz with no explanation. Italic <em class="diag-onscreen">on-screen</em> notes describe what you'd see on the live page.</p>
+          <ul class="legend-list keys-list">
+            <li><span class="legend-key">LIVE</span><span class="legend-desc">Full fidelity: packet-dot animation + force layout + fast polling. Triggers: browser sustaining frame budget under render load. <em class="diag-onscreen">On-screen: no banner; tier badge reads LIVE.</em></span></li>
+            <li><span class="legend-key">SLOW</span><span class="legend-desc">Packet-dots off (edge thickness EMA still encodes flow). Force-sim stays. Slower poll. Triggers: frame budget under load. <em class="diag-onscreen">On-screen: tier badge reads SLOW; packet-dot layer empty.</em></span></li>
+            <li><span class="legend-key">DEGRADED</span><span class="legend-desc">Also drops force-sim; topology renders static. Slowest polling tier with values still updating. Triggers: heavy frame-drop. <em class="diag-onscreen">On-screen: tier badge reads DEGRADED; nodes don't drift on idle.</em></span></li>
+            <li><span class="legend-key">AUSTERE</span><span class="legend-desc">Drops polling (manual refresh only) AND strips visualization to topology skeleton + the operator's selected slice (hides unselected edges + hull fills + the packet-dot layer). <em class="diag-onscreen">On-screen: tier badge reads AUSTERE; canvas shows only the selected slice + skeleton.</em></span></li>
+            <li><span class="legend-key">WATCHFUL</span><span class="legend-desc">Not a separate tier — a top-bar badge that explains the packet-dot rate-gate hiding dots when fleet aggregate is 50-200&nbsp;msg/s AND nothing is selected. Select an edge or peer to see its slice. <em class="diag-onscreen">On-screen: WATCHFUL badge in top bar; viz looks empty until you select.</em></span></li>
+          </ul>
+        </section>
+      </div>
+
+      <!-- Keyboard-shortcuts popup — opened from the fleet-bar KEYS
+           button OR by pressing `?` anywhere. Esc / × closes. Replaces
+           the cramped right-half inline-hint strip that overflowed
+           the top bar at narrower widths. -->
+      <div id="keys-overlay" class="keys-overlay hidden">
+        <button type="button" id="keys-close" class="legend-close" aria-label="Close keyboard shortcuts">×</button>
+        <h3>KEYBOARD&nbsp;SHORTCUTS</h3>
+
+        <section class="legend-section-block">
+          <h4>GLOBAL</h4>
+          <ul class="legend-list keys-list">
+            <li><span class="legend-key">/</span><span class="legend-desc">open search overlay (fuzzy match peers / topics / __LEX_ORGS__)</span></li>
+            <li><span class="legend-key">?</span><span class="legend-desc">open / close this panel</span></li>
+            <li><span class="legend-key">i</span><span class="legend-desc">open / close fleet diagnostics (metric definitions + cadences + tier semantics + WS state)</span></li>
+            <li><span class="legend-key">esc</span><span class="legend-desc">close active overlay; else step back in inspection breadcrumb; else clear selection</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>CANVAS</h4>
+          <ul class="legend-list keys-list">
+            <li><span class="legend-key">click</span><span class="legend-desc">SELECT a node — focus + center + side panel (selecting a folded box previews its count)</span></li>
+            <li><span class="legend-key">double-click</span><span class="legend-desc">FOLD / UNFOLD the node — opens a folded box, folds an expanded peer; double-click a cluster to collapse its __LEX_ORG__</span></li>
+            <li><span class="legend-key">⌘ / ctrl / shift + click</span><span class="legend-desc">add / remove from multi-selection</span></li>
+            <li><span class="legend-key">shift+drag</span><span class="legend-desc">lasso-select multiple nodes</span></li>
+            <li><span class="legend-key">f</span><span class="legend-desc">isolate: draw only what the selection is connected to (its connected component) and hide the rest; <span class="legend-key">esc</span> shows everything again</span></li>
+          </ul>
+          <p class="keys-note">One rule: <strong>click looks, double-click opens/closes.</strong> Every fold action also has a labeled button in the side panel.</p>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>SIDE PANEL</h4>
+          <ul class="legend-list keys-list">
+            <li><span class="legend-key">]</span><span class="legend-desc">toggle panel collapse without losing selection</span></li>
+            <li><span class="legend-key">esc</span><span class="legend-desc">pop one level of inspection breadcrumb when deep-diving (peer → topic → decoded)</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>SEARCH OVERLAY</h4>
+          <ul class="legend-list keys-list">
+            <li><span class="legend-key">↑ / ↓</span><span class="legend-desc">navigate matches</span></li>
+            <li><span class="legend-key">↵</span><span class="legend-desc">commit selection</span></li>
+            <li><span class="legend-key">⌘ / ctrl + ↵</span><span class="legend-desc">append to selection (multi-select)</span></li>
+            <li><span class="legend-key">esc</span><span class="legend-desc">cancel</span></li>
+          </ul>
+        </section>
+      </div>
+
+      <!-- Visual legend popup — reading guide for the COP. Opened from
+           the fleet-bar LEGEND button. -->
+      <div id="legend-overlay" class="legend-overlay hidden">
+        <button type="button" id="legend-close" class="legend-close" aria-label="Close legend">×</button>
+        <h3>READING&nbsp;THIS&nbsp;COP</h3>
+
+        <section class="legend-section-block">
+          <h4>NODES</h4>
+          <ul class="legend-list">
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="8" fill="var(--role-source)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">SOURCE</span>
+              <span class="legend-desc">publishes only — sensors, raw producers</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><path d="M-8,0 L-4,-7 L4,-7 L8,0 L4,7 L-4,7 Z" fill="var(--role-deriver)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">DERIVER</span>
+              <span class="legend-desc">consumes upstream AND publishes derived output — fusion, correlation, translation, C2</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><path d="M-8,-4 L8,-4 L0,9 Z" fill="var(--role-sink)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">SINK</span>
+              <span class="legend-desc">subscribes only — operator displays, archives, audit logs</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-8 -8 16 16"><path d="M0,-6 L6,0 L0,6 L-6,0 Z" fill="var(--role-topic)"/></svg>
+              <span class="legend-name">TOPIC</span>
+              <span class="legend-desc">broker pin between publishers and subscribers (one per published keyexpr)</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-8 -8 16 16"><path d="M-5,-5 L5,-5 L5,5 L-5,5 Z" fill="var(--role-class-infra)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">INFRASTRUCTURE</span>
+              <span class="legend-desc">underlying substrate, <strong>not</strong> an application data participant — Zenoh router, observer subscriber (e.g. audit), schema-registry / operator-system publisher, or chaos generator (trashgoat). All share the desaturated fill so they read as one class; the glyph (square for the router, star for chaos, role-shape otherwise) says which kind. The <strong>infra</strong> fleet toggle shows / hides / isolates them as a group.</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-16 -10 32 20"><path d="M-12,-6 L12,-6 A2,2 0 0 1 14,-4 L14,4 A2,2 0 0 1 12,6 L-12,6 A2,2 0 0 1 -14,4 L-14,-4 A2,2 0 0 1 -12,-6 Z" fill="var(--bg-elevated)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">__LEX_ORG_UPPER__&nbsp;SUPER</span>
+              <span class="legend-desc">collapsed __LEX_ORG__ — chunky rounded panel labelled "__LEX_ORG_UPPER__&nbsp;Np·Mt" (peer + topic counts). Replaces every peer and intra-__LEX_ORG__ topic of the __LEX_ORG__ with one glyph; cross-__LEX_ORG__ edges land on this. <strong>Double-click (or the side-panel button) expands</strong> it back to peers; double-click a __LEX_ORG__'s cluster to collapse it. Mass collapse / expand via the fleet-bar COLLAPSE&nbsp;ALL / EXPAND&nbsp;ALL buttons.</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="9" fill="none" stroke="var(--accent)" stroke-width="1.5"/><circle r="6" fill="none" stroke="var(--accent)" stroke-width="1.5"/><circle r="3" fill="var(--accent)"/></svg>
+              <span class="legend-name">SINGLETONS&nbsp;SUPER</span>
+              <span class="legend-desc">a high-cardinality fan-out folded into one box — when a publisher emits many sibling topics (e.g. one per entity / UUID), the whole pile collapses to this stacked-disc glyph so it doesn't drown the canvas. <strong>Hover</strong> to see the folded count (and a slow-browser warning if large); <strong>click</strong> to open the namespace inspector (a searchable list of the folded topics, with a "show on canvas" button for small groups). The publishing peer carries a darker inner dot while folded.</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>NODE ATTRIBUTES</h4>
+          <ul class="legend-list">
+            <li><span class="legend-key">Fill color</span><span class="legend-desc">role_class taxonomy when declared in the peer's schema-decl (one color per class — see below); falls back to role color (above) otherwise. Infrastructure nodes override both with the desaturated substrate fill.</span></li>
+            <li><span class="legend-key">Border color</span><span class="legend-desc">__LEX_ORG__ (one color per __LEX_ORG__; uniform when the fabric is collapsed to a single cert-bound __LEX_ORG__)</span></li>
+            <li><span class="legend-key">Shape</span><span class="legend-desc">pub/sub role (circle / hexagon / inverted-triangle / diamond per NODES above)</span></li>
+            <li><span class="legend-key">Glow + label</span><span class="legend-desc">selected node (single click to focus; double-click to fold / unfold)</span></li>
+            <li><span class="legend-key">Half-opacity label</span><span class="legend-desc">within 2 hops of selection (graph walkout — crosses topic-broker pins to surface actual subscribers)</span></li>
+            <li><span class="legend-key">Dim (0.2 opacity)</span><span class="legend-desc">not in current selection or its neighborhood</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>ROLE CLASS (FILL COLOR)</h4>
+          <ul class="legend-list">
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="8" fill="var(--role-class-sensor)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">SENSOR</span>
+              <span class="legend-desc">raw observation publisher</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="8" fill="var(--role-class-effector)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">EFFECTOR</span>
+              <span class="legend-desc">acts on the world — actuators, deployed assets</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="8" fill="var(--role-class-data-service)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">DATA SERVICE</span>
+              <span class="legend-desc">fusion / correlation / translation across upstream feeds</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="8" fill="var(--role-class-c2)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">C2</span>
+              <span class="legend-desc">command + control — orders, taskings, authority decisions</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="8" fill="var(--role-class-observer)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">OBSERVER</span>
+              <span class="legend-desc">universal subscriber that emits derived summaries</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="-12 -12 24 24"><circle r="8" fill="var(--role-class-sink)" stroke="var(--accent)" stroke-width="2"/></svg>
+              <span class="legend-name">SINK</span>
+              <span class="legend-desc">terminal consumer — operator displays, archives, audit logs</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>EDGES</h4>
+          <ul class="legend-list">
+            <li>
+              <svg class="legend-icon" viewBox="0 -6 50 12"><line x1="2" y1="0" x2="48" y2="0" stroke="var(--schema-caracal)" stroke-width="3"/></svg>
+              <span class="legend-name">SOLID</span>
+              <span class="legend-desc">publish — publisher → topic</span>
+            </li>
+            <li>
+              <svg class="legend-icon" viewBox="0 -6 50 12"><line x1="2" y1="0" x2="48" y2="0" stroke="var(--schema-caracal)" stroke-width="3" stroke-dasharray="4 3"/></svg>
+              <span class="legend-name">DASHED</span>
+              <span class="legend-desc">subscribe-delivery — topic → subscriber</span>
+            </li>
+            <li><span class="legend-key">Thickness</span><span class="legend-desc">message rate (EMA-decayed; thicker = higher Hz)</span></li>
+            <li><span class="legend-key">Stroke color</span><span class="legend-desc">schema family (per-__LEX_ORG__ / per-system color)</span></li>
+            <li><span class="legend-key">Animated dot</span><span class="legend-desc">one sampled publish travelling along the edge (throttled at high load)</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>CLUSTERS &amp; LAYOUT</h4>
+          <ul class="legend-list">
+            <li><span class="legend-key">Dashed translucent shape</span><span class="legend-desc">__LEX_ORG__ grouping (click hull to select all peers in that __LEX_ORG__)</span></li>
+            <li><span class="legend-key">Cluster label (always on)</span><span class="legend-desc">logical __LEX_ORG__ name (animal)</span></li>
+            <li><span class="legend-key">Node labels</span><span class="legend-desc">hidden by default; appear on selection or hover. Avoids canvas clutter at scale.</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>HEADER + INDICATORS</h4>
+          <ul class="legend-list">
+            <li><span class="legend-key">TIER badge</span><span class="legend-desc">browser-performance tier (LIVE / SLOW / DEGRADED / AUSTERE). Drives polling cadence + animation gating so the COP stays functional under load.</span></li>
+            <li><span class="legend-key">WATCHFUL badge</span><span class="legend-desc">appears in the top bar when fleet rate (50-200 msg/s) is gating packet-dot animation to selection — meaning "select an edge to see its flow." Without this badge an apparently-frozen viz is fabric-quiet; with it, the viz is degrading gracefully.</span></li>
+            <li><span class="legend-key">STALE counters</span><span class="legend-desc">when the fleet-bar refresh has failed twice or is older than 2× the poll interval, the left-sidebar counters desaturate and the freshness tag turns red. Distinguishes "fabric is calm" from "we lost the data connection." </span></li>
+            <li><span class="legend-key">AUSTERE strip</span><span class="legend-desc">at the AUSTERE tier, all unselected edges + hull fills + the dot layer are hidden so the topology skeleton + the operator's selected slice are the only things on screen. What remains is true and live; the rest was load the device couldn't render.</span></li>
+            <li><span class="legend-key">SOURCE toggle</span><span class="legend-desc">3-way: ALL → REAL ONLY → NOTIONAL ONLY → ALL. REAL hides synthetic publishers (keeps admin-discovered routers / subscribers); NOTIONAL shows only synthetic peers; ALL is the default mixed view</span></li>
+            <li><span class="legend-key">INFRA toggle</span><span class="legend-desc">3-way: SHOW ALL → HIDE INFRA → ONLY INFRA → SHOW ALL. HIDE drops every infrastructure node (router, observer subscriber, schema-registry, operator-system, chaos) so only application data participants remain; ONLY isolates the substrate. Orthogonal to SOURCE — the two compose.</span></li>
+            <li><span class="legend-key">COLLAPSE&nbsp;ALL / EXPAND&nbsp;ALL</span><span class="legend-desc">mass folds / unfolds every __LEX_ORG__ in the snapshot. Per-__LEX_ORG__ toggles still work after: <strong>double-click a __LEX_ORG__'s cluster to collapse it</strong>, <strong>double-click the resulting super-node to expand it</strong> (or use the side-panel button on either). Single click always just selects.</span></li>
+            <li><span class="legend-key">SYNTHETIC badge</span><span class="legend-desc">per-peer indicator that the data is notional, not operational</span></li>
+            <li><span class="legend-key">FUTURE DESIGN cluster</span><span class="legend-desc">desaturated gray hull + "FUTURE DESIGN · NOT ACTIVE ON THIS FABRIC" subtitle marks clusters whose top-level prefix is reserved on the long-term fabric but not lit up here. Currently <code>attest/**</code> — the schema-decl heartbeat surface; the goat-zenoh-portal serves the schema-registry role on this fabric as a facilitation expedient.</span></li>
+            <li><span class="legend-key">node_kind</span><span class="legend-desc">substrate-level kind learned from the Zenoh admin namespace — router / peer / subscriber. Schema-decl peers carry richer logical metadata (vendor, site, role_class); admin-only peers (Zenoh router, audit-subscriber) carry node_kind alone</span></li>
+          </ul>
+        </section>
+
+        <section class="legend-section-block">
+          <h4>KEYBOARD</h4>
+          <ul class="legend-list">
+            <li><span class="legend-key">/</span><span class="legend-desc">open search overlay (fuzzy match peer/topic/__LEX_ORG__)</span></li>
+            <li><span class="legend-key">shift + drag</span><span class="legend-desc">lasso-select nodes inside a rectangle</span></li>
+            <li><span class="legend-key">cmd / ctrl + click</span><span class="legend-desc">toggle node in multi-select</span></li>
+            <li><span class="legend-key">double-click hull</span><span class="legend-desc">collapse that __LEX_ORG__ into a super-node (single click just selects its peers)</span></li>
+            <li><span class="legend-key">double-click super-node</span><span class="legend-desc">expand a __LEX_ORG__ super-node back to its peers; double-click a peer to fold it</span></li>
+            <li><span class="legend-key">]</span><span class="legend-desc">collapse / expand the side panel (without losing selection)</span></li>
+            <li><span class="legend-key">esc</span><span class="legend-desc">clear selection / close overlay</span></li>
+          </ul>
+        </section>
+      </div>
+    </main>
+
+    <footer id="legend" class="legend">
+      <div class="legend-section">
+        <span class="legend-label">resolver:</span>
+        <span id="legend-resolver-status">—</span>
+        <span class="legend-sub">(<span id="legend-resolver-families">—</span> families)</span>
+      </div>
+      <div class="legend-section">
+        <span class="legend-label">aliases:</span>
+        <span id="legend-aliases">—</span>
+      </div>
+      <div class="legend-section">
+        <span class="legend-label">drops:</span>
+        <span id="legend-drops">0</span>
+      </div>
+      <div class="legend-section">
+        <span class="legend-label">τ:</span>
+        <span id="legend-ema-tau">—</span> s
+      </div>
+      <div class="legend-section">
+        <span class="legend-label">tick:</span>
+        <span id="legend-ws-coalesce">—</span> ms
+      </div>
+      <div class="legend-section">
+        <span class="legend-label">as of:</span>
+        <span id="legend-generated-at">—</span>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

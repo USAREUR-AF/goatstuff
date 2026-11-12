@@ -6,9 +6,193 @@
     <title>Zero-Trust Sandbox — the bigger picture</title>
     <meta name="description" content="Why the zero-trust identity sandbox exists, in plain language: complementary checks that keep a system coherent under ordinary failure, and the fast, federated, dynamic control they enable." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338e1c4' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/vision.css" />
+    <script type="module" src="/js/vision.js"></script>
   </head>
-  <body>
-    <div id="vision"></div>
-    <script type="module" src="/src/vision.ts"></script>
+  <body class="pg-vision">
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" />
+          </svg>
+        </div>
+        <div><h1>THE BIGGER PICTURE</h1><p class="sub">What zero trust really is, in plain language.</p></div>
+      </div>
+      <span class="spacer"></span>
+      <a class="navlink" href="/">◀ TO THE PLAYGROUND</a>
+      <a class="navlink" href="/glossary.html">📖 GLOSSARY</a>
+      <button class="theme-toggle">◐ LIGHT</button>
+    </header>
+
+    <!-- 1. the thesis -->
+    <section class="hero v-hero">
+      <h2>There is no inside.<br /><span class="accent">Nothing is trusted by location — only by proof, every time.</span></h2>
+      <p>"Zero trust" usually lands as a slogan, and most people picture it wrong: that there's a <b>wall</b>, and once
+        you're past it you're in — and that the point is <b>catching attackers</b>. Both miss it. There is no inside;
+        every action is re-checked by several complementary aspects of identity and access. And most of what they
+        handle — a noisy service, a stale credential, a thing that needs replacing — was never an attack at all.</p>
+    </section>
+
+    <!-- 2. the two shapes of trust — the big illustrations, each its own room -->
+    <section class="story">
+      <div class="story-head"><span class="step">THE OLD WAY</span><h3>One wall, then free run</h3></div>
+      <p class="story-lead">A castle with a moat: you're checked once at the gate, and after that you roam the inside
+        freely. It feels safe — but anything that gets in (a stranger who tailgates, a service gone haywire, a
+        credential no one re-checks) can move sideways to everything. The wall is the only line, and there's no second
+        one.</p>
+      <div class="panel viz-panel"><div data-viz="trust" data-world="castle"></div></div>
+    </section>
+
+    <section class="story">
+      <div class="story-head"><span class="step accent">ZERO TRUST</span><h3>There is no inside</h3></div>
+      <p class="story-lead">Now there are no hallways at all — only sealed rooms, each reached by its own single-use
+        link that re-proves identity and then vanishes. A breach floods one room and stops; there's nowhere to move
+        sideways. Credentials are short-lived, so a stolen one dies on its own. Like a submarine's watertight
+        compartments — one floods, the ship stays afloat.</p>
+      <div class="panel viz-panel"><div data-viz="trust" data-world="zero"></div></div>
+    </section>
+
+    <!-- 3. it manages every access risk, not just attackers -->
+    <section class="story">
+      <div class="story-head"><span class="step amber">THE REAL JOB</span><h3>It manages every access risk — not just attackers</h3></div>
+      <p class="story-lead">Good identity and access management isn't a villain-detector. It mediates the whole range of
+        things that go wrong around <b>access</b>: a service flooding the channel, a credential gone stale, something
+        mid-replacement, an honest misconfiguration — and a bad actor is just one more case the same machinery handles.
+        Get the everyday cases right and the hostile one is mostly already covered.</p>
+      <p class="story-lead">And because every action is bound to an identity, when something does need cutting off there's
+        more than one place to do it — at the layer that owns the actor. Pull its <b>mesh access</b> and it can't reach
+        anything at all (immediate, and the lever we actually use); strip its <b>write permission</b> in the fabric's
+        policy (a coarser, slower cut); and the <b>credential</b> itself isn't really "revoked" — it's built to
+        <b>expire on its own</b> (fast for short-lived workload identities, slower for issued certs). Different layers,
+        different speeds, one identity — defense in depth, not a single kill-switch.</p>
+      <div class="panel"><table class="matrix">
+        <tr><td class="lyr" style="white-space:nowrap">A noisy or overloaded service</td><td class="d">flooding, not from malice — a bug or a bad day. It must not be able to drown out everyone else.</td></tr>
+        <tr><td class="lyr" style="white-space:nowrap">A broken service</td><td class="d">that has to be swapped out right now — without making every consumer learn a new address.</td></tr>
+        <tr><td class="lyr" style="white-space:nowrap">A stale credential</td><td class="d">expired, not revoked, just old. It should stop working on its own, with no cleanup crew.</td></tr>
+        <tr><td class="lyr" style="white-space:nowrap">A new partner</td><td class="d">that needs to come online fast and later go offline cleanly — on local authority, not a slow queue.</td></tr>
+        <tr><td class="lyr" style="white-space:nowrap">Occasionally, someone hostile</td><td class="d">who gets contained by the very same machinery, as a special case of "no valid identity for this."</td></tr>
+      </table></div>
+    </section>
+
+    <!-- 3b. the human truth + blast radius -->
+    <section class="story">
+      <div class="story-head"><span class="step amber">THE HUMAN TRUTH</span><h3>You can't delete human error — so limit the blast</h3></div>
+      <p class="story-lead">The overwhelming majority of real-world breaches — commonly put near <b>99%</b> — start with
+        people: someone gets phished, or makes a plain configuration blunder (a weak password, a box left open to the
+        internet). Because the root cause is human, it can never be fully eliminated — only reduced, watched for, and
+        managed. So real security isn't a taller wall. It <b>reduces</b> the chances these happen, <b>watches</b> for
+        them, <b>reacts</b> fast — and, above all, <b>limits the blast radius</b> when one slips through. Same incident,
+        two worlds — watch where it stops:</p>
+      <div class="viz-pair">
+        <div class="panel viz-panel"><div data-viz="blast" data-world="flat"></div></div>
+        <div class="panel viz-panel"><div data-viz="blast" data-world="zero"></div></div>
+      </div>
+    </section>
+
+    <!-- 4. the five aspects -->
+    <section class="story">
+      <div class="story-head"><span class="step">THE PIECES</span><h3>Five aspects of identity &amp; access, used together</h3></div>
+      <p class="story-lead">Each answers a question none of the others can — and each fits a kind of principal, so it
+        guards a kind of service: <b>x509 for machines</b>, <b>SPIRE for processes</b>, <b>Ory for humans</b>. They're
+        complementary and coordinated, <b>not a sequence you pass through</b>: a real action uses only the ones that
+        apply. Click any to see its anatomy.</p>
+      <div class="aspect-grid">
+        <a class="aspect-card" href="/concept.html?gate=netbird">
+          <div class="ac-top"><span class="sym sym-N" style="font-size:16px">N</span><span class="ac-who">machines · entry</span></div>
+          <div class="ac-title">Network admission</div>
+          <div class="ac-line">Are you on the mesh at all? — admission from onboarding, independent of the identity below.</div>
+          <div class="ac-go">see its anatomy ↗</div>
+        </a>
+        <a class="aspect-card" href="/concept.html?gate=cert">
+          <div class="ac-top"><span class="sym sym-M" style="font-size:16px">M</span><span class="ac-who">machines</span></div>
+          <div class="ac-title">Machine identity (x509)</div>
+          <div class="ac-line">What signed identity do you present? — a scoped, revocable keycard; both sides show ID (mTLS).</div>
+          <div class="ac-go">see its anatomy ↗</div>
+        </a>
+        <a class="aspect-card" href="/concept.html?gate=spire">
+          <div class="ac-top"><span class="sym sym-W" style="font-size:16px">W</span><span class="ac-who">processes</span></div>
+          <div class="ac-title">Workload identity (SPIRE)</div>
+          <div class="ac-line">An attested, auto-rotating passport for software — expires hourly, no human touches it.</div>
+          <div class="ac-go">see its anatomy ↗</div>
+        </a>
+        <a class="aspect-card" href="/concept.html?gate=ory">
+          <div class="ac-top"><span class="sym sym-H" style="font-size:16px">H</span><span class="ac-who">humans</span></div>
+          <div class="ac-title">Human identity + role (Ory)</div>
+          <div class="ac-line">Single sign-on to the mesh’s web tools; your role sets what you can do — view, operate, or administer.</div>
+          <div class="ac-go">see its anatomy ↗</div>
+        </a>
+        <a class="aspect-card" href="/concept.html?gate=acl">
+          <div class="ac-top"><span class="sym sym-D" style="font-size:16px">D</span><span class="ac-who">per write</span></div>
+          <div class="ac-title">The access decision</div>
+          <div class="ac-line">Does that identity permit this write? — default-deny, matched to the identity above.</div>
+          <div class="ac-go">see its anatomy ↗</div>
+        </a>
+      </div>
+    </section>
+
+    <!-- 4b. encryption -->
+    <section class="story">
+      <div class="story-head"><span class="step">EVERY BYTE, TWICE</span><h3>Encrypted end-to-end — twice over</h3></div>
+      <p class="story-lead">Identity decides <i>who</i> may act; encryption keeps the <i>traffic</i> private and
+        untampered on the way. Every interaction on the fabric rides inside <b>two</b> independent encrypted tunnels,
+        one wrapped inside the other — so reading the wire reveals nothing, and breaking one layer still leaves the
+        other intact.</p>
+      <div class="viz-pair">
+        <div class="panel viz-panel"><h4 class="ph">One tunnel inside the other</h4><div data-viz="enc" data-mode="nested"></div></div>
+        <div class="panel viz-panel"><h4 class="ph">How a connection comes up</h4><div data-viz="enc" data-mode="sequence"></div></div>
+      </div>
+      <div class="grid" style="margin-top:14px">
+        <div class="panel"><h4 class="ph">① The outer tunnel — WireGuard</h4><p class="pp">The mesh itself (NetBird on
+          WireGuard) encrypts everything between two peers at the network layer. Anything on the wire is already
+          ciphertext.</p></div>
+        <div class="panel"><h4 class="ph">② The inner tunnel — mTLS</h4><p class="pp">Inside that, the application opens
+          its own mutual-TLS connection (here, in Zenoh). It encrypts <i>and</i> proves both identities at once. Other
+          applications bring their own TLS — usually mutual too.</p></div>
+        <div class="panel"><h4 class="ph">Swappable by design</h4><p class="pp">The two layers differ in origin and
+          algorithm, and either can change without the other — including a move to <b>post-quantum</b> ciphers as they
+          mature. No single algorithm is load-bearing.</p></div>
+        <div class="panel"><h4 class="ph">And at rest</h4><p class="pp">Beyond the wire: disks are encrypted at rest
+          (full-disk LUKS), keys are short-lived with <b>forward secrecy</b> (a stolen key can't decrypt past traffic),
+          and the crypto can run in FIPS-validated mode where required.</p></div>
+      </div>
+    </section>
+
+    <!-- 5. the freedom half -->
+    <section class="story">
+      <div class="story-head"><span class="step green">THE PAYOFF</span><h3>The freedom it buys</h3></div>
+      <p class="story-lead">The same machinery that contains misbehavior is what makes identity and access fast and
+        local to manage — where the old way was slow and centralized.</p>
+      <div class="grid">
+        <div class="panel"><h4 class="ph">Sovereign &amp; federated</h4><p class="pp">A group creates, changes, and
+          revokes its own identities on its own authority — no funneling every change through one central gatekeeper.</p></div>
+        <div class="panel"><h4 class="ph">Dynamic</h4><p class="pp">Granting, scoping, and rescinding access is a live
+          change, not a rebuild: bring a participant online now, take them offline cleanly later, narrow what a service
+          can touch the moment its role changes.</p></div>
+        <div class="panel"><h4 class="ph">Self-healing</h4><p class="pp">Because identity is re-verified per connection
+          and credentials expire on their own, much "cleanup" needs no human: stale things lapse, replaced things
+          re-prove. And a flooding producer is tied to its identity — it shows up on the health surface and its
+          credential can be revoked to cut it off (automatic rate-throttle is on the roadmap).</p></div>
+        <div class="panel"><h4 class="ph">Disposable services</h4><p class="pp">A name only says <i>where</i>, never
+          <i>whether to trust</i> — so you can tear a service down and stand a fresh one up under the same name in
+          seconds, and everyone keeps working. (Try it in the playground.)</p></div>
+      </div>
+    </section>
+
+    <!-- 6. honesty -->
+    <section class="story">
+      <div class="story-head"><span class="step">THE FINE PRINT</span><h3>What's actually running</h3></div>
+      <p class="story-lead">The playground runs the <b>real</b> components — a real CA, real SPIRE, real OIDC, a real
+        access decision — so what you see is the system actually working, not a mock. The one exception is network
+        admission (NetBird): a browser can't perform a WireGuard handshake, so that layer is <b>represented</b> rather
+        than live, and labeled as such.</p>
+    </section>
+
+    <footer class="foot">
+      Ready to feel it? <a href="/">Open the playground</a> — pick who you are, change one thing, and watch what holds.
+    </footer>
+  </div>
   </body>
 </html>

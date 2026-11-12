@@ -1,0 +1,61 @@
+# Build and package manifests this repository carries, each with an owner and
+# a reason. Read by ops/ci/check-manifest-allowlist.py, a copy of the same
+# script in USAREUR-AF/goatcore.
+#
+# The rule (goatdocs docs/design/engineering-baseline.md, "Languages,
+# frameworks and package managers"): a new language, framework or package
+# manager needs a written reason and a named owner before it lands. A manifest
+# that is not on this list fails the check. To add one, add its line here in
+# the same pull request and give the reason in the pull request description;
+# a code owner approves it like any other change.
+#
+# Rust, Go and Python keep the roles goatcore ADR 0112 gives them. Frontends
+# are plain JavaScript with no build step (goatcore's goat-id-console and
+# goat-zenoh-portal are the reference); npm is used for Playwright test
+# harnesses, with exact versions (exceptions:
+# ops/ci/manifest-version-exceptions.txt). A third-party browser library is one
+# vendored file committed with its version and license; where a tool has to
+# produce that file, the tool's manifest is listed here.
+#
+# A line whose manifest no longer exists fails the check: remove it in the
+# pull request that removes the manifest.
+#
+# format: <repo-relative path> | <owner> | <one-line reason>
+
+# --- Rust (goatcore ADR 0112)
+crates/Cargo.toml | @USAREUR-AF/goat-owners | Rust workspace root for the inspection surfaces
+crates/flashlight-analytics/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: flashlight audit-tail analytics
+crates/microscope/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: microscope single-peer view
+crates/netvis/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: netvis mesh ACL picture
+crates/stethoscope-checks/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: stethoscope check registry
+crates/stethoscope/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: stethoscope diagnosis service
+ops/flashlight/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: flashlight service
+ops/goat-topology/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: topology service
+ops/goat-trashgoat/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trashgoat service
+ops/panoscope/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: panoscope service
+ops/serve/trust-sandbox/orchestrator/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trust sandbox orchestrator
+ops/zenoh-shims/feeds-shim/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: Zenoh feeds shim
+ops/zenoh-shims/rest-pub-bridge/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: Zenoh REST publish bridge (goatcore ADR 1023)
+ops/zenoh-trial-peers/audit-subscriber/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric audit subscriber
+ops/zenoh-trial-peers/crypto-posture/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric crypto posture publisher
+ops/zenoh-trial-peers/fabric-crawler/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric lazy crawler
+ops/zenoh-trial-peers/fabric-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric fabric health publisher
+ops/zenoh-trial-peers/loadgen/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric load generator
+ops/zenoh-trial-peers/mesh-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric mesh health publisher
+ops/zenoh-trial-peers/node-net-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric node network health publisher
+ops/zenoh-trial-peers/ntp-health-pub/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric NTP health publisher
+ops/zenoh-trial-peers/peering-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric peering health publisher
+ops/zenoh-trial-peers/presence-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric presence health publisher
+ops/zenoh-trial-peers/surface-visit-audit/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric surface visit audit
+ops/zenoh-trial-peers/synth-vendor/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric synthetic vendor publisher
+ops/zenoh-trial-peers/time-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric time health publisher
+
+# --- Go (goatcore ADR 0112)
+ops/serve/zenoh-sandbox/vendor-tool/go.mod | @USAREUR-AF/goat-owners | Go: one-shot tool that regenerates the vendored zenoh-ts bundle of the Zenoh sandbox (esbuild Go API, exact version)
+
+# --- Python (goatcore ADR 0112)
+ops/serve/goat-map/requirements.txt | @USAREUR-AF/goat-owners | Python: Zenoh client and aiohttp for the goat-map service
+
+# --- npm: frontend tests
+ops/panoscope/frontend/package.json | @USAREUR-AF/goat-owners | npm: Playwright tests only (@playwright/test, exact version)
+ops/panoscope/frontend/package-lock.json | @USAREUR-AF/goat-owners | npm lockfile for the panoscope frontend Playwright tests

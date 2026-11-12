@@ -230,7 +230,7 @@ services:
       - ./coredns/db.trust.local:/etc/coredns/db.trust.local   # rw: burn-&-respawn rewrites the zone in place
     networks: [trust-sandbox]
 
-  # --- web: nginx serving the Vue3 SPA; proxies /api + /ws + /hydra -------------
+  # --- web: nginx serving the static pages; proxies /api + /ws + /hydra ---------
   web:
     build:
       context: .

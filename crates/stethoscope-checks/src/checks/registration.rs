@@ -27,7 +27,7 @@
 //   shape: org-1/radar1radar/... in audit, org-1/radar1/... in registry.
 
 use async_trait::async_trait;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use tracing::debug;
 
 use panoscope_core::PortalError;
@@ -144,43 +144,99 @@ async fn run_vendor(ctx: &CheckCtx, target: &Target) -> CheckOutcome {
     // skips this cross-reference (the user sees a clean verdict, no
     // false-negative finding).
     if ctx.audit.is_enabled() {
-        match ctx.audit.recent_events(1, Some(vendor)).await {
-            Ok((events, _stats)) => {
-                let live: HashSet<String> =
-                    events.into_iter().map(|e| e.key_expr).collect();
-                let declared: HashSet<String> =
-                    topics.iter().map(|t| t.key_pattern.clone()).collect();
-                let undeclared: Vec<String> = live
-                    .into_iter()
-                    .filter(|k| !declared.contains(k))
-                    .collect();
-                if !undeclared.is_empty() {
-                    let preview = undeclared
-                        .iter()
-                        .take(3)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let more = if undeclared.len() > 3 {
-                        format!(" (+{} more)", undeclared.len() - 3)
-                    } else {
-                        String::new()
-                    };
-                    outcome = outcome.with_finding(Finding::new(
-                        "published-but-never-declared",
-                        FindingSeverity::Warn,
-                        format!(
-                            "{org_t} publishes on {} key{} not in the registry: {preview}{more}. Live traffic is happening outside what the portal knows about — subscribers and schema viewers won't find these topics.",
-                            undeclared.len(),
-                            if undeclared.len() == 1 { "" } else { "s" }
-                        ),
-                    ));
+        let declared: HashSet<String> = topics.iter().map(|t| t.key_pattern.clone()).collect();
+        // Folded as the tail streams: only undeclared keys are kept, and at
+        // most MAX_UNDECLARED_KEYS of them.
+        let mut undeclared = UndeclaredKeys::new(declared, MAX_UNDECLARED_KEYS);
+        match ctx
+            .audit
+            .stream_recent_events(1, Some(vendor), |e| undeclared.observe(e.key_expr))
+            .await
+        {
+            Ok(_stats) => {
+                if let Some(finding) = undeclared.finding(&org_t) {
+                    outcome = outcome.with_finding(finding);
                 }
             }
-            Err(e) => debug!(error = %e, "registration: audit_tail recent_events failed"),
+            Err(e) => debug!(error = %e, "registration: audit_tail stream_recent_events failed"),
         }
     }
     outcome
+}
+
+/// Most distinct undeclared live keys remembered. A fan-out publisher can mint
+/// a new key per event; past this ceiling the finding says "more than N"
+/// rather than growing with the window's event count.
+const MAX_UNDECLARED_KEYS: usize = 10_000;
+
+/// Live keys not in the registry, folded from the audit stream one key at a
+/// time. Declared keys are never stored a second time.
+struct UndeclaredKeys {
+    declared: HashSet<String>,
+    max: usize,
+    undeclared: BTreeSet<String>,
+    /// True once a further undeclared key arrived after the ceiling.
+    overflow: bool,
+}
+
+impl UndeclaredKeys {
+    fn new(declared: HashSet<String>, max: usize) -> Self {
+        Self {
+            declared,
+            max,
+            undeclared: BTreeSet::new(),
+            overflow: false,
+        }
+    }
+
+    fn observe(&mut self, key: String) {
+        if self.declared.contains(&key) || self.undeclared.contains(&key) {
+            return;
+        }
+        if self.undeclared.len() < self.max {
+            self.undeclared.insert(key);
+        } else {
+            self.overflow = true;
+        }
+    }
+
+    /// The published-but-never-declared finding, if any key was undeclared.
+    fn finding(&self, org_t: &str) -> Option<Finding> {
+        if self.undeclared.is_empty() {
+            return None;
+        }
+        let n = self.undeclared.len();
+        let preview = self
+            .undeclared
+            .iter()
+            .take(3)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = if self.overflow {
+            format!(
+                " (+{} more listed; ceiling of {} keys reached, so the list is partial)",
+                n - 3,
+                self.max
+            )
+        } else if n > 3 {
+            format!(" (+{} more)", n - 3)
+        } else {
+            String::new()
+        };
+        let count = if self.overflow {
+            format!("more than {n} keys")
+        } else {
+            format!("{n} key{}", if n == 1 { "" } else { "s" })
+        };
+        Some(Finding::new(
+            "published-but-never-declared",
+            FindingSeverity::Warn,
+            format!(
+                "{org_t} publishes on {count} not in the registry: {preview}{more}. Live traffic is happening outside what the portal knows about — subscribers and schema viewers won't find these topics."
+            ),
+        ))
+    }
 }
 
 async fn run_topic(ctx: &CheckCtx, target: &Target) -> CheckOutcome {
@@ -359,5 +415,51 @@ mod tests {
             outcome.verdict,
             crate::outcome::Verdict::Skipped
         ));
+    }
+
+    fn declared(keys: &[&str]) -> HashSet<String> {
+        keys.iter().map(|k| k.to_string()).collect()
+    }
+
+    /// A busy hour on registered keys keeps nothing and finds nothing.
+    #[test]
+    fn busy_hour_on_declared_keys_keeps_nothing() {
+        let mut u = UndeclaredKeys::new(declared(&["v/a/v1", "v/b/v1"]), MAX_UNDECLARED_KEYS);
+        for i in 0..200_000 {
+            u.observe(if i % 2 == 0 { "v/a/v1" } else { "v/b/v1" }.to_string());
+        }
+        assert!(u.undeclared.is_empty());
+        assert!(u.finding("Vendor").is_none());
+    }
+
+    /// A fan-out publisher off the registry — a new key per event — keeps at
+    /// most the ceiling and says the list is partial.
+    #[test]
+    fn fan_out_off_registry_is_bounded() {
+        const N: usize = 200_000;
+        let mut u = UndeclaredKeys::new(declared(&["v/a/v1"]), MAX_UNDECLARED_KEYS);
+        for i in 0..N {
+            u.observe(format!("v/entities/{i:06}"));
+            u.observe("v/a/v1".to_string());
+        }
+        assert_eq!(u.undeclared.len(), MAX_UNDECLARED_KEYS);
+        assert!(u.overflow);
+        let f = u.finding("Vendor").expect("finding");
+        assert!(f.detail.contains(&format!("more than {MAX_UNDECLARED_KEYS} keys")), "{}", f.detail);
+        assert!(f.detail.contains("list is partial"), "{}", f.detail);
+    }
+
+    /// Under the ceiling the finding reads as it always has.
+    #[test]
+    fn few_undeclared_keys_read_as_before() {
+        let mut u = UndeclaredKeys::new(declared(&["v/a/v1"]), MAX_UNDECLARED_KEYS);
+        for k in ["v/x/v1", "v/a/v1", "v/y/v1", "v/x/v1", "v/z/v1", "v/w/v1"] {
+            u.observe(k.to_string());
+        }
+        let f = u.finding("Vendor").expect("finding");
+        assert_eq!(
+            f.detail,
+            "Vendor publishes on 4 keys not in the registry: v/w/v1, v/x/v1, v/y/v1 (+1 more). Live traffic is happening outside what the portal knows about — subscribers and schema viewers won't find these topics."
+        );
     }
 }

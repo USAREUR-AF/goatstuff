@@ -4,18 +4,16 @@
 //
 // Backend (Rust panoscope) is NOT required — the spec mocks `/api/*`
 // via page.route() and replaces `window.WebSocket` via an init script
-// so the SPA renders against a deterministic canned snapshot. See
+// so the pages render against a deterministic canned snapshot. See
 // tests/click-rhythm.spec.ts for the fixture shape.
 //
-// CI uses `vite preview` against the prebuilt dist/ (fast cold start —
-// just serves static files; build step runs earlier in the workflow).
-// Local dev uses `vite dev` for HMR + faster iteration.
+// The pages in web/ are served as files by tests/serve.mjs, which maps
+// paths the same way the Rust binary does (src/embed.rs). There is no
+// build step.
 
 import { defineConfig, devices } from "@playwright/test";
 
-const CI_PORT = 4173;
-const DEV_PORT = 5173;
-const PORT = process.env.CI ? CI_PORT : DEV_PORT;
+const PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
@@ -32,17 +30,10 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
-  webServer: process.env.CI
-    ? {
-        command: `npx vite preview --host 127.0.0.1 --port ${CI_PORT} --strictPort`,
-        url: BASE_URL,
-        reuseExistingServer: false,
-        timeout: 60_000,
-      }
-    : {
-        command: "npm run dev",
-        url: BASE_URL,
-        reuseExistingServer: true,
-        timeout: 120_000,
-      },
+  webServer: {
+    command: `node tests/serve.mjs ${PORT}`,
+    url: BASE_URL,
+    reuseExistingServer: !process.env.CI,
+    timeout: 30_000,
+  },
 });
