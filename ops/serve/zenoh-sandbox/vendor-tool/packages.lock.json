@@ -1,0 +1,54 @@
+{
+  "registry": "https://registry.npmjs.org",
+  "entry": "@eclipse-zenoh/zenoh-ts",
+  "packages": [
+    {
+      "name": "@eclipse-zenoh/zenoh-ts",
+      "version": "1.9.0",
+      "license": "Apache-2.0 OR EPL-2.0",
+      "license_file": "LICENSE",
+      "tarball": "https://registry.npmjs.org/@eclipse-zenoh/zenoh-ts/-/zenoh-ts-1.9.0.tgz",
+      "integrity": "sha512-qG3VR9Yt81+KjH0WOybyKcNVS0vtBmmhyUJ7dCc5n+8AeAEYTpEvMBTh43Lwu8P+imzMYvFqjaMAO2HFK+x9hA=="
+    },
+    {
+      "name": "channel-ts",
+      "version": "0.1.2",
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "tarball": "https://registry.npmjs.org/channel-ts/-/channel-ts-0.1.2.tgz",
+      "integrity": "sha512-cI/XiDF+jB0v95Xup8xlM7k93lT3xwPl0WdjEZ9w9aUMf5N+3GQevspK2EDYfMyxcKcXdN1F6PDpuYRpUfaZmg=="
+    },
+    {
+      "name": "typed-duration",
+      "version": "2.0.0",
+      "license": "ISC",
+      "license_file": null,
+      "tarball": "https://registry.npmjs.org/typed-duration/-/typed-duration-2.0.0.tgz",
+      "integrity": "sha512-XTOtfRR/l2hkCjFANwqu/IdLq17jBPts49tnxXc+Oc2ewngECupdu4FEH2H9hQHginRfOXCZ39tb9+pVcBlTcQ=="
+    },
+    {
+      "name": "@thi.ng/leb128",
+      "version": "3.1.94",
+      "license": "Apache-2.0",
+      "license_file": "LICENSE",
+      "tarball": "https://registry.npmjs.org/@thi.ng/leb128/-/leb128-3.1.94.tgz",
+      "integrity": "sha512-MNpWK3qnRJ7aUYB0qghtlm0uY4ULBWAPKcezqTMDAX+HVmGqONllhebTjgxmueCljKBqpJMugybnOO99cn5wCg=="
+    },
+    {
+      "name": "@thi.ng/checks",
+      "version": "3.11.1",
+      "license": "Apache-2.0",
+      "license_file": "LICENSE",
+      "tarball": "https://registry.npmjs.org/@thi.ng/checks/-/checks-3.11.1.tgz",
+      "integrity": "sha512-S64V2nAPA0Y66VwpJdi3fdwv4xP9G7M13nvQWzp6YTERsnusI6FtihbxhENt/DQ/k+iP+aVSsy+LgtqwkFvvag=="
+    },
+    {
+      "name": "@thi.ng/errors",
+      "version": "2.6.17",
+      "license": "Apache-2.0",
+      "license_file": "LICENSE",
+      "tarball": "https://registry.npmjs.org/@thi.ng/errors/-/errors-2.6.17.tgz",
+      "integrity": "sha512-momw7wo3EXes1wa6Smckr+l4BaJi/h+E67R3furYOBjQpciie1OgoTa43PXPb1POsuWxynkEF8OCnQgreE8twg=="
+    }
+  ]
+}

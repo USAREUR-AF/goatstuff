@@ -323,3 +323,22 @@ button.sm { padding: 5px 9px; font-size: 12px; }
 .loop .step .n { font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; color: var(--accent); }
 .loop .step h4 { margin: 6px 0 4px; font-size: 14px; }
 .loop .step p { margin: 0; font-size: 12.5px; color: var(--ink-dim); line-height: 1.5; }
+
+/* ===========================================================================
+   Live topology panel (the SVG in "The fabric, live").
+=========================================================================== */
+.topo-svg { width: 100%; height: auto; display: block; margin-top: 4px; }
+.topo .lanes text { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-anchor: middle; opacity: .9; }
+.topo .lanes text.lane-q { fill: var(--ink-faint); }
+.topo .edges line { stroke: var(--line); stroke-width: 1.1; }
+.topo .nodefill { stroke: var(--panel); stroke-width: 2; }
+.topo .nodepulse { fill: none; stroke-width: 1.4; opacity: .5; transform-origin: center; animation: nodepulse 1.9s var(--ease) infinite; }
+@keyframes nodepulse { 0% { r: 11px; opacity: .5; } 100% { r: 20px; opacity: 0; } }
+.topo .flash { fill: none; stroke-width: 2.4; }
+.topo .nodelabel { fill: var(--ink-dim); font-family: var(--font-mono); font-size: 11px; }
+.topo .packet { filter: drop-shadow(0 0 5px currentColor); }
+.topo-empty { text-align: center; margin-top: 6px; }
+
+/* An element with the hidden attribute stays hidden even where a class above
+   sets its display (.chips, .feed, .viz-legend are flex). */
+[hidden] { display: none !important; }
