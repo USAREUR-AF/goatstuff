@@ -15,7 +15,8 @@ import { renderVerdict } from "./render/verdict.js";
 import { renderGraph, onNodeClick } from "./render/graph.js";
 import { renderFindings, renderFindingFilters, onFilterChange } from "./render/findings.js";
 import { renderFeed } from "./render/feed.js";
-import { renderRouters } from "./render/routers.js";
+import { renderRouters, onRouterClick } from "./render/routers.js";
+import { renderDetail, onDetailSelect, onDetailCarve } from "./render/detail.js";
 import { renderPlanner, onSelectionChange } from "./render/planner.js";
 
 const POLL_MS = 15000;
@@ -23,13 +24,16 @@ const POLL_MS = 15000;
 const AGE_MS = 5000;
 
 const picks = new Set();
+/** The one router whose detail is open. A view concern, like `picks`. */
+let selected = null;
 let etag = null;
 let latest = null;
 
 function paint() {
   if (!latest) return;
   renderVerdict(latest);
-  renderGraph(latest, picks);
+  renderGraph(latest, picks, selected);
+  renderDetail(latest, selected, picks);
   renderFindingFilters(latest);
   renderFindings(latest);
   renderFeed(latest);
@@ -44,10 +48,23 @@ function paint() {
 // never re-fetches.
 function togglePick(node) {
   picks.has(node) ? picks.delete(node) : picks.add(node);
-  renderGraph(latest, picks);
+  renderGraph(latest, picks, selected);
+  renderDetail(latest, selected, picks);
   renderPlanner(latest, picks);
 }
-onNodeClick(togglePick);
+// One click on a router, in the graph or the table, opens everything the page
+// holds about it. Clicking the open one closes it. Carve membership moved to a
+// button in the detail and stays on the planner's own chips.
+function select(node) {
+  selected = selected === node ? null : node;
+  renderGraph(latest, picks, selected);
+  renderDetail(latest, selected, picks);
+  if (selected) $("#detail").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+onNodeClick(select);
+onRouterClick(select);
+onDetailSelect(node => { selected = null; select(node); });
+onDetailCarve(togglePick);
 onSelectionChange(togglePick);
 onFilterChange(() => { renderFindingFilters(latest); renderFindings(latest); });
 
@@ -81,4 +98,4 @@ poll();
 setInterval(poll, POLL_MS);
 // Ages are computed from absolute timestamps, so they advance without the
 // server having to send a new payload.
-setInterval(() => { if (latest) renderRouters(latest); }, AGE_MS);
+setInterval(() => { if (latest) { renderRouters(latest); renderDetail(latest, selected, picks); } }, AGE_MS);
