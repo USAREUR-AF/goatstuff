@@ -58,7 +58,7 @@ One isolated Docker Compose project on its own bridge network; only the web port
 is published; **no `connect:` anywhere** (zenohd peers with nothing).
 
 ```
-browser :8100 ──nginx──┬─ /            → web (Vue3 SPA)
+browser :8100 ──nginx──┬─ /            → web (static pages)
                        ├─ /api, /ws    → orchestrator (Rust/axum — the broker)
                        └─ /hydra       → Ory Hydra (OIDC)
 orchestrator ── mTLS ── zenohd (real client-cert ACL, gate ⑤)
@@ -76,7 +76,9 @@ observer, so it only ever shows what an ACL-gated subscriber actually saw.
 ## Components
 
 - `orchestrator/` — Rust/axum broker (`init-ca` one-shot + `serve`).
-- `app/` — Vite + Vue 3 SPA + the OIDC login/consent/callback pages.
+- `app/` — the pages as hand-written HTML, CSS and ES modules (`*.html`, `css/`,
+  `js/`), served as they are by nginx with no build step, plus the OIDC
+  login/consent/callback pages.
 - `zenohd/config.json5` — stock fleet-pinned zenohd + a real client-cert ACL.
 - `spire/` — alpine + SPIRE binaries; server entrypoint mints the join token,
   registers the orchestrator workload (CN-bearing SVID via `-dns`), and builds

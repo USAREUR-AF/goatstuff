@@ -13,7 +13,9 @@
 # are plain JavaScript with no build step (goatcore's goat-id-console and
 # goat-zenoh-portal are the reference); npm is used for Playwright test
 # harnesses, with exact versions (exceptions:
-# ops/ci/manifest-version-exceptions.txt).
+# ops/ci/manifest-version-exceptions.txt). A third-party browser library is one
+# vendored file committed with its version and license; where a tool has to
+# produce that file, the tool's manifest is listed here.
 #
 # A line whose manifest no longer exists fails the check: remove it in the
 # pull request that removes the manifest.
@@ -48,12 +50,12 @@ ops/zenoh-trial-peers/surface-visit-audit/Cargo.toml | @USAREUR-AF/goat-owners |
 ops/zenoh-trial-peers/synth-vendor/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric synthetic vendor publisher
 ops/zenoh-trial-peers/time-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric time health publisher
 
+# --- Go (goatcore ADR 0112)
+ops/serve/zenoh-sandbox/vendor-tool/go.mod | @USAREUR-AF/goat-owners | Go: one-shot tool that regenerates the vendored zenoh-ts bundle of the Zenoh sandbox (esbuild Go API, exact version)
+
 # --- Python (goatcore ADR 0112)
 ops/serve/goat-map/requirements.txt | @USAREUR-AF/goat-owners | Python: Zenoh client and aiohttp for the goat-map service
 
-# --- npm: frontend builds (panoscope and trust-sandbox are being converted to plain JavaScript)
+# --- npm: frontend tests
 ops/panoscope/frontend/package.json | @USAREUR-AF/goat-owners | npm: Playwright tests only (@playwright/test, exact version)
 ops/panoscope/frontend/package-lock.json | @USAREUR-AF/goat-owners | npm lockfile for the panoscope frontend Playwright tests
-ops/serve/trust-sandbox/app/package.json | @USAREUR-AF/goat-owners | npm: Vue and Vite build of the trust sandbox; being converted to plain JavaScript
-ops/serve/trust-sandbox/app/package-lock.json | @USAREUR-AF/goat-owners | npm lockfile for the trust sandbox
-ops/serve/zenoh-sandbox/app/package.json | @USAREUR-AF/goat-owners | npm: Vue and Vite build of the Zenoh sandbox; kept because the zenoh-ts 1.9.0 WASM client ships only as bundler-target output
