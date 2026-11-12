@@ -51,9 +51,7 @@ ops/zenoh-trial-peers/time-health/Cargo.toml | @USAREUR-AF/goat-owners | Rust cr
 # --- Python (goatcore ADR 0112)
 ops/serve/goat-map/requirements.txt | @USAREUR-AF/goat-owners | Python: Zenoh client and aiohttp for the goat-map service
 
-# --- npm: frontend builds (panoscope and trust-sandbox are being converted to plain JavaScript)
+# --- npm: frontend tests and builds
 ops/panoscope/frontend/package.json | @USAREUR-AF/goat-owners | npm: Playwright tests only (@playwright/test, exact version)
 ops/panoscope/frontend/package-lock.json | @USAREUR-AF/goat-owners | npm lockfile for the panoscope frontend Playwright tests
-ops/serve/trust-sandbox/app/package.json | @USAREUR-AF/goat-owners | npm: Vue and Vite build of the trust sandbox; being converted to plain JavaScript
-ops/serve/trust-sandbox/app/package-lock.json | @USAREUR-AF/goat-owners | npm lockfile for the trust sandbox
 ops/serve/zenoh-sandbox/app/package.json | @USAREUR-AF/goat-owners | npm: Vue and Vite build of the Zenoh sandbox; kept because the zenoh-ts 1.9.0 WASM client ships only as bundler-target output

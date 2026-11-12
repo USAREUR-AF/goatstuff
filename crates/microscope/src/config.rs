@@ -76,25 +76,53 @@ impl Config {
             audit_endpoint: get("MICROSCOPE_AUDIT_ENDPOINT"),
             audit_region: {
                 let v = get("MICROSCOPE_AUDIT_REGION");
-                if v.is_empty() { "us-east-1".into() } else { v }
+                if v.is_empty() {
+                    "us-east-1".into()
+                } else {
+                    v
+                }
             },
             audit_bucket: {
                 let v = get("MICROSCOPE_AUDIT_BUCKET");
-                if v.is_empty() { "audit-integrity".into() } else { v }
+                if v.is_empty() {
+                    "audit-integrity".into()
+                } else {
+                    v
+                }
             },
             audit_key_prefix: get("MICROSCOPE_AUDIT_KEY_PREFIX"),
             audit_access_key: get("MICROSCOPE_AUDIT_ACCESS_KEY"),
             audit_secret_key: get("MICROSCOPE_AUDIT_SECRET_KEY"),
-            audit_window_hours: get("MICROSCOPE_AUDIT_WINDOW_HOURS").parse().unwrap_or(24),
-            audit_max_rows: get("MICROSCOPE_AUDIT_MAX_ROWS").parse().unwrap_or(0),
-            audit_fetch_concurrency: get("MICROSCOPE_AUDIT_FETCH_CONCURRENCY").parse().unwrap_or(0),
+            audit_window_hours: parse_or(
+                "MICROSCOPE_AUDIT_WINDOW_HOURS",
+                &get("MICROSCOPE_AUDIT_WINDOW_HOURS"),
+                24,
+            ),
+            audit_max_rows: parse_or(
+                "MICROSCOPE_AUDIT_MAX_ROWS",
+                &get("MICROSCOPE_AUDIT_MAX_ROWS"),
+                0,
+            ),
+            audit_fetch_concurrency: parse_or(
+                "MICROSCOPE_AUDIT_FETCH_CONCURRENCY",
+                &get("MICROSCOPE_AUDIT_FETCH_CONCURRENCY"),
+                0,
+            ),
             site_label: {
                 let v = get("MICROSCOPE_SITE_LABEL");
-                if v.is_empty() { "goatnet".into() } else { v }
+                if v.is_empty() {
+                    "goatnet".into()
+                } else {
+                    v
+                }
             },
             rbac_mode: {
                 let v = get("MICROSCOPE_RBAC_MODE");
-                if v.is_empty() { "off".into() } else { v }
+                if v.is_empty() {
+                    "off".into()
+                } else {
+                    v
+                }
             },
             rbac_who_groups: {
                 let v = get("MICROSCOPE_RBAC_WHO_GROUPS");
@@ -105,12 +133,17 @@ impl Config {
                 } else {
                     v
                 };
-                v.split(',').map(|g| g.trim().to_string()).filter(|g| !g.is_empty()).collect()
+                v.split(',')
+                    .map(|g| g.trim().to_string())
+                    .filter(|g| !g.is_empty())
+                    .collect()
             },
             view_audit_path: get("MICROSCOPE_VIEW_AUDIT_PATH"),
-            suggest_ttl_secs: get("MICROSCOPE_SUGGEST_TTL_SECS")
-                .parse()
-                .unwrap_or(120),
+            suggest_ttl_secs: parse_or(
+                "MICROSCOPE_SUGGEST_TTL_SECS",
+                &get("MICROSCOPE_SUGGEST_TTL_SECS"),
+                120,
+            ),
             siblings: {
                 // MICROSCOPE_SIBLING_<NAME>=<base-url> → {"<name>": url}
                 let mut m = std::collections::BTreeMap::new();
@@ -123,6 +156,108 @@ impl Config {
                 }
                 m
             },
+        }
+    }
+}
+
+fn parse_or<T: std::str::FromStr + std::fmt::Display>(name: &str, raw: &str, default: T) -> T {
+    if raw.is_empty() {
+        return default;
+    }
+    match raw.parse() {
+        Ok(value) => value,
+        Err(_) => {
+            tracing::warn!(setting = name, value = ?raw, default = %default, "invalid numeric setting; using default");
+            default
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_or;
+    use std::io::{self, Write};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture<T>(operation: impl FnOnce() -> T) -> (T, String) {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let writer = Capture(Arc::clone(&bytes));
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(move || writer.clone())
+            .finish();
+        let value = tracing::subscriber::with_default(subscriber, operation);
+        let output = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+        (value, output)
+    }
+
+    #[test]
+    fn valid_numeric_values_are_silent() {
+        let ((window, rows, ttl), output) = capture(|| {
+            (
+                parse_or::<u32>("MICROSCOPE_AUDIT_WINDOW_HOURS", "48", 24),
+                parse_or::<usize>("MICROSCOPE_AUDIT_MAX_ROWS", "0", 0),
+                parse_or::<u64>("MICROSCOPE_SUGGEST_TTL_SECS", "180", 120),
+            )
+        });
+        assert_eq!((window, rows, ttl), (48, 0, 180));
+        assert!(output.is_empty(), "{output}");
+    }
+
+    #[test]
+    fn unset_and_empty_keep_defaults_without_warning() {
+        for raw in [None, Some("")] {
+            let (value, output) = capture(|| {
+                parse_or::<u32>("MICROSCOPE_AUDIT_WINDOW_HOURS", raw.unwrap_or_default(), 24)
+            });
+            assert_eq!(value, 24);
+            assert!(output.is_empty(), "{output}");
+        }
+    }
+
+    #[test]
+    fn malformed_numeric_settings_warn_once_with_the_fallback() {
+        for (name, raw, default) in [
+            ("MICROSCOPE_AUDIT_WINDOW_HOURS", "24h", 24_u64),
+            ("MICROSCOPE_AUDIT_MAX_ROWS", "-1", 0),
+            ("MICROSCOPE_SUGGEST_TTL_SECS", "abc", 120),
+        ] {
+            let (value, output) = capture(|| parse_or(name, raw, default));
+            assert_eq!(value, default);
+            assert_eq!(output.lines().count(), 1, "{output}");
+            assert!(output.contains("WARN"), "{output}");
+            assert!(output.contains(name), "{output}");
+            assert!(output.contains(raw), "{output}");
+            assert!(output.contains(&format!("default={default}")), "{output}");
+        }
+    }
+
+    #[test]
+    fn overflow_warns_and_control_characters_cannot_forge_a_log_line() {
+        for raw in ["4294967296", "24\nWARN injected"] {
+            let (value, output) =
+                capture(|| parse_or::<u32>("MICROSCOPE_AUDIT_WINDOW_HOURS", raw, 24));
+            assert_eq!(value, 24);
+            assert_eq!(output.lines().count(), 1, "{output}");
+            if raw.contains('\n') {
+                assert!(output.contains("24\\nWARN injected"), "{output}");
+            }
         }
     }
 }

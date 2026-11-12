@@ -6,9 +6,38 @@
     <title>Zero-Trust Sandbox — glossary</title>
     <meta name="description" content="Plain-language definitions for every acronym and term in the zero-trust sandbox." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338e1c4' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/glossary.css" />
+    <script type="module" src="/js/glossary-page.js"></script>
   </head>
-  <body>
-    <div id="glossary"></div>
-    <script type="module" src="/src/glossary-main.ts"></script>
+  <body class="pg-glossary">
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" />
+          </svg>
+        </div>
+        <div><h1>GLOSSARY</h1><p class="sub">Every term the sandbox uses, in one line.</p></div>
+      </div>
+      <span class="spacer"></span>
+      <a class="navlink" href="/">◀ PLAYGROUND</a>
+      <a class="navlink" href="/vision.html">✦ BIGGER PICTURE</a>
+      <button class="theme-toggle">◐ LIGHT</button>
+    </header>
+
+    <section class="hero">
+      <h2>Glossary</h2>
+      <p>Plain-language definitions for every acronym and term in the zero-trust sandbox. Dotted terms elsewhere in
+        the app open a quick popup; this is the full reference.</p>
+    </section>
+
+    <div class="gloss-list" id="gloss-list">
+      <!-- filled from js/glossary.js by js/glossary-page.js -->
+    </div>
+
+    <footer class="foot">A quick reference · <a href="/">back to the playground</a>.</footer>
+  </div>
   </body>
 </html>

@@ -1,11 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
 // Shared glossary: term → { full name, plain-language definition }. Used by the
-// auto-badging directive (v-gloss), the ephemeral popup, and the glossary page.
+// auto-badging popup (gloss-popup.js) and the glossary page.
 // Newcomer-first: every acronym/term the sandbox uses, defined in one line.
-import { reactive } from 'vue'
+// Entry shape: { term, full?, def }
 
-export interface GlossEntry { term: string; full?: string; def: string }
-
-export const GLOSSARY: GlossEntry[] = [
+export const GLOSSARY = [
   { term: 'zero trust', def: 'Trust nothing by default — verify identity per action, every time. There is no trusted "inside".' },
   { term: 'NetBird', def: 'The mesh VPN (built on WireGuard) that admits a device to the network. Admission is not trust.' },
   { term: 'WireGuard', def: 'The fast, modern VPN protocol NetBird uses to build the encrypted peer-to-peer mesh.' },
@@ -57,20 +56,9 @@ export const GLOSSARY: GlossEntry[] = [
 ]
 
 // normalized lookup
-const byKey = new Map<string, GlossEntry>()
+const byKey = new Map()
 for (const e of GLOSSARY) byKey.set(e.term.toLowerCase(), e)
-export function lookup(term: string): GlossEntry | undefined { return byKey.get(term.toLowerCase()) }
+export function lookup(term) { return byKey.get(term.toLowerCase()) }
 
 // terms ordered longest-first so multi-word / hyphenated match before substrings
 export const TERMS_BY_LEN = [...GLOSSARY.map((e) => e.term)].sort((a, b) => b.length - a.length)
-
-// shared popup state (singleton)
-export const glossState = reactive<{ open: boolean; entry: GlossEntry | null; x: number; y: number }>({
-  open: false, entry: null, x: 0, y: 0,
-})
-export function openGloss(term: string, x: number, y: number) {
-  const e = lookup(term)
-  if (!e) return
-  glossState.entry = e; glossState.x = x; glossState.y = y; glossState.open = true
-}
-export function closeGloss() { glossState.open = false; glossState.entry = null }

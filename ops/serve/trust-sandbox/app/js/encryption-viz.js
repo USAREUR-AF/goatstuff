@@ -1,36 +1,36 @@
-<script setup lang="ts">
+// SPDX-License-Identifier: Apache-2.0
 // Encryption, two ways. Every interaction on the fabric is encrypted end-to-end
 // TWICE — once by the WireGuard peer-to-peer tunnel (network layer) and again by
 // the mTLS tunnel inside Zenoh (application layer; other apps would use their own
 // TLS, usually mutual too). Two independent layers, different origins and
 // algorithms, each swappable — so it's defence in depth, not one point of failure.
-//   • mode="nested"   — one tunnel wrapped inside the other (the shape)
-//   • mode="sequence" — the handshakes + encrypted exchange over time (the order)
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+//   • 'nested'   — one tunnel wrapped inside the other (the shape)
+//   • 'sequence' — the handshakes + encrypted exchange over time (the order)
+import { h, setText } from './common.js'
 
-const props = defineProps<{ mode?: 'nested' | 'sequence' }>()
-const mode = props.mode ?? 'nested'
-const canvas = ref<HTMLCanvasElement | null>(null)
-const playing = ref(true)
-let ctx: CanvasRenderingContext2D | null = null
+// mountEncryptionViz(root, 'nested' | 'sequence') builds the canvas + controls inside root.
+export function mountEncryptionViz(root, modeArg) {
+const mode = modeArg ?? 'nested'
+let playing = true
+let ctx = null
 let raf = 0, W = 900, H = 360, t0 = 0, pausedAt = 0, pausedAcc = 0
-const caption = ref(mode === 'nested'
+const caption = (mode === 'nested'
   ? 'Two independent encrypted tunnels, one inside the other — different algorithms, either alone keeps the bytes secret.'
   : 'Two handshakes, then encrypted traffic: WireGuard brings up the outer tunnel, mTLS the inner one.')
 
-function color(n: string): string { const c = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return c || '#888' }
-function lerp(a: number, b: number, u: number) { return a + (b - a) * Math.max(0, Math.min(1, u)) }
-function ease(u: number) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2 }
-function resize() { const c = canvas.value!; W = c.clientWidth; H = c.clientHeight; const d = window.devicePixelRatio || 1; c.width = W * d; c.height = H * d; ctx = c.getContext('2d'); ctx?.scale(d, d) }
-function clock() { return (playing.value ? performance.now() - t0 : pausedAt - t0) - pausedAcc }
+function color(n) { const c = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return c || '#888' }
+function lerp(a, b, u) { return a + (b - a) * Math.max(0, Math.min(1, u)) }
+function ease(u) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2 }
+function resize() { const c = canvas; W = c.clientWidth; H = c.clientHeight; const d = window.devicePixelRatio || 1; c.width = W * d; c.height = H * d; ctx = c.getContext('2d'); ctx?.scale(d, d) }
+function clock() { return (playing ? performance.now() - t0 : pausedAt - t0) - pausedAcc }
 
-function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath() }
-function padlock(c: CanvasRenderingContext2D, x: number, y: number, sz: number, col: string) {
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath() }
+function padlock(c, x, y, sz, col) {
   c.save(); c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 1.5
   c.beginPath(); c.arc(x, y - sz * 0.55, sz * 0.55, Math.PI, 0); c.stroke()
   rr(c, x - sz * 0.72, y - sz * 0.12, sz * 1.44, sz * 1.2, 1.6); c.fill(); c.restore()
 }
-function peer(c: CanvasRenderingContext2D, x: number, y: number, label: string, col: string, faint: string) {
+function peer(c, x, y, label, col, faint) {
   c.fillStyle = col; c.shadowColor = col; c.shadowBlur = 8; c.beginPath(); c.arc(x, y, 8, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0
   c.fillStyle = faint; c.font = '10px ui-monospace, monospace'; c.textAlign = 'center'; c.fillText(label, x, y + 22)
 }
@@ -45,7 +45,7 @@ function draw() {
 }
 
 // ── nested tunnels ───────────────────────────────────────────────────────────
-function drawNested(c: CanvasRenderingContext2D, now: number) {
+function drawNested(c, now) {
   const faint = color('--ink-faint'), dim = color('--ink-dim'), line = color('--line')
   const wg = color('--accent'), tls = color('--green'), ink = color('--ink')
   const cy = H * 0.46, Ax = 64, Bx = W - 64
@@ -54,7 +54,7 @@ function drawNested(c: CanvasRenderingContext2D, now: number) {
 
   // outer tunnel (WireGuard) + inner tunnel (mTLS), concentric capsules
   const dash = -now / 24
-  for (const [hh, col, lw] of [[OH, wg, 2.4], [IH, tls, 2]] as [number, string, number][]) {
+  for (const [hh, col, lw] of [[OH, wg, 2.4], [IH, tls, 2]]) {
     c.fillStyle = col; c.globalAlpha = 0.06; rr(c, Ax, cy - hh, span, hh * 2, hh); c.fill(); c.globalAlpha = 1
     c.strokeStyle = col; c.lineWidth = lw; c.globalAlpha = 0.85; c.setLineDash([6, 6]); c.lineDashOffset = dash
     rr(c, Ax, cy - hh, span, hh * 2, hh); c.stroke(); c.setLineDash([]); c.globalAlpha = 1
@@ -88,8 +88,7 @@ function drawNested(c: CanvasRenderingContext2D, now: number) {
 }
 
 // ── sequence over time ───────────────────────────────────────────────────────
-interface Step { t: number; dir: 1 | 2; label: string; sub: string; col: () => string; lock: boolean; dub?: boolean }
-function drawSequence(c: CanvasRenderingContext2D, now: number) {
+function drawSequence(c, now) {
   const faint = color('--ink-faint'), dim = color('--ink-dim'), line = color('--line')
   const wg = color('--accent'), tls = color('--green')
   const Ax = 90, Bx = W - 90, topY = 56, botY = H - 30
@@ -101,14 +100,14 @@ function drawSequence(c: CanvasRenderingContext2D, now: number) {
   c.fillStyle = faint; c.font = '700 11px ui-monospace, monospace'; c.textAlign = 'center'
   c.fillText('Peer A', Ax, topY - 16); c.fillText('Peer B', Bx, topY - 16)
 
-  const steps: Step[] = [
+  const steps = [
     { t: 0.10, dir: 1, label: 'WireGuard handshake (Noise)', sub: 'outer tunnel up — encrypted on the wire', col: () => wg, lock: true },
     { t: 0.34, dir: 2, label: 'mTLS handshake — both present certs', sub: 'inner tunnel up — encrypted + mutually authenticated', col: () => tls, lock: true },
     { t: 0.58, dir: 1, label: 'encrypted request', sub: 'wrapped twice: mTLS inside WireGuard', col: () => tls, lock: true, dub: true },
     { t: 0.80, dir: 2, label: 'encrypted reply', sub: 'ephemeral keys — rotate, then tear down', col: () => wg, lock: true, dub: true },
   ]
   const ph = (now % CYCLE) / CYCLE
-  const rowY = (i: number) => lerp(topY + 34, botY - 26, i / (steps.length - 1))
+  const rowY = (i) => lerp(topY + 34, botY - 26, i / (steps.length - 1))
 
   steps.forEach((st, i) => {
     const appear = ease(Math.min(1, Math.max(0, (ph - st.t) / 0.12)))
@@ -135,24 +134,15 @@ function drawSequence(c: CanvasRenderingContext2D, now: number) {
   c.fillText('two layers, two key sets, two algorithms — independent and swappable', W / 2, H - 10)
 }
 
-function toggle() { if (playing.value) { pausedAt = performance.now(); playing.value = false } else { pausedAcc += performance.now() - pausedAt; playing.value = true } }
-function restart() { t0 = performance.now(); pausedAcc = 0; playing.value = true }
-onMounted(() => { resize(); window.addEventListener('resize', resize); t0 = performance.now(); raf = requestAnimationFrame(draw) })
-onBeforeUnmount(() => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize) })
-</script>
+function toggle() { if (playing) { pausedAt = performance.now(); playing = false } else { pausedAcc += performance.now() - pausedAt; playing = true } paint() }
+function restart() { t0 = performance.now(); pausedAcc = 0; playing = true; paint() }
 
-<template>
-  <div>
-    <canvas ref="canvas" class="viz" style="height:360px"></canvas>
-    <div class="viz-controls">
-      <button class="sm" @click="toggle">{{ playing ? '❙❙ pause' : '▶ play' }}</button>
-      <button class="sm ghost" @click="restart">↺</button>
-      <span class="viz-cap">{{ caption }}</span>
-    </div>
-  </div>
-</template>
-
-<style scoped>
-.viz-controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
-.viz-cap { color: var(--ink-dim); font-size: 13px; flex: 1; min-width: 240px; }
-</style>
+const canvas = h('canvas', { class: 'viz', style: { height: '360px' } })
+const playBtn = h('button', { class: 'sm', onclick: toggle })
+root.classList.add('enc-viz')
+root.append(canvas, h('div', { class: 'viz-controls' }, playBtn,
+  h('button', { class: 'sm ghost', onclick: restart }, '↺'), h('span', { class: 'viz-cap' }, caption)))
+function paint() { setText(playBtn, playing ? '❙❙ pause' : '▶ play') }
+paint()
+resize(); window.addEventListener('resize', resize); t0 = performance.now(); raf = requestAnimationFrame(draw)
+}
