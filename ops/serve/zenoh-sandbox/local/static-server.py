@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Tiny dependency-free static server for the offline Zenoh sandbox demo.
 
-Why not `python3 -m http.server`: it serves .wasm with the wrong MIME type, and
-the zenoh-ts client's WebAssembly.instantiateStreaming refuses that. This adds
-the application/wasm type and an SPA index fallback. stdlib only — works on any
-machine with python3, no internet, no Docker.
+Serves the app directory as it is in the tree. Compared with
+`python3 -m http.server` it binds to localhost only, sends the JavaScript
+module MIME type whatever the host's MIME table says (a browser refuses a
+module served as anything else), tells the browser not to cache, and falls
+back to index.html for an unknown path. stdlib only — works on any machine
+with python3, no internet, no Docker.
 
 Usage: python3 static-server.py <port> <dir>
 """
@@ -17,7 +19,6 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 class Handler(SimpleHTTPRequestHandler):
     extensions_map = {
         **SimpleHTTPRequestHandler.extensions_map,
-        ".wasm": "application/wasm",
         ".js": "text/javascript",
         ".mjs": "text/javascript",
         ".css": "text/css",
@@ -29,8 +30,8 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def send_head(self):
-        # SPA fallback: unknown non-asset path → index.html (the app has no
-        # server routes, but this keeps deep links / reloads working).
+        # Unknown non-asset path → index.html, the same fallback nginx.conf
+        # gives the deployed image.
         path = self.translate_path(self.path)
         if not os.path.exists(path) and "." not in os.path.basename(path):
             self.path = "/index.html"

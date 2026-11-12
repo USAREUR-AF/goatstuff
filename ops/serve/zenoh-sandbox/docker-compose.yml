@@ -1,7 +1,8 @@
 # Local-dev convenience for building + eyeballing the zenoh-sandbox web app.
 # The on-host deploy uses the Ansible role (ops/ansible/roles/zenoh-sandbox/),
 # which renders an image-based compose from templates and wires the isolated
-# router + remote_api plugin. This file just builds the web app.
+# router + remote_api plugin. This file just builds the web image (nginx plus
+# the static files in app/).
 #
 #   docker compose -f ops/serve/zenoh-sandbox/docker-compose.yml up --build
 #   open http://localhost:8099
