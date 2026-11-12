@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /* ---------------------------------------------------------------------------
    community-viz — the animated centerpiece of the "community of opportunity"
    page. A hand-built Canvas 2D scene (no libraries, no icon assets); the whole
@@ -20,14 +21,11 @@
      returns as compensation, and the whole community brightens.
 --------------------------------------------------------------------------- */
 
-type ColorKey = 'amber' | 'accent' | 'green' | 'ask'
-
 const TAU = Math.PI * 2
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
-const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y)
+const lerp = (a, b, t) => a + (b - a) * t
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 
-interface Pt { x: number; y: number }
 
 /* ===== TODAY: the transit diagram ========================================= */
 // Map-space is fixed (designed once) and fit into the canvas with "contain".
@@ -36,17 +34,11 @@ const MAPH = 580
 const MPAD = 92
 const COLW = (MAPW - 2 * MPAD) / 10 // 11 columns, 0..10
 const ROWH = (MAPH - 2 * MPAD) / 5 //  6 rows,   0..5
-const mp = (col: number, row: number): Pt => ({ x: MPAD + col * COLW, y: MPAD + row * ROWH })
+const mp = (col, row) => ({ x: MPAD + col * COLW, y: MPAD + row * ROWH })
 
 // Beck-style line colors — vivid, distinct, readable on both cream and night
 // backgrounds (echoing Central / Piccadilly / District / Metropolitan / etc.).
-interface LineDef {
-  key: string
-  name: string
-  color: string
-  stops: Array<[number, number, string, ('term' | 'inter')?]>
-}
-const LINES: LineDef[] = [
+const LINES = [
   {
     key: 'collection', name: 'COLLECTION', color: '#e1251b',
     stops: [[0, 1, 'Detect', 'term'], [2, 1, 'Collect'], [4, 1, 'Ingest', 'inter'], [6, 1, 'Catalog'], [8, 1, 'Store', 'inter'], [10, 1, 'Archive', 'term']],
@@ -71,8 +63,7 @@ const LINES: LineDef[] = [
 
 // Out-of-station interchanges — the painful manual hand-offs between systems.
 // You exit one line and WALK to another: re-key, swivel-chair, export, carry.
-interface WalkDef { a: Pt; b: Pt; label: string; color: string }
-const WALKS_RAW: Array<[number, number, number, number, string, string]> = [
+const WALKS_RAW = [
   [0, 3, 0, 5, 'PHONE CALL', '#1c5bc4'],
   [2, 1, 2, 3, 'RE-KEY', '#e1251b'],
   [2, 3, 2, 5, 'SNEAKERNET', '#1c5bc4'],
@@ -81,13 +72,9 @@ const WALKS_RAW: Array<[number, number, number, number, string, string]> = [
   [10, 1, 10, 3, 'PDF HANDOFF', '#e1251b'],
 ]
 
-interface Station { p: Pt; label: string; kind: 'stop' | 'term' | 'inter'; row: number; labelDir: 1 | -1 }
-interface Train { line: number; i: number; u: number; speed: number; dwell: number }
-interface Passenger { w: number; s: number; speed: number; dropAt: number }
 
 /* ===== FABRIC: the shared ring =========================================== */
-interface Product { label: string; color: ColorKey }
-const PRODUCTS: Product[] = [
+const PRODUCTS = [
   { label: 'imagery', color: 'amber' }, { label: 'RF sensing', color: 'accent' },
   { label: 'acoustic', color: 'green' }, { label: 'EO/IR tracking', color: 'ask' },
   { label: 'pattern AI', color: 'amber' }, { label: 'track fusion', color: 'accent' },
@@ -95,41 +82,40 @@ const PRODUCTS: Product[] = [
   { label: 'weather', color: 'amber' }, { label: 'maritime', color: 'accent' },
   { label: 'cyber sensing', color: 'green' }, { label: 'effects planning', color: 'ask' },
 ]
-interface Flow { a: number; b: number; s: number; speed: number; color: ColorKey; back: boolean }
 
 export class CommunityViz {
-  private cv: HTMLCanvasElement
-  private ctx: CanvasRenderingContext2D
-  private ro: ResizeObserver
-  private raf = 0
-  private last = 0
-  private dpr = 1
-  private W = 900
-  private H = 520
+  cv
+  ctx
+  ro
+  raf = 0
+  last = 0
+  dpr = 1
+  W = 900
+  H = 520
 
-  private t = 0
-  private target = 0
-  private targetUntouched = true
-  private started = 0
-  private pal: Record<string, string> = {}
-  private isLight = false
+  t = 0
+  target = 0
+  targetUntouched = true
+  started = 0
+  pal = {}
+  isLight = false
 
   // subway model
-  private stations: Station[] = []
-  private lineMpts: Pt[][] = []
-  private walks: WalkDef[] = []
-  private trains: Train[] = []
-  private passengers: Passenger[] = []
-  private paxTimer = 0
+  stations = []
+  lineMpts = []
+  walks = []
+  trains = []
+  passengers = []
+  paxTimer = 0
 
   // fabric flows
-  private flows: Flow[] = []
-  private spawnAcc = 0
-  private communityPulse = 0
+  flows = []
+  spawnAcc = 0
+  communityPulse = 0
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas) {
     this.cv = canvas
-    this.ctx = canvas.getContext('2d')!
+    this.ctx = canvas.getContext('2d')
     this.buildTransit()
     this.refreshTheme()
     this.resize()
@@ -138,10 +124,10 @@ export class CommunityViz {
   }
 
   // ----- build the static transit model (map-space) -----
-  private buildTransit() {
-    const byKey = new Map<string, Station>()
+  buildTransit() {
+    const byKey = new Map()
     for (const ln of LINES) {
-      const pts: Pt[] = []
+      const pts = []
       for (const [c, r, label, kind] of ln.stops) {
         const k = `${c},${r}`
         let st = byKey.get(k)
@@ -165,7 +151,7 @@ export class CommunityViz {
 
   refreshTheme() {
     const cs = getComputedStyle(document.documentElement)
-    const v = (n: string) => cs.getPropertyValue(n).trim()
+    const v = (n) => cs.getPropertyValue(n).trim()
     this.isLight = (document.documentElement.getAttribute('data-theme') || 'dark') === 'light'
     this.pal = {
       bg: v('--bg') || '#0b0f14', panel: v('--panel') || '#11171f',
@@ -181,22 +167,22 @@ export class CommunityViz {
     }
   }
 
-  private col(k: ColorKey) { return this.pal[k] || this.pal.accent }
-  private accentRGBA() { return hexToRgb(this.col('accent')) }
+  col(k) { return this.pal[k] || this.pal.accent }
+  accentRGBA() { return hexToRgb(this.col('accent')) }
 
   start() {
     this.started = performance.now()
     this.last = this.started
     this.t = 0; this.target = 0
-    const loop = (now: number) => { this.frame(now); this.raf = requestAnimationFrame(loop) }
+    const loop = (now) => { this.frame(now); this.raf = requestAnimationFrame(loop) }
     this.raf = requestAnimationFrame(loop)
   }
   stop() { cancelAnimationFrame(this.raf); this.ro.disconnect() }
-  setMode(m: 'today' | 'fabric') { this.target = m === 'fabric' ? 1 : 0; this.targetUntouched = false }
+  setMode(m) { this.target = m === 'fabric' ? 1 : 0; this.targetUntouched = false }
   toggle() { this.target = this.target > 0.5 ? 0 : 1; this.targetUntouched = false }
-  get mode(): 'today' | 'fabric' { return this.target > 0.5 ? 'fabric' : 'today' }
+  get mode() { return this.target > 0.5 ? 'fabric' : 'today' }
 
-  private resize() {
+  resize() {
     const w = this.cv.parentElement?.clientWidth || 900
     const h = Math.max(440, Math.min(620, Math.round(w * 0.58)))
     this.dpr = Math.min(2, window.devicePixelRatio || 1)
@@ -208,12 +194,12 @@ export class CommunityViz {
   }
 
   // fit map-space into the canvas ("contain")
-  private fit() {
+  fit() {
     const s = Math.min(this.W / MAPW, this.H / MAPH) * 0.985
     return { s, ox: (this.W - MAPW * s) / 2, oy: (this.H - MAPH * s) / 2 }
   }
 
-  private frame(now: number) {
+  frame(now) {
     const dt = Math.min(0.05, (now - this.last) / 1000)
     this.last = now
     // auto-reveal: dwell on the clunky legacy network, then arrive at the fabric
@@ -233,7 +219,7 @@ export class CommunityViz {
   }
 
   /* ===== TODAY ===== */
-  private updateTransit(dt: number) {
+  updateTransit(dt) {
     for (const t of this.trains) {
       if (t.dwell > 0) { t.dwell -= dt; continue }
       const pts = this.lineMpts[t.line]
@@ -260,11 +246,11 @@ export class CommunityViz {
     }
   }
 
-  private drawTransit(alpha: number) {
+  drawTransit(alpha) {
     if (alpha <= 0.01) return
     const ctx = this.ctx
     const { s, ox, oy } = this.fit()
-    const TX = (m: Pt): Pt => ({ x: ox + m.x * s, y: oy + m.y * s })
+    const TX = (m) => ({ x: ox + m.x * s, y: oy + m.y * s })
     ctx.save()
     ctx.globalAlpha = alpha
 
@@ -375,7 +361,7 @@ export class CommunityViz {
     ctx.restore()
   }
 
-  private drawTransitHeader(origin: Pt, s: number) {
+  drawTransitHeader(origin, s) {
     const ctx = this.ctx
     const x = origin.x - 14 * s, y = origin.y - 30 * s
     // roundel
@@ -391,7 +377,7 @@ export class CommunityViz {
     ctx.fillText('every system its own line · change here to carry data across', x + 22 * s, y + 8 * s)
   }
 
-  private glowDot(c: Pt, color: string, r: number, alpha: number) {
+  glowDot(c, color, r, alpha) {
     const ctx = this.ctx
     ctx.save()
     if (!this.isLight) ctx.globalCompositeOperation = 'lighter'
@@ -408,15 +394,15 @@ export class CommunityViz {
   }
 
   /* ===== FABRIC ===== */
-  private center(): Pt { return { x: this.W / 2, y: this.H / 2 + 6 } }
-  private ringR(): number { return Math.min(this.W, this.H) * 0.36 }
-  private angle(i: number): number { return (i / PRODUCTS.length) * TAU - Math.PI / 2 }
+  center() { return { x: this.W / 2, y: this.H / 2 + 6 } }
+  ringR() { return Math.min(this.W, this.H) * 0.36 }
+  angle(i) { return (i / PRODUCTS.length) * TAU - Math.PI / 2 }
   // bloom outward from the center as te 0->1
-  private fabPos(i: number, te: number): Pt {
+  fabPos(i, te) {
     const c = this.center(), r = this.ringR(), a = this.angle(i)
     return { x: lerp(c.x, c.x + Math.cos(a) * r, te), y: lerp(c.y, c.y + Math.sin(a) * r, te) }
   }
-  private drawFabricBackdrop(te: number) {
+  drawFabricBackdrop(te) {
     if (te <= 0.01) return
     const ctx = this.ctx, c = this.center()
     const g = ctx.createRadialGradient(c.x, c.y, 10, c.x, c.y, Math.max(this.W, this.H) * 0.7)
@@ -428,7 +414,7 @@ export class CommunityViz {
     ctx.fillRect(0, 0, this.W, this.H)
   }
 
-  private advanceFlows(dt: number) {
+  advanceFlows(dt) {
     this.spawnAcc += dt * (3 + 18 * Math.min(1, this.t))
     while (this.spawnAcc >= 1) { this.spawnAcc -= 1; this.spawnFlow() }
     for (let k = this.flows.length - 1; k >= 0; k--) {
@@ -436,7 +422,7 @@ export class CommunityViz {
       if (this.flows[k].s >= 1) this.flows.splice(k, 1)
     }
   }
-  private spawnFlow() {
+  spawnFlow() {
     const n = PRODUCTS.length
     const a = (Math.random() * n) | 0
     let b = (Math.random() * n) | 0
@@ -445,13 +431,13 @@ export class CommunityViz {
     this.flows.push({ a: back ? b : a, b: back ? a : b, s: 0, speed: 0.35 + Math.random() * 0.4, color: PRODUCTS[a].color, back })
     if (this.flows.length > 110) this.flows.splice(0, this.flows.length - 110)
   }
-  private chordAt(a: Pt, b: Pt, c: Pt, s: number): Pt {
+  chordAt(a, b, c, s) {
     const cx = lerp((a.x + b.x) / 2, c.x, 0.55), cy = lerp((a.y + b.y) / 2, c.y, 0.55)
     const u = 1 - s
     return { x: u * u * a.x + 2 * u * s * cx + s * s * b.x, y: u * u * a.y + 2 * u * s * cy + s * s * b.y }
   }
 
-  private drawFabric(te: number, now: number) {
+  drawFabric(te, now) {
     const ctx = this.ctx, c = this.center(), r = this.ringR()
     const breathe = 0.5 + 0.5 * Math.sin(now / 1300)
 
@@ -503,7 +489,7 @@ export class CommunityViz {
     }
   }
 
-  private drawNode(p: Pt, prod: Product, te: number, now: number, i: number) {
+  drawNode(p, prod, te, now, i) {
     const ctx = this.ctx, col = this.col(prod.color)
     const pulse = 0.5 + 0.5 * Math.sin(now / 600 + i * 0.9)
     ctx.save(); ctx.globalCompositeOperation = 'lighter'
@@ -524,7 +510,7 @@ export class CommunityViz {
 }
 
 /* ----- helpers ----- */
-function strokeRoute(ctx: CanvasRenderingContext2D, pts: Pt[], r: number) {
+function strokeRoute(ctx, pts, r) {
   if (pts.length < 2) return
   ctx.beginPath()
   ctx.moveTo(pts[0].x, pts[0].y)
@@ -532,19 +518,19 @@ function strokeRoute(ctx: CanvasRenderingContext2D, pts: Pt[], r: number) {
   ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y)
   ctx.stroke()
 }
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath(); ctx.moveTo(x + r, y)
   ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r)
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
 }
-function hexToRgb(hex: string): string {
+function hexToRgb(hex) {
   const m = hex.replace('#', '')
   const full = m.length === 3 ? m.split('').map((c) => c + c).join('') : m
   const n = parseInt(full, 16)
   if (isNaN(n)) return '56,225,196'
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`
 }
-function withAlpha(hex: string, a: number): string {
+function withAlpha(hex, a) {
   if (!hex || hex[0] !== '#') return hex
   return `rgba(${hexToRgb(hex)},${Math.max(0, Math.min(1, a))})`
 }

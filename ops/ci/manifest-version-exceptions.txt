@@ -8,9 +8,3 @@
 # pin it.
 #
 # format: <repo-relative package.json path> | <dependency name>
-
-ops/serve/zenoh-sandbox/app/package.json | @vitejs/plugin-vue
-ops/serve/zenoh-sandbox/app/package.json | vite
-ops/serve/zenoh-sandbox/app/package.json | vite-plugin-top-level-await
-ops/serve/zenoh-sandbox/app/package.json | vite-plugin-wasm
-ops/serve/zenoh-sandbox/app/package.json | vue

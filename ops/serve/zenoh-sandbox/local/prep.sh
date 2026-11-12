@@ -1,23 +1,16 @@
 #!/usr/bin/env bash
-# prep.sh — run ONCE while you still have internet. Produces a fully
-# self-contained offline kit for the Zenoh sandbox:
-#   1. builds the web app  -> ../app/dist
-#   2. fetches the matching zenoh-bridge-remote-api binary -> ./bin/
+# prep.sh — run ONCE while you still have internet. Fetches the one thing the
+# offline kit needs that is not in the tree: the zenoh-bridge-remote-api
+# binary for this machine -> ./bin/. The web app needs no preparation; it is
+# served from ../app as committed.
 # After this, serve.sh runs the whole sandbox with NO internet and NO Docker.
 #
 # Design: docs/design/zenoh-sandbox-ux.md ("Offline / field demo").
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP="$(cd "$HERE/.." && pwd)/app"
 ZTS_VERSION="1.9.0"   # tracks the fleet zenoh pin
 
-echo "==> [1/2] building the web app (needs Node + internet, once)"
-command -v npm >/dev/null || { echo "npm not found — install Node 20+ to build, or copy a prebuilt ../app/dist from elsewhere"; exit 1; }
-( cd "$APP" && npm install --no-audit --no-fund && npm run build )
-test -f "$APP/dist/index.html"
-echo "    app built -> $APP/dist"
-
-echo "==> [2/2] fetching the standalone remote-api router for this machine"
+echo "==> fetching the standalone remote-api router for this machine"
 os="$(uname -s)"; arch="$(uname -m)"
 case "$os/$arch" in
   Darwin/arm64)  asset="zenoh-ts-${ZTS_VERSION}-aarch64-apple-darwin-standalone.zip" ;;

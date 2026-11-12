@@ -1,9 +1,9 @@
 # zenoh-sandbox web app
 
 goat's warm, explanatory, tacticool browser playground for Zenoh pub/sub — our own
-Vite + Vue 3 app built on `@eclipse-zenoh/zenoh-ts`, served by nginx. Replaces the earlier
-"vendor the upstream Nuxt demo" approach: that demo is the reference for *what the API
-does*; this is the *experience*.
+app, hand-written HTML, CSS and ES modules built on `@eclipse-zenoh/zenoh-ts` and served
+by nginx. No framework, no build step, no package manager. The upstream zenoh-ts
+browser demo is the reference for *what the API does*; this is the *experience*.
 
 Design: [`docs/design/zenoh-sandbox-ux.md`](../../../docs/design/zenoh-sandbox-ux.md) (UX) +
 `docs/design/zenoh-sandbox.md` (substrate).
@@ -24,43 +24,65 @@ queryable, reply) — introduced where you first touch it, never whitewashed.
 The app connects to `/ws` on **whatever host serves it** (same-origin), so on nova-a it reaches
 the sandbox router through Traefik with no configuration.
 
-## Source layout (`app/`)
+## Source layout
 
 ```
-app/
-  index.html            entry
-  vite.config.ts        wasm + top-level-await plugins, esnext target
-  package.json          vue + @eclipse-zenoh/zenoh-ts@1.9.0
-  src/
-    main.ts             mount + restore theme
-    zenoh.ts            the reactive store: one Session + live pub/sub/queryable state
-    App.vue             layout, hero, theme toggle
-    style.css           the tacticool design system (dark + light tokens)
-    components/         ConnectBar, PublishPanel, SubscribePanel, AskAnswerPanel, ActivityLog, Explainer
+app/                    served as it is; this directory is the web root
+  index.html            the sandbox page (all static text and panel markup)
+  community.html        the "community of opportunity" page
+  css/style.css         the tacticool design system (dark + light tokens)
+  js/
+    main.js             entry of index.html: wires the panels, re-renders on change
+    zenoh.js            one Session + the live pub/sub/queryable/transform state
+    dom.js              theme toggle, element builder, keyed list renderer
+    connect-bar.js  topology-panel.js  publish-panel.js  subscribe-panel.js
+    transform-panel.js  query-panel.js  activity-log.js      one module per panel
+    community.js        entry of community.html
+    community-viz.js    the Canvas 2D scene on that page
+  vendor/zenoh-ts/      the one third-party library: zenoh-ts.js, README, licenses
+vendor-tool/            regenerates and checks app/vendor/zenoh-ts/zenoh-ts.js
+local/                  offline kit: router binary fetch + a stdlib static server
+router/                 router image for the local dev compose
 ```
 
-## Build
+Text that arrives from the network (topics, payloads, replies) is always set as
+text, never parsed as HTML. The Transform panel compiles the function the
+visitor types with `new Function` and runs it in their own tab.
+
+## The vendored Zenoh client
+
+`@eclipse-zenoh/zenoh-ts` 1.9.0 (the fleet zenoh version) cannot be loaded by a
+browser as published. `vendor-tool/regenerate.sh` turns it and its run-time
+dependencies into the single file `app/vendor/zenoh-ts/zenoh-ts.js`; versions,
+hashes, licenses and the procedure are in
+[`app/vendor/zenoh-ts/README.md`](app/vendor/zenoh-ts/README.md).
+`vendor-tool/regenerate.sh --check` fails if the committed file differs from
+what the pinned inputs produce; the `vendored-bundle` job of
+`.github/workflows/zenoh-sandbox-image.yml` runs it.
+
+## Image
 
 CI builds + pushes `ghcr.io/usareur-af/zenoh-sandbox` from `Dockerfile` here
 (`.github/workflows/zenoh-sandbox-image.yml`), per-arch (amd64 + arm64). The
-Dockerfile does a Node build of `app/` (Vite → static) → nginx. The published
-`@eclipse-zenoh/zenoh-ts@1.9.0` ships the prebuilt keyexpr WASM, so no Rust toolchain is
-needed. SHA-pin the image in the role per ADR 0859 after each build.
+Dockerfile copies `nginx.conf` and the static files under `app/` into an nginx
+image. SHA-pin the image in the role per ADR 0859 after each build.
 
 ## Local dev
 
-```bash
-# 1) a local remote-api router on :10000 (macOS arm64 shown):
-#    download zenoh-ts-1.9.0-<arch>-<os>-standalone.zip from eclipse-zenoh/zenoh-ts releases
-./zenoh-bridge-remote-api --ws-port 10000
+There is nothing to build: edit a file under `app/` and reload the page.
 
-# 2) the app:
-cd ops/serve/zenoh-sandbox/app
-npm install
-npm run dev            # http://localhost:5173 ; default server URL ws://localhost:10000
+```bash
+# once, with internet: fetch the standalone remote-api router for this machine
+ops/serve/zenoh-sandbox/local/prep.sh
+# router on :10000 + the app on http://localhost:8080
+ops/serve/zenoh-sandbox/local/serve.sh
 ```
 
-Or build the container: `docker compose -f ops/serve/zenoh-sandbox/docker-compose.yml up --build`.
+On `localhost` the app's default server URL is `ws://localhost:10000`.
+
+With Docker instead (web app + router, no platform binary):
+`docker compose -f ops/serve/zenoh-sandbox/docker-compose.dev.yml up --build`,
+then open `http://localhost:8099`.
 
 ## Why not the trial fabric
 
