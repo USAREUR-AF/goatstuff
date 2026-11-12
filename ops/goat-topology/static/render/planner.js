@@ -43,11 +43,14 @@ export function projectCarve(n, k, largestNow) {
 }
 
 export function renderPlanner(d, picks) {
+  // Every drawn router counts toward a group's size, reporting or not: a
+  // partner's router costs route entries whether or not it tells us about itself.
   const names = d.routers.map(r => r.node || r.zid);
+  const label = n => (d.routers.find(r => r.node === n) ? n : String(n).slice(0, 8));
   for (const p of [...picks]) if (!names.includes(p)) picks.delete(p);
 
   $("#picks").innerHTML = names.map(n =>
-    `<span class="pick${picks.has(n) ? " on" : ""}" data-n="${esc(n)}">${esc(n)}</span>`).join("");
+    `<span class="pick${picks.has(n) ? " on" : ""}" data-n="${esc(n)}">${esc(label(n))}</span>`).join("");
   for (const el of $("#picks").querySelectorAll(".pick")) {
     el.onclick = () => onPick(el.dataset.n);
   }

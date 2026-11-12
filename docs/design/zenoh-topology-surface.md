@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Designed; build in progress (track `zenoh-topology-surface`) |
+| Status | Built and deployed; not-reporting routers and publish fallback (§2.3, §2.4) built, measured on a local rig, not yet deployed |
 | ADR | [1160](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1160-zenoh-topology-surface.md) |
 | Component | `ops/goat-topology` — one binary, two modes |
 | Evidence it rests on | M-111 (the fleet on `Auto`), M-112 (`Custom([...])` in a rig) |
@@ -194,6 +194,70 @@ Three independent reasons, any one of which would be sufficient:
    shows its last snapshot with an honest age, and recovers on reconnect with no
    central coordination.
 
+### 2.3 Routers with no publisher are drawn from their neighbors' maps
+
+The page draws every router that any reporting router's link-state lists, not
+only the routers that publish. A router with no publisher of its own — a
+partner's router dialling in, or one of ours the publisher was never deployed
+to — is drawn smaller, with a dashed outline and its first eight ZID
+characters, and marked **not reporting**. Its links are real; its settings,
+load and route table are unknown and are shown as blank, never as zero.
+
+How it works. Every router floods its region's link-state graph to the other
+routers in that region, so one reporting router's snapshot already names every
+router in its `north` group and every link between them, including routers two
+hops away that it holds no session with. The publisher carries that graph as
+ZID pairs (`RegionV1.links`, §3). `serve` takes the union of all reporters'
+router regions (`north` and `south:<id>:router`; a `:peer` or `:client` region
+lists things that are not routers), subtracts the routers that report, and
+draws the rest. No router is asked anything: the join runs on the write path
+over snapshots already in memory, so §5 still holds.
+
+| Seen by the surface | Drawn as |
+|---|---|
+| A router that publishes | Full node: name, mode, client arc, findings |
+| A router in a reporter's `north` or `south:<id>:router` graph that does not publish | Not reporting: dashed, short ZID, its links, finding `T-012` (info) |
+| A router listed only by reporters that are themselves stale | Not reporting **and** stale |
+| A pod below a gateway that does not publish | **Nothing.** A `south` graph is held only by its gateway, so pods behind a silent gateway are invisible to every other router. Deploy the publisher on the gateway. |
+
+Edges come from the same pairs, so a link between two silent routers is drawn
+too. A pair seen as `north` from one end and `south:<id>:router` from the other
+— a pod and its gateway — is drawn as terminated, because the gateway's view is
+the true one. A publisher older than `links` sends none; the surface then draws
+that router's own router sessions only.
+
+Measured on a rig of eleven `zenohd` 1.9.0 routers on one host (fleet router
+image), six with publishers: the page drew nine routers (six reporting, three
+not reporting, one of them two hops from any publisher), nine routed links and
+two terminated links. The two pods behind the silent partner gateway were not
+drawn, as the table predicts.
+
+### 2.4 Publishing from a router that refuses clients
+
+A router whose `gateway.south` is a Custom list refuses every default client
+unless one of its subregions can match a client — and that includes its own
+publisher. The publisher therefore takes an ordered list of endpoints and
+publishes through the first that admits it; what it **reads** is always its own
+router's adminspace on loopback.
+
+The mechanism, from zenoh 1.9.0 `net/runtime/region.rs:46-61`: a Custom
+gateway puts any peer that matches no subregion in `north` and tells it so; a
+client may never sit north of a router, so the client drops the session with
+`Remote's custom configuration conflicts with auto preset`. The client's own
+error is only `Unable to connect`. Because the publisher already reads the
+declared `gateway` block, it says before connecting that its router will refuse
+it, and reports the fact as `client_admission: refused`, which raises the
+critical finding `T-013` — every application on that router is being refused,
+not just the meter.
+
+The router-side fix is one subregion appended to the list:
+`{ filters: [ { modes: ["client"] } ] }`. Until it lands, set
+`goat_topology_publish_fallback_endpoints` on that host to a north neighbor's
+endpoint. Measured on the same rig: with a ZID-only list, the gateway's
+publisher was refused by its own router and published through a core router;
+after appending the client subregion and restarting the router, it published
+through its own router on the first attempt and `T-013` cleared.
+
 ## 3. The envelope — `RouterTopologyV1`
 
 Published to `ops/fabric/topology/<site>/<node>`, protobuf, canonical schema at
@@ -207,9 +271,10 @@ interval. Shape:
 | `zenoh_version` | From the adminspace, so a version skew is visible. |
 | `gateway_mode` | `auto` \| `custom` \| `unreadable` — see §3.1. |
 | `custom_subregions[]` | For `custom`: per subregion, its index and its filters, each filter carrying which of `modes` / `interfaces` / `zids` / `region_names` it uses and whether it is `negated`. |
-| `regions[]` | Per region: name, link-state `V` and `E`, member ZIDs, and the session count by `whatami`. |
+| `regions[]` | Per region: name, link-state `V` and `E`, member ZIDs, the session count by `whatami`, and `links[]` — every edge of the region's link-state graph as a ZID pair, capped at 1024 with `links_truncated` set when hit. |
 | `route_successor_count` | Observed, for the Σ V(V−1) cross-check. |
 | `sessions[]` | Per session: peer ZID, `whatami`, assigned region, link endpoints. |
+| `client_admission` | `admitted` \| `refused` \| `unspecified`. From the declared `gateway` block: whether any Custom subregion can match a default client (§2.4). `unspecified` under `auto`, `unreadable`, or from an older publisher, and then no finding fires. |
 
 ### 3.1 Two sources, because neither one is enough
 
@@ -249,13 +314,15 @@ it is about — never "the fabric".
 | `T-001` region-filter-authz | A `custom_subregion` filter uses `zids` or `region_names` | **critical** | These are values the peer asserts about itself. They route; they do not authorize. Scope by certificate identity in the ACL instead. Never widen a region to grant access. |
 | `T-002` empty-filter-list | A subregion has `filters: []` | **critical** | An empty list matches nothing, so the subregion is inert and every peer silently falls north — the opposite of the intent. Either populate it or remove the entry, remembering the region id is the list index. |
 | `T-003` mode-drift | Routers in one goatnet disagree on `gateway_mode` | warning | Region config is per-router and a split is legitimate during a rollout. If it is not a rollout, converge them; state which routers differ. |
-| `T-004` asymmetric-view | A's north graph contains B, B's does not contain A | warning | One side has not settled, or a session dropped one-way. Re-check after one interval; if it persists, inspect that pair's transport. |
+| `T-004` asymmetric-view | A's north graph contains B, and none of B's router regions (`north`, `south:<id>:router`) contains A | warning | One side has not settled, or a session dropped one-way. Re-check after one interval; if it persists, inspect that pair's transport. |
 | `T-005` route-table-mismatch | `route_successor_count` ≠ Σ V(V−1) over that router's **edge-bearing** regions | warning | A persistent mismatch means the router is mid-settle, or the model is wrong for this topology — capture it, it is worth a finding. See §4.1 for why the edge condition is in the rule. |
 | `T-006` stale-publisher | No snapshot within 3 intervals | warning | The router's view is **unknown**, not healthy. Check the publisher, not the router. |
 | `T-007` version-skew | Routers report different `zenoh_version` | warning | The version-of-record is `=1.9.0` fleet-wide (`zenoh-version-pinning.md`); a skew opens the 1.9.0-vs-1.0.4 handshake-failure class. |
 | `T-008` isolated-router | `V=1` and no non-client sessions | info | A single-router goatnet is a legitimate shape, not a fault. Stated so an empty graph is not misread. |
 | `T-009` domain-growth | Σ V(V−1) across the goatnet, and what one more router costs | advisory | Not a problem below the thresholds M-112 bounds. Shown so the growth curve is visible before it matters, with the honesty that M-112 measured `V ≤ 3` and everything beyond is projection. |
 | `T-011` unreadable-config | The declared config could not be read | warning | The mode is reported `unreadable`, never assumed `auto` — see §3.1. Give the publisher read access, or fix the path it was pointed at. |
+| `T-012` not-reporting | A router appears in a reporter's router regions and publishes no snapshot | info | One finding for all of them, naming the reporter that sees most. Deploy the publisher if the router is ours; nothing to do for a partner's. A ZID identifies nothing — match a router to a host by its session's source address. |
+| `T-013` clients-refused | Mode is `custom` and no subregion can match a client (`client_admission: refused`) | **critical** | Every default client of this router is refused. Append `{ filters: [ { modes: ["client"] } ] }` to the gateway list and restart; meanwhile give the publisher a fallback endpoint (§2.4). |
 | `T-010` declared-vs-running | Mode is `custom` **and** the declared subregion indices are not the running ones | **critical** | The file on disk is not what the router is doing — almost always a config change without a restart. Merged is not deployed. Restart the router, or find out who edited the file out of band. Only decidable under `custom`; see §4.2. |
 
 ### 4.1 The successor model needed a correction that only live data could give
@@ -346,6 +413,9 @@ because they are load-bearing here:
   omitted and never green. An omitted router reads as "no problem".
 - A router whose `gateway` config could not be read is **`unreadable`**, not
   `auto`.
+- A router known only from another router's map is drawn, marked **not
+  reporting**, and its unknown numbers are blank, not zero. It is counted in the
+  router total, and the total is split into reporting and not reporting.
 - Every rendered number carries its snapshot age.
 - A finding states what was *observed*. Where a finding rests on a projection —
   only `T-009` does — it says so in the finding text, not in a footnote.
@@ -467,7 +537,7 @@ exists.
 | Piece | Where |
 |---|---|
 | Image | `ghcr.io/<org>/goat-topology`, built by `.github/workflows/goat-topology-image.yml` **from the repo-root context** (the design-system `include_str!` needs it), digest-pinned in `ops/pins/fleet-pins.yaml` |
-| Role | `roles/goat-topology`, one role with two modes; `goat_topology_modes` per group_vars |
+| Role | `roles/goat-topology`, one role with two modes; `goat_topology_modes` per group_vars. **Publish runs on every host whose router serves the adminspace REST plugin** — core, standby and pod routers alike; a router host without it shows as not reporting (§2.3). A peering edge (`goat-zenoh-edge`) loads no REST plugin, by design: its in-process session presents no certificate and matches no ACL subject. Edges are therefore always drawn not reporting, from the core router's map. `goat_topology_publish_fallback_endpoints` for a router that refuses clients (§2.4) |
 | Playbook | `ops/ansible/topology-deploy.yml -e target=<group>` |
 | Zenoh ACL | rule `infra-w-topology` + subject `infra-topology` in `roles/goat-zenoh/templates/config.json5.j2` |
 | Certificate | a `goat-topology` row in the site cert manifest, minted by `ops/scripts/mint-site-certs.sh` |

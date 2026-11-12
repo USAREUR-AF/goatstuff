@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     command:
       - publish
-      - --endpoint={{ goat_topology_publish_endpoint }}
+      - --endpoint={{ ([goat_topology_publish_endpoint] + (goat_topology_publish_fallback_endpoints | default([]))) | join(',') }}
       - --site={{ goat_topology_site }}
       - --node={{ goat_topology_node }}
       - --admin-addr={{ goat_topology_admin_addr }}
