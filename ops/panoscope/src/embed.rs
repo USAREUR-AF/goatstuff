@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// rust-embed bundle for the frontend SPA. Built into the Rust binary
-// at compile time via build.rs → `npm run build` → `frontend/dist/`.
+// rust-embed bundle for the frontend. `frontend/web/` holds the pages as
+// plain HTML, CSS and JavaScript modules (no build step); rust-embed
+// inlines that directory into the binary at compile time.
 //
-// The axum fallback handler serves the SPA: requests to `/` return
-// `index.html`; requests to `/assets/<file>` return the bundled
-// asset with the right Content-Type. All other paths fall through to
-// `index.html` so client-side routing (if v2 adds it) works.
+// The axum fallback handler serves it: requests to `/` return
+// `index.html`; requests to `/src/<file>` return the file with the
+// right Content-Type. All other paths fall through to `index.html` so
+// client-side routing (if v2 adds it) works.
 
 use axum::body::Body;
 use axum::http::{header, StatusCode, Uri};
@@ -16,10 +17,10 @@ use rust_embed::Embed;
 use crate::config::Lexicon;
 
 #[derive(Embed)]
-#[folder = "frontend/dist/"]
+#[folder = "frontend/web/"]
 struct Frontend;
 
-/// Serves the embedded SPA bundle, applying display-lexicon token
+/// Serves the embedded frontend, applying display-lexicon token
 /// substitution to HTML responses (`__LEX_*__` → resolved wording).
 /// Non-HTML assets pass through byte-identical. Mirror of the portal's
 /// serve-time HTML substitution (`docs/design/portal-lexicon.md`):
@@ -43,8 +44,7 @@ pub async fn serve_embedded(uri: Uri, lexicon: &Lexicon) -> Response {
         return file_response(candidate, file, lexicon);
     }
     // SPA fallback — unknown paths render index.html for client-side
-    // routing. Returns 404 only if even index.html is missing (which
-    // would mean the build placeholder is in use).
+    // routing. Returns 404 only if even index.html is missing.
     if let Some(index) = Frontend::get("index.html") {
         return file_response("index.html", index, lexicon);
     }
@@ -54,8 +54,8 @@ pub async fn serve_embedded(uri: Uri, lexicon: &Lexicon) -> Response {
 fn file_response(path: &str, file: rust_embed::EmbeddedFile, lexicon: &Lexicon) -> Response {
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     // Only HTML carries lexicon tokens. Apply substitution there; every
-    // other asset (JS bundle, fonts) passes through untouched. The JS
-    // bundle reads its runtime wording from /api/legend instead.
+    // other asset (JS modules, CSS) passes through untouched. The JS
+    // reads its runtime wording from /api/legend instead.
     let body = if mime.essence_str() == "text/html" {
         Body::from(substitute(&file.data, lexicon))
     } else {
@@ -110,7 +110,7 @@ mod tests {
         let f = Frontend::get("index.html");
         assert!(
             f.is_some(),
-            "frontend/dist/index.html should be embedded after `npm run build`"
+            "frontend/web/index.html should be embedded"
         );
     }
 
@@ -161,7 +161,7 @@ mod tests {
         assert_eq!(substitute(src, &Lexicon::default()), src.to_vec());
     }
 
-    // End-to-end against the actual embedded dist: an org lexicon must
+    // End-to-end against the actual embedded page: an org lexicon must
     // resolve every token in the served index.html — no `__LEX_` leaks,
     // "org" wording present, "Zenoh fabric" gone. Guards against a
     // future index.html edit that introduces an unmatched token.
@@ -179,15 +179,12 @@ mod tests {
             .await
             .unwrap();
         let html = String::from_utf8(bytes.to_vec()).unwrap();
-        // A real build is embedded (skip the assertion on the stub
-        // placeholder used when `npm run build` hasn't run).
-        if html.contains("PANOSCOPE") {
-            assert!(
-                !html.contains("__LEX_"),
-                "unresolved lexicon token in served index.html"
-            );
-            assert!(html.contains("panoscope — ZAGROS Fabric"));
-            assert!(!html.contains("Zenoh fabric"));
-        }
+        assert!(html.contains("PANOSCOPE"), "served index.html is not the panoscope page");
+        assert!(
+            !html.contains("__LEX_"),
+            "unresolved lexicon token in served index.html"
+        );
+        assert!(html.contains("panoscope — ZAGROS Fabric"));
+        assert!(!html.contains("Zenoh fabric"));
     }
 }

@@ -23,7 +23,7 @@ import type {
   ViewEdge,
   ViewParams,
   ViewResponse,
-} from "../../src/types";
+} from "../../web/src/types.js";
 
 export interface FxPeer {
   id: string;

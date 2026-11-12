@@ -34,6 +34,43 @@ jobs:
           cargo build --workspace
           cargo test --workspace
 
+  # The standalone Cargo workspaces under ops/ whose tests no other workflow
+  # runs. Workspaces with their own test job (panoscope, goat-topology,
+  # feeds-shim, trust-sandbox orchestrator, audit-subscriber, fabric-crawler,
+  # peering-health, surface-visit-audit) are not repeated here. A workspace
+  # with no tests still gets its test targets compiled.
+  rust-workspaces:
+    name: rust (${{ matrix.dir }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        dir:
+          - ops/flashlight
+          - ops/goat-trashgoat
+          - ops/zenoh-shims/rest-pub-bridge
+          - ops/zenoh-trial-peers/crypto-posture
+          - ops/zenoh-trial-peers/fabric-health
+          - ops/zenoh-trial-peers/loadgen
+          - ops/zenoh-trial-peers/mesh-health
+          - ops/zenoh-trial-peers/node-net-health
+          - ops/zenoh-trial-peers/ntp-health-pub
+          - ops/zenoh-trial-peers/presence-health
+          - ops/zenoh-trial-peers/synth-vendor
+          - ops/zenoh-trial-peers/time-health
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.dir }} -> target
+      - name: cargo test
+        run: cargo test --locked
+
   go:
     runs-on: ubuntu-24.04
     timeout-minutes: 40

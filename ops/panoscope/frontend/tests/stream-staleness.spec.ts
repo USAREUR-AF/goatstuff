@@ -11,8 +11,8 @@
 //   3. shortId abbreviates only hex ZIDs; `ops/fabric` stays whole.
 
 import { test, expect } from "@playwright/test";
-import { medianIntervalMs, streamIntervalMs } from "../src/freshness.js";
-import { shortId, looksLikeZid } from "../src/ids.js";
+import { medianIntervalMs, streamIntervalMs } from "../web/src/freshness.js";
+import { shortId, looksLikeZid } from "../web/src/ids.js";
 
 const S = 1_000;
 

@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* glossary.html — page styles. */
+.pg-glossary .gloss-list { display: flex; flex-direction: column; gap: 10px; }
+.pg-glossary .gloss-item { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: var(--seam) solid var(--line);
+  border-radius: 10px; padding: 13px 15px; transition: border-color .3s var(--ease), box-shadow .3s var(--ease); }
+.pg-glossary .gloss-item.hot { border-color: var(--accent); box-shadow: var(--glow); }
+.pg-glossary .gi-term { font-weight: 700; font-size: 14px; color: var(--accent); }
+.pg-glossary .gi-full { font-weight: 400; font-size: 12px; color: var(--ink-dim); }
+.pg-glossary .gi-def { margin-top: 4px; font-size: 13px; color: var(--ink-dim); line-height: 1.55; }

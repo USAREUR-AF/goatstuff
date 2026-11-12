@@ -1912,9 +1912,17 @@ mod tests {
         let l: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         // SharedState::default() ⇒ FamilyMapResolver
         assert_eq!(l["schema_resolver_status"], "family-map");
-        // FamilyMapResolver knows 6 families
-        // (lattice/ecn/cot/community/caracal/notional)
-        assert_eq!(l["schema_resolver_known_families"], 6);
+        // The legend reports what the resolver knows: the compiled-in floor
+        // (product namespaces only: cot, community, caracal, notional) plus
+        // whatever the deployment adds in PANOSCOPE_SCHEMA_FAMILIES.
+        let floor: std::collections::HashSet<String> = crate::schema::embedded_mappings()
+            .into_iter()
+            .map(|m| m.family)
+            .collect();
+        assert_eq!(floor.len(), 4);
+        let known = crate::schema::FamilyMapResolver::new().known_family_count();
+        assert!(known >= floor.len());
+        assert_eq!(l["schema_resolver_known_families"], known);
         // Slot-alias honesty arm (ADR 1039). A fresh SharedState has never
         // polled, so the legend must say `unreached` — NOT `ok` with zero
         // aliases, which would read as "this goatnet assigns no names" and

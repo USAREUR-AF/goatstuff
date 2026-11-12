@@ -15,7 +15,7 @@
 //   4. The EMA initializes on its first sample rather than decaying from 0.
 
 import { test, expect } from "@playwright/test";
-import { staleAgeFloorMs, isStale, foldFetchEma } from "../src/freshness.js";
+import { staleAgeFloorMs, isStale, foldFetchEma } from "../web/src/freshness.js";
 
 const LIVE_POLL = 1_500; // POLICY.live.snapshotPollMs
 
