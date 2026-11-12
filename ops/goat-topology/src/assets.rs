@@ -71,6 +71,11 @@ const FILES: &[(&str, &str, &str)] = &[
         JS,
     ),
     (
+        "/assets/render/detail.js",
+        include_str!("../static/render/detail.js"),
+        JS,
+    ),
+    (
         "/assets/render/feed.js",
         include_str!("../static/render/feed.js"),
         JS,

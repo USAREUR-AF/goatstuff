@@ -41,10 +41,11 @@ ordered by the question actually being asked, most frequent first:
 |---|---|---|
 | 1 | Is anything wrong? | The verdict line |
 | 2 | Where am I? | The routing graph |
-| 3 | What exactly is wrong, and what do I do? | Findings |
-| 4 | Did something change? | The change feed |
-| 5 | What is the detail? | The routers table |
-| 6 | What would a carve cost? | The planner, on the measured model |
+| 3 | What is known about this one router? | The router detail, opened by selecting a router |
+| 4 | What exactly is wrong, and what do I do? | Findings |
+| 5 | Did something change? | The change feed |
+| 6 | What is the detail of every router? | The routers table |
+| 7 | What would a carve cost? | The planner, on the measured model |
 
 **The graph leads, but the verdict leads it.** The graph is the orientation
 device — it answers "where am I" faster than any sentence can, and an operator
@@ -387,6 +388,40 @@ decoration:
 The graph layout is **deterministic, not force-simulated**. A goatnet has a
 handful of routers, and a layout that settles differently on each refresh makes
 an operator re-find the same node every time. Same input, same picture.
+
+### 0.3 Names, and one click to everything about a router
+
+A router is labeled so that two routers are told apart at a glance, and one
+click on it gathers what the page holds about it.
+
+**Labels.** Each router in the graph carries two lines, placed outside the
+ring: its node name, and `<site> · <role>`. The role is read from what the
+router reports: a router that holds other routers in a south group, or that
+declares a custom gateway block, is a `gateway`; every other router is a
+`member`. A router that is known only by its ZID gets a display name derived
+from the ZID, two words and the first six characters of the ZID, for example
+`quiet-heron (9f7f62)`. The derivation is a hash of the ZID and nothing else,
+so the name is the same on every load and for every viewer. It is display
+only: nothing matches on it, and the ZID is always shown beside it.
+
+**Router detail.** Selecting a router in the graph, or its row in the routers
+table, opens one panel below the graph. Selecting it again closes the panel.
+
+| Part | Content | Read from |
+|---|---|---|
+| Identity and state | site, node, ZID, Zenoh version, declared mode, time since the last report, connections held, route entries beside the predicted count, routing groups | the router's row in `routers` |
+| Connected to | every router it has a link with, whether the link is routed or terminated, and which end sits below the other; each entry selects that router | `edges` |
+| Findings that name this router | severity, id and headline | `findings`, by subject |
+| Changes it made | time and change | `changes`, by node |
+
+A neighbor that has sent no report is listed with the words `not reporting`,
+and selecting it shows its ZID and the routers that list a link to it.
+
+The panel is a second reading of the payload the page already holds. It makes
+no request, so a drill-down costs the fabric nothing
+([ADR 1123](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1123-client-demand-must-not-amplify.md)). Adding a router to
+the carve plan is a button in the panel; the planner's own selection chips work
+as before.
 
 ## 6b. How the component is put together
 

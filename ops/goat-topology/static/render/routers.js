@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // The detail table: declared configuration beside what is actually running.
-import { $, esc, ageSecs } from "../lib.js";
+import { $, esc, ageSecs, displayName, roleOf } from "../lib.js";
+
+let onPick = () => {};
+export function onRouterClick(fn) { onPick = fn; }
 
 function modeChip(x) {
   if (x.stale) return `<span class="chip chip--err">stale</span>`;
@@ -25,9 +28,9 @@ export function renderRouters(d, now = Date.now()) {
       .map(e => `<div class="sub" style="color:var(--status-err-fg)">${esc(e)}</div>`).join("");
     const age = ageSecs(x.received_ms, now);
 
-    return `<tr class="enter">
-      <td><div class="name">${esc(x.node || x.zid)}</div>
-          <div class="sub">${esc(x.site)}</div>${errs}</td>
+    return `<tr class="enter rowlink" data-node="${esc(x.node || x.zid)}">
+      <td><div class="name">${esc(displayName(x.node || x.zid))}</div>
+          <div class="sub">${esc(x.site)} · ${esc(roleOf(x))}</div>${errs}</td>
       <td>${modeChip(x)}</td>
       <td>${regions}</td>
       <td class="num"${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${x.route_successor_count}${
@@ -35,4 +38,7 @@ export function renderRouters(d, now = Date.now()) {
       <td class="num"${x.stale ? ' style="color:var(--status-err-fg)"' : ""}>${age}s</td>
     </tr>`;
   }).join("") + "</tbody>";
+  for (const tr of $("#routers").querySelectorAll("tr[data-node]")) {
+    tr.onclick = () => onPick(tr.dataset.node);
+  }
 }
