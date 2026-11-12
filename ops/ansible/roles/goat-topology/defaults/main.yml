@@ -72,6 +72,19 @@ goat_topology_zenoh_endpoint: "tls/{{ zenoh_stack | default('goat-zenoh') }}-rou
 goat_topology_publish_endpoint: "tls/{{ mesh_ip_a | default(ansible_facts['default_ipv4']['address']) }}:7447"
 goat_topology_zenoh_network: "{{ zenoh_stack | default('goat-zenoh') }}_default"
 
+# Further routers the publisher may publish THROUGH, tried in order after
+# goat_topology_publish_endpoint. Empty for an ordinary router host.
+#
+# Set it on a host whose router declares a Custom `gateway.south` with no
+# subregion that matches clients: zenoh 1.9.0 puts every unmatched client NORTH
+# of such a router and the client refuses the session, so this host's own
+# publisher cannot connect to its own router. Name a north neighbor here and
+# the snapshot still reaches the bus; what is READ is always this host's own
+# adminspace. The better fix is the router's: append
+# `{ filters: [ { modes: ["client"] } ] }` to its gateway list (finding T-013),
+# which also readmits every application it is refusing.
+goat_topology_publish_fallback_endpoints: []
+
 # Leaf cert + key. Minted from the site cert manifest via
 # ops/scripts/mint-site-certs.sh; the leaf MUST carry
 # CN=goat-topology-trial-peer, which is the subject the Zenoh ACL matches

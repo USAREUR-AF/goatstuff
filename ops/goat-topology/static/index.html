@@ -49,6 +49,7 @@
         <span><i class="k-north"></i>routed link — both ends share a routing group</span>
         <span><i class="k-south"></i>terminated link — one end sits below the other</span>
         <span><i class="k-stale"></i>gone quiet</span>
+        <span><i class="k-silent"></i>not reporting — listed in another router's map, sends no report of its own</span>
         <span style="color:var(--fg-faint)">amber arc = applications connected here · click a router to plan a carve</span>
       </div>
     </div>
@@ -68,6 +69,7 @@
         <dt>north / south</dt><dd>Two halves of a router's world. <em>North</em> is the group it belongs to as an equal. <em>South</em> is everything hanging below it, which it terminates rather than routes through.</dd>
         <dt>route entry</dt><dd>One line in a router's table saying "to reach X, send to Y". A group of N routers costs every member N×(N−1) of them.</dd>
         <dt>ZID</dt><dd>A name a zenoh process announces for itself. Useful for telling processes apart. <strong>Not a credential</strong> — nothing verifies it.</dd>
+        <dt>not reporting</dt><dd>A router another router's map lists, that sends no report of its own: a partner's router, or one of ours with no publisher on its host. Its links are real; its settings and load are unknown.</dd>
         <dt>stale</dt><dd>This router has not reported recently. Its numbers are the last ones we saw, not current ones.</dd>
       </dl>
     </details>

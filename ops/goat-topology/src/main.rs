@@ -63,9 +63,21 @@ struct InspectArgs {
 
 #[derive(Parser, Debug)]
 struct PublishArgs {
-    /// Zenoh router endpoint to PUBLISH through, e.g. `tls/goat-zenoh-router:7447`.
-    #[arg(long, env = "TOPOLOGY_ENDPOINT")]
-    endpoint: String,
+    /// Zenoh router endpoint(s) to PUBLISH through, e.g.
+    /// `tls/goat-zenoh-router:7447`. Comma-separated; tried IN ORDER, and the
+    /// first that admits this client is used. Name this host's own router
+    /// first and a neighbor router after it: a router whose `gateway.south` is
+    /// a Custom list with no subregion for clients refuses every default
+    /// client, this one included, and the neighbor is how its snapshot still
+    /// reaches the bus. What is READ is always `--admin-addr`, never the
+    /// router published through.
+    #[arg(
+        long,
+        env = "TOPOLOGY_ENDPOINT",
+        value_delimiter = ',',
+        required = true
+    )]
+    endpoint: Vec<String>,
     /// `<site>` segment of ops/fabric/topology/<site>/<node>.
     #[arg(long, env = "TOPOLOGY_SITE")]
     site: String,
@@ -176,6 +188,7 @@ async fn snapshot(a: &PublishArgs) -> RouterTopologyV1 {
             let d = gwconfig::read(p);
             snap.gateway_mode = d.mode as i32;
             snap.custom_subregions = d.subregions;
+            snap.client_admission = d.admission as i32;
             snap.gateway_read_error = d.error;
         }
         None => {
@@ -208,17 +221,73 @@ async fn snapshot(a: &PublishArgs) -> RouterTopologyV1 {
     snap
 }
 
+/// Say what a refusal means, so the log line is the diagnosis.
+fn interpret_open_error(e: &str) -> &'static str {
+    if e.contains("conflicts with auto preset") {
+        "this router's gateway.south is a Custom list with no subregion that matches clients, \
+         so it puts every default client north of itself and the client refuses (finding \
+         T-013); trying the next endpoint"
+    } else {
+        "trying the next endpoint"
+    }
+}
+
+/// Open a client session on the first endpoint that admits it.
+///
+/// One endpoint per attempt, not all of them in one `connect/endpoints` list:
+/// the order is the operator's statement of preference (own router first), and
+/// a per-endpoint attempt is what lets the log say WHICH router refused and why.
+async fn open_first(a: &PublishArgs) -> Result<(zenoh::Session, String)> {
+    let mut why = Vec::new();
+    for ep in a
+        .endpoint
+        .iter()
+        .map(|e| e.trim())
+        .filter(|e| !e.is_empty())
+    {
+        match open_session(Tls {
+            endpoint: ep,
+            cert: a.cert.as_ref(),
+            key: a.key.as_ref(),
+            root_ca: a.root_ca.as_ref(),
+        })
+        .await
+        {
+            Ok(s) => return Ok((s, ep.to_string())),
+            Err(e) => {
+                let e = format!("{e:#}");
+                tracing::warn!(endpoint = %ep, err = %e, "{}", interpret_open_error(&e));
+                why.push(format!("{ep}: {e}"));
+            }
+        }
+    }
+    anyhow::bail!("no endpoint admitted this publisher — {}", why.join("; "))
+}
+
 async fn run_publish(a: PublishArgs) -> Result<()> {
-    let session = open_session(Tls {
-        endpoint: &a.endpoint,
-        cert: a.cert.as_ref(),
-        key: a.key.as_ref(),
-        root_ca: a.root_ca.as_ref(),
-    })
-    .await?;
+    // The publisher reads its own router's declared config anyway, so it can
+    // say BEFORE connecting that the router will refuse it — zenoh's own error
+    // for this is a bare "Unable to connect".
+    if let Some(p) = a.config_path.as_deref() {
+        if gwconfig::read(p).admission == wire::ClientAdmission::Refused {
+            let n = a.endpoint.len();
+            tracing::warn!(
+                endpoints = n,
+                "this router's gateway.south has no subregion that matches clients, so it will \
+                 refuse this publisher as it refuses every default client (finding T-013). {}",
+                if n > 1 {
+                    "The endpoints after the first are tried in order."
+                } else {
+                    "Give --endpoint a neighbor router after this one, or add a client subregion \
+                     to the gateway block."
+                }
+            );
+        }
+    }
+    let (session, via) = open_first(&a).await?;
 
     let key = format!("ops/fabric/topology/{}/{}", a.site, a.node);
-    tracing::info!(key = %key, admin = %a.admin_addr, "publishing router topology");
+    tracing::info!(key = %key, admin = %a.admin_addr, via = %via, "publishing router topology");
 
     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(a.interval_secs));
     loop {
@@ -253,7 +322,7 @@ async fn main() -> Result<()> {
         Cmd::Publish(a) => run_publish(a).await,
         Cmd::Inspect(a) => {
             let snap = snapshot(&PublishArgs {
-                endpoint: String::new(),
+                endpoint: vec![],
                 site: "-".into(),
                 node: "-".into(),
                 admin_addr: if a.config_only {
@@ -272,6 +341,10 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Serve(a) => {
+            // The surface reads only what publishers put on the bus. It never
+            // queries a router, so a page view can never become fabric load
+            // (ADR 1123) — the routers it draws but cannot hear from are drawn
+            // from OTHER routers' link-state, already in their snapshots.
             let session = open_session(Tls {
                 endpoint: &a.endpoint,
                 cert: a.cert.as_ref(),

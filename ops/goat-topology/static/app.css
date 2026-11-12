@@ -142,6 +142,7 @@ table.table { width: 100%; min-width: 620px; }
   vertical-align: middle; }
 .k-north { background: var(--c-blue-hi); } .k-south { background: var(--c-amber-hi); }
 .k-stale { background: var(--status-err-fg); }
+.k-silent { background: none; border-top: 2px dashed var(--fg-faint); height: 0; }
 .edge { stroke-linecap: round; }
 .edge-flow { stroke-dasharray: 3 9; animation: flow 1.6s linear infinite; }
 @keyframes flow { to { stroke-dashoffset: -12 } }

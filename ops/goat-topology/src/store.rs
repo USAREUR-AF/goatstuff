@@ -322,6 +322,7 @@ mod tests {
                 link_state_e: 0,
                 member_zids: vec![zid.into()],
                 session_count: 0,
+                ..Default::default()
             }],
             ..Default::default()
         }
