@@ -109,8 +109,29 @@ jobs:
             echo "relevant=false" >> "$GITHUB_OUTPUT"
           fi
 
-  image:
+  test:
+    # The image build compiles panoscope but never ran its tests, so a test
+    # could go stale without anything noticing. The image waits on this job.
     needs: detect-relevant-changes
+    if: needs.detect-relevant-changes.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ops/panoscope
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ops/panoscope -> target
+      - name: cargo test
+        run: cargo test --locked
+
+  image:
+    needs: [detect-relevant-changes, test]
     if: needs.detect-relevant-changes.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/_image-build.yml
     permissions:
