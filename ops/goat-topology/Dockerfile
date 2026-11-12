@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     && strip target/release/goat-topology \
     && cp target/release/goat-topology /goat-topology
 
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cc66d222f0a7ec996b78a99fe76a969bc80b539a5016ad866c14d1949bc6d0ab
 COPY --from=build /goat-topology /usr/local/bin/goat-topology
 USER nonroot
 # No default subcommand on purpose: `publish` runs on router hosts and `serve`
