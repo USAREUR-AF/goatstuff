@@ -7,7 +7,7 @@
 #   - zenoh-sandbox-router : stock eclipse/zenoh + the remote_api WebSocket
 #     plugin (.so downloaded from the matching upstream zenoh-ts release).
 #     NO `connect:` endpoints — peers with NOTHING. NO storage — stateless.
-#   - zenoh-sandbox-web    : nginx serving the zenoh-ts browser demo SPA.
+#   - zenoh-sandbox-web    : nginx serving the sandbox web app (static files).
 #
 # This is NOT the trial fabric. See docs/design/zenoh-sandbox.md for the
 # distinction (no auth, no audit, no peering, disposable). Override in

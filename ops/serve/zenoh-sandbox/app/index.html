@@ -6,9 +6,297 @@
     <title>Zenoh Sandbox — feel how the fabric moves data</title>
     <meta name="description" content="A warm, hands-on playground for Zenoh pub/sub. Open two tabs and watch messages move." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338e1c4' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='2.4'/%3E%3Cpath d='M12 4v3M12 17v3M4 12h3M17 12h3'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <script type="module" src="/js/main.js"></script>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div class="wrap">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="2.4" /><path d="M12 4v3M12 17v3M4 12h3M17 12h3" />
+              <path d="M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M17.7 6.3l-2.1 2.1M8.4 15.6l-2.1 2.1" opacity=".6" />
+            </svg>
+          </div>
+          <div>
+            <h1>ZENOH&nbsp;SANDBOX</h1>
+            <p class="sub">A safe place to feel how the fabric moves data.</p>
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <a class="navlink" href="/community.html" title="What the shared fabric makes possible">✦ THE BIGGER PICTURE</a>
+        <button class="theme-toggle" aria-label="switch to light mode">◐ LIGHT</button>
+      </header>
+
+      <section class="hero">
+        <h2>Watch messages move across the <span class="accent">fabric</span>.</h2>
+        <p>
+          Zenoh moves data between things that don't know about each other. Someone
+          <b>publishes</b> to a topic; whoever <b>subscribes</b> to a matching topic hears it; and
+          a <b>queryable</b> can answer questions on demand. Try it below — then open this page in a
+          second tab and watch the two talk.
+        </p>
+      </section>
+
+      <div class="callout">
+        <span>🛟</span>
+        <span><b>This is a throwaway sandbox.</b> The router it talks to peers with nothing and stores
+          nothing — there's no login and nothing to break. Experiment freely.</span>
+      </div>
+
+      <main class="grid">
+        <!-- The fabric link -->
+        <div class="panel span-2" id="connect-panel">
+          <div class="panel-head">
+            <span class="dot accent"></span>
+            <h3>The fabric link</h3>
+            <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">
+              Your browser talks to a throwaway <b>Zenoh router</b> over a WebSocket. This sandbox
+              router peers with nothing and keeps nothing — it's safe to play. Same URL in another
+              tab = two peers on the same fabric.
+            </span></span>
+            <span class="hint">isolated · disposable · no login</span>
+          </div>
+
+          <div class="connbar">
+            <input class="url mono" id="conn-url" spellcheck="false" aria-label="server URL" />
+            <button class="primary" id="conn-connect">Connect</button>
+            <button class="ghost danger" id="conn-disconnect" hidden>Disconnect</button>
+            <span class="status idle" id="conn-status">
+              <span class="led"></span> <span id="conn-status-label">not connected</span>
+            </span>
+          </div>
+          <p class="mono" id="conn-error" style="color:var(--pink);font-size:12px;margin:10px 0 0" hidden></p>
+        </div>
+
+        <!-- The fabric, live -->
+        <div class="panel span-2 topo needs-link disabled-veil" id="topology-panel">
+          <div class="panel-head">
+            <span class="dot accent"></span>
+            <h3>The fabric, live</h3>
+            <span class="hint">brokerless — a publisher's data goes straight to the subscribers that match</span>
+          </div>
+
+          <p class="callout" style="margin-bottom:10px">
+            <span>🛰️</span>
+            <span><b>No broker in the middle.</b> When a publisher puts to a topic, Zenoh delivers it
+              <b>directly</b> to every subscriber whose key expression matches — peer to peer, no hub
+              relaying everything. Each line below is a real match; each dot is a real delivery.
+              <span style="color:var(--ink-faint)">(In this browser sandbox the bytes do relay through the
+              remote-api router, since browsers can't peer directly; native Zenoh peers go point-to-point.)</span></span>
+          </p>
+
+          <svg class="topo-svg" id="topo-svg" viewBox="0 0 900 372" preserveAspectRatio="xMidYMid meet">
+            <g class="lanes" id="topo-lanes"></g>
+            <g class="edges" id="topo-edges"></g>
+            <g id="topo-nodes"></g>
+            <g id="topo-packets"></g>
+          </svg>
+
+          <p class="topo-empty tag" id="topo-empty" hidden>
+            Declare a publisher or subscriber below — start the 🌡 sensor and listen on
+            <span class="mono">demo/**</span> — and watch the data go straight across.
+          </p>
+        </div>
+
+        <!-- Publish -->
+        <div class="panel needs-link disabled-veil" id="publish-panel">
+          <div class="panel-head">
+            <span class="dot amber"></span>
+            <h3>Publish</h3>
+            <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">
+              To publish is to <b>put a value onto a topic</b>. You don't address anyone — you just
+              announce it. Whoever is subscribed to a matching topic hears it; if nobody is, it
+              simply isn't heard. No queues, no broker mailbox.
+            </span></span>
+            <span class="hint">put a value onto the fabric</span>
+          </div>
+
+          <div class="field">
+            <label>Topic
+              <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">Zenoh calls this a <b>key expression</b> — a <code>/</code>-separated path like
+                <code>demo/sensor/temp</code>. Subscribers can use <code>*</code> (one segment) and
+                <code>**</code> (any depth) to listen broadly.</span></span>
+            </label>
+            <input class="mono" id="pub-topic" spellcheck="false" placeholder="demo/hello" value="demo/hello" aria-label="publish topic" />
+          </div>
+          <div class="field">
+            <label for="pub-payload">Payload</label>
+            <textarea id="pub-payload" spellcheck="false" placeholder="anything — text, JSON, …">Hello, fabric!</textarea>
+          </div>
+          <div class="field" style="max-width:240px">
+            <label>Period ms <span class="tag" style="text-transform:none">(0 = manual only)</span>
+              <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">A <b>declared publisher</b> with a period &gt; 0 <b>auto-publishes</b> the payload
+                on that interval. <code>0</code> means manual — declare it, then hit <b>publish now</b> whenever
+                you like. (One-shot <code>put</code> below needs no declared publisher at all.)</span></span>
+            </label>
+            <input class="mono" id="pub-period" type="number" min="0" step="100" value="0" aria-label="period in milliseconds" />
+          </div>
+
+          <div class="row">
+            <button class="primary" id="pub-once" disabled>▸ Publish once</button>
+            <button class="ghost" id="pub-declare" disabled>＋ Declare publisher</button>
+          </div>
+
+          <div class="tryrow" style="margin-top:14px">
+            <span class="lead">Try this →</span>
+            <button class="sm" id="pub-sensor" disabled>
+              🌡 Start a pretend temperature sensor
+            </button>
+          </div>
+
+          <div class="chips" id="pub-chips" hidden></div>
+        </div>
+
+        <!-- Subscribe -->
+        <div class="panel needs-link disabled-veil" id="subscribe-panel">
+          <div class="panel-head">
+            <span class="dot accent"></span>
+            <h3>Subscribe</h3>
+            <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">
+              To subscribe is to say <b>"I care about this topic"</b>. From then on, anything
+              published to a matching topic lands here in real time. Wildcards let you listen wide:
+              <code>demo/**</code> hears everything under <code>demo</code>.
+            </span></span>
+            <span class="hint">hear what you care about</span>
+          </div>
+
+          <div class="row">
+            <input class="mono" id="sub-topic" spellcheck="false" placeholder="demo/**" value="demo/**" aria-label="subscribe key expression" />
+            <button class="primary" id="sub-listen" style="flex:0 0 auto" disabled>
+              ▸ Listen
+            </button>
+          </div>
+
+          <div id="sub-list"></div>
+
+          <p class="tag" id="sub-hint" style="margin-top:12px" hidden>
+            Listen on <span class="mono">demo/**</span>, then publish — or open this page in a second tab and watch them talk.
+          </p>
+        </div>
+
+        <!-- Transform & republish -->
+        <div class="panel span-2 needs-link disabled-veil" id="transform-panel">
+          <div class="panel-head">
+            <span class="dot amber"></span>
+            <h3>Transform &amp; republish</h3>
+            <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">
+              Subscribe to one topic, reshape each message, and <b>republish it to another</b> — so a
+              downstream consumer can read a format it understands, without the original publisher
+              knowing anything about it. This is the fabric as a <b>translator</b>, not a dumb pipe.
+              (Your <code>msg =&gt; …</code> runs in your browser; this is an isolated sandbox.)
+            </span></span>
+            <span class="hint">one producer's format → another consumer's format</span>
+          </div>
+
+          <div class="row" style="align-items:flex-end">
+            <div class="field" style="margin:0">
+              <label>From topic
+                <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">The transform <b>subscribes</b> here. Wildcards work (<code>demo/**</code>).</span></span>
+              </label>
+              <input class="mono" id="xf-in" spellcheck="false" placeholder="demo/sensor/temp" value="demo/sensor/temp" aria-label="transform from topic" />
+            </div>
+            <div style="flex:0 0 auto; padding:0 4px 10px; color:var(--accent); font-size:18px">→</div>
+            <div class="field" style="margin:0">
+              <label>To topic
+                <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">The transformed payload is <b>published</b> here. Keep it different from the input
+                  topic or you'll make a loop.</span></span>
+              </label>
+              <input class="mono" id="xf-out" spellcheck="false" placeholder="demo/sensor/fahrenheit" value="demo/sensor/fahrenheit" aria-label="transform to topic" />
+            </div>
+            <button class="primary" id="xf-start" style="flex:0 0 auto; margin-bottom:0" disabled>
+              ▸ Start transform
+            </button>
+          </div>
+
+          <div class="tryrow" id="xf-presets" style="margin:12px 0 8px">
+            <span class="lead">Transform →</span>
+          </div>
+          <div class="field" style="margin:0">
+            <label for="xf-code">Transform function <span class="tag" style="text-transform:none">— editable; pick a preset above or write your own</span></label>
+            <textarea class="mono" id="xf-code" spellcheck="false" style="min-height:78px"></textarea>
+          </div>
+
+          <div class="chips" id="xf-chips" hidden></div>
+          <div class="feed" id="xf-feed" style="margin-top:8px" hidden></div>
+
+          <p class="tag" id="xf-hint" style="margin-top:10px" hidden>
+            Start the 🌡 sensor (above), run the <span class="mono">°C → °F</span> transform, then subscribe to
+            <span class="mono">demo/sensor/fahrenheit</span> — watch one stream become another.
+          </p>
+        </div>
+
+        <!-- Query & Reply -->
+        <div class="panel span-2 needs-link disabled-veil" id="query-panel">
+          <div class="panel-head">
+            <span class="dot ask"></span>
+            <h3>Query &amp; Reply</h3>
+            <span class="explain" tabindex="0"><span class="i" aria-label="explain">i</span><span class="pop">
+              Publish/subscribe (above) <b>pushes</b> a stream — a subscriber hears every reading as
+              it happens. Query/reply <b>pulls</b>: a <b>queryable</b> stands ready to answer a topic, and a
+              <b>get</b> sends a <b>query</b> that reaches every matching queryable and collects their
+              <b>replies</b>. Same fabric, opposite direction.
+            </span></span>
+            <span class="hint">get · query · queryable · reply</span>
+          </div>
+
+          <p class="callout" style="margin-bottom:14px">
+            <span>🌡️</span>
+            <span>The sensor above <b>streams</b> the temperature (subscribe to hear every reading). Here you
+              do the other half: stand up a <b>queryable</b> that answers <span class="mono">demo/temperature</span>,
+              then <b>ask</b> it — <i>"what's the temperature right now?"</i> — and get a reply back.</span>
+          </p>
+
+          <div class="grid">
+            <div>
+              <p class="tag" style="margin:0 0 8px">① Declare a queryable — stand ready to answer</p>
+              <div class="row">
+                <input class="mono" id="q-topic" spellcheck="false" placeholder="demo/temperature" value="demo/temperature" aria-label="queryable key expression" />
+                <input class="mono" id="q-reply" spellcheck="false" placeholder="reply payload" value="21.5 °C" aria-label="reply" />
+                <button class="primary" id="q-declare" style="flex:0 0 auto" disabled>
+                  ＋ Queryable
+                </button>
+              </div>
+              <div class="chips" id="q-chips" hidden></div>
+              <p class="tag" id="q-none" style="margin-top:10px">Nothing is answering yet. Declare a queryable, then ask for it on the right →</p>
+            </div>
+
+            <div>
+              <p class="tag" style="margin:0 0 8px">② Send a query (get) — ask for it</p>
+              <div class="row">
+                <input class="mono" id="q-selector" spellcheck="false" placeholder="demo/temperature" value="demo/temperature" aria-label="query selector" />
+                <button class="primary" id="q-get" style="flex:0 0 auto" disabled>
+                  ▸ get
+                </button>
+              </div>
+              <div class="feed" id="q-replies" hidden></div>
+              <p class="tag" id="q-noreplies" style="margin-top:10px">
+                No replies yet. Declare a queryable on the left for this topic, then hit <span class="mono">get</span> —
+                its reply lands here. (If nothing is answering, a get simply comes back empty.)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity -->
+        <div class="panel span-2" id="activity-panel">
+          <div class="panel-head">
+            <span class="dot green"></span>
+            <h3>Activity</h3>
+            <span class="hint">a plain-English trace of everything happening on your link</span>
+          </div>
+          <div class="logwrap">
+            <div id="log-lines"></div>
+            <p class="tag" id="log-empty" style="padding:8px 2px">Nothing yet. Connect, then publish or subscribe.</p>
+          </div>
+        </div>
+      </main>
+
+      <footer class="foot">
+        Built on <code>@eclipse-zenoh/zenoh-ts</code> · an isolated learning playground, distinct from the trial fabric.<br />
+        New to Zenoh? You're in the right place — publish, subscribe, query, reply, and watch it move.
+      </footer>
+    </div>
   </body>
 </html>

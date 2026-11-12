@@ -1,7 +1,8 @@
 name: zenoh-sandbox-image
-# Builds ops/serve/zenoh-sandbox/Dockerfile — the upstream zenoh-ts browser
-# demo (examples/browser/nuxt) statically generated + served by nginx — and
-# publishes to ghcr.io/usareur-af/zenoh-sandbox.
+# Builds ops/serve/zenoh-sandbox/Dockerfile — the sandbox web app (static
+# HTML, CSS and ES modules) served by nginx — and publishes to
+# ghcr.io/usareur-af/zenoh-sandbox. Also checks that the vendored zenoh-ts
+# bundle the app loads is exactly what its pinned inputs produce.
 #
 # Sibling-of-dataflows: same per-arch native build + manifest combine. The
 # image runs on nova-a (Tegra arm64) and any future amd64 host.
@@ -110,3 +111,23 @@ jobs:
       context: ops/serve/zenoh-sandbox
       file: ops/serve/zenoh-sandbox/Dockerfile
       description: "Browser-based Zenoh sandbox (zenoh-ts demo) served at sandbox.nova.netbird.nova.example"
+
+  vendored-bundle:
+    # app/vendor/zenoh-ts/zenoh-ts.js is committed tool output. Rebuild it from
+    # the tarballs pinned in vendor-tool/packages.lock.json (each verified by
+    # SHA-512) and fail if the committed file, its license files or the hash
+    # stated in its README differ.
+    needs: detect-relevant-changes
+    if: needs.detect-relevant-changes.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ops/serve/zenoh-sandbox/vendor-tool/go.mod
+          cache-dependency-path: ops/serve/zenoh-sandbox/vendor-tool/go.sum
+      - name: committed bundle matches its pinned inputs
+        run: ops/serve/zenoh-sandbox/vendor-tool/regenerate.sh --check
