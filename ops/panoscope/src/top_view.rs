@@ -21,13 +21,18 @@
 // same class as the deliberate `/api/stats` exception. Totals are
 // computed over the VISIBLE rows only, so a scoped response never
 // implies the hidden fleet.
+//
+// The peer domain (goatcore ADR 1232) names machines and their owners: a
+// per-peer row carries a Zenoh ID and an attributed name. Those rows are
+// shown at the Full tier only; every other tier sees the per-site grade
+// and a count of the rows withheld, never the identities.
 
 use serde::Serialize;
 
 use crate::health_wire::{
-    fmt_age, short_name, EnvDetail, EnvHealthV1, FabricHealthV1, ProducerFootprintV1,
-    FOOTPRINT_PREFIX, HEALTH_PREFIX, MESH_HEALTH_PREFIX, PRESENCE_HEALTH_PREFIX,
-    TIME_HEALTH_PREFIX,
+    fmt_age, short_name, EnvDetail, EnvHealthV1, FabricHealthV1, PeerFaultV1,
+    ProducerFootprintV1, FOOTPRINT_PREFIX, HEALTH_PREFIX, MESH_HEALTH_PREFIX,
+    PEER_HEALTH_PREFIX, PRESENCE_HEALTH_PREFIX, TIME_HEALTH_PREFIX,
 };
 use crate::sample_buffer::SampleBuffer;
 use crate::viewer::ViewerScope;
@@ -41,8 +46,8 @@ use prost::Message as _;
 const STALE_FACTOR: u64 = 3;
 /// Fallback window (secs) when a beat carries no `window_secs`.
 const DEFAULT_WINDOW_SECS: u64 = 5;
-/// The four env-health domains in canonical strip order.
-const DOMAINS: [&str; 4] = ["mesh", "fabric", "time", "presence"];
+/// The env-health domains in canonical strip order.
+const DOMAINS: [&str; 5] = ["mesh", "fabric", "time", "presence", "peer"];
 
 /// One decoded reading + the arrival timestamp of the sample it rode.
 pub struct Beat<T> {
@@ -57,6 +62,8 @@ pub struct TopSources {
     pub mesh: Option<Beat<EnvHealthV1>>,
     pub time: Option<Beat<EnvHealthV1>>,
     pub presence: Option<Beat<EnvHealthV1>>,
+    /// The peer domain, one beat per site (latest per key), sorted by site.
+    pub peer: Vec<Beat<EnvHealthV1>>,
     pub footprints: Vec<Beat<ProducerFootprintV1>>,
 }
 
@@ -97,6 +104,18 @@ pub fn collect_sources(buf: &SampleBuffer) -> TopSources {
             }
         }
     }
+    for e in buf.latest_by_prefix(PEER_HEALTH_PREFIX) {
+        let Some(raw) = &e.raw_bytes else { continue };
+        if let Ok(env) = EnvHealthV1::decode(raw.as_slice()) {
+            if env.domain == "peer" {
+                src.peer.push(Beat {
+                    msg: env,
+                    seen_ms: e.ts_ms,
+                });
+            }
+        }
+    }
+    src.peer.sort_by(|a, b| a.msg.scope.cmp(&b.msg.scope));
     src
 }
 
@@ -173,6 +192,42 @@ pub struct Totals {
     pub dropped: u32,
 }
 
+/// One peer-fault row (Full tier only): who, how far ahead, how often.
+#[derive(Serialize)]
+pub struct PeerRow {
+    /// The attributed name when the reader had one, else the Zenoh ID.
+    pub label: String,
+    pub zid: String,
+    pub offset_seconds: f64,
+    pub rejections_per_minute: f64,
+    /// "yes" / "no" / "unknown" (the reader had no sessions file).
+    pub direct_session: &'static str,
+    /// The row's grade from the reader: peer_at_fault, local_clock_suspect,
+    /// quiet, cleared, unmeasured.
+    pub grade: String,
+    pub color: String,
+}
+
+/// One site's peer-domain reading.
+#[derive(Serialize)]
+pub struct PeerSiteRow {
+    pub site: String,
+    /// Honesty state as for the chips: the reading's color, or "idle"
+    /// when the beat is stale.
+    pub state: String,
+    /// The reader's verdict (peer_at_fault, local_clock_suspect, recovering,
+    /// clean, unmeasured), or "stale" when the beat is stale.
+    pub verdict: String,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_age: Option<String>,
+    /// The peering this reader serves; "" when it serves no single peering.
+    pub peering: String,
+    pub peers: Vec<PeerRow>,
+    /// Peer rows withheld at this viewer's scope (identities).
+    pub peers_withheld: usize,
+}
+
 #[derive(Serialize)]
 pub struct TopView {
     /// The viewer's evaluated tier: "full" / "data-all" / "scoped" / "floor".
@@ -184,6 +239,8 @@ pub struct TopView {
     pub restricted: bool,
     pub chips: Vec<ChipView>,
     pub classes: ClassPane,
+    /// Peer domain, one row per site; empty when no site has published.
+    pub peer_sites: Vec<PeerSiteRow>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub site: Option<String>,
     /// The meter-declared fleet producer count (identity-free aggregate
@@ -233,6 +290,7 @@ pub fn build_top_view(
                         b.seen_ms,
                     ),
                 },
+                "peer" => peer_chip_inputs(&src.peer, &stale),
                 _ => {
                     let slot = match *domain {
                         "mesh" => &src.mesh,
@@ -297,6 +355,14 @@ pub fn build_top_view(
                 .collect(),
         },
     };
+
+    // Peer domain: one row per site; identities at the Full tier only.
+    let show_peers = matches!(scope, ViewerScope::Full);
+    let peer_sites = src
+        .peer
+        .iter()
+        .map(|b| peer_site_row(b, show_peers, stale(b.seen_ms, b.msg.window_secs), now_ms))
+        .collect();
 
     // Producer rows: expire (footprints age out, never linger false-live),
     // SCOPE-GATE per producer, then sort by msgs/s desc.
@@ -377,11 +443,113 @@ pub fn build_top_view(
         restricted: !matches!(scope, ViewerScope::Full | ViewerScope::DataAll),
         chips,
         classes,
+        peer_sites,
         site: src.fabric.as_ref().map(|b| b.msg.site.clone()),
         fabric_active_producers: src.fabric.as_ref().map(|b| b.msg.active_producers),
         producers,
         totals,
         generated_at_ms: now_ms,
+    }
+}
+
+/// Chip inputs for the peer domain, which has one beat per site: the worst
+/// color among the fresh sites, n summed over them. When every site is
+/// stale the newest stale beat drives the chip, so it collapses to idle with
+/// that beat's age.
+fn peer_chip_inputs(
+    sites: &[Beat<EnvHealthV1>],
+    stale: &dyn Fn(u64, u32) -> bool,
+) -> (Option<String>, u64, u32, u64) {
+    let fresh: Vec<&Beat<EnvHealthV1>> = sites
+        .iter()
+        .filter(|b| !stale(b.seen_ms, b.msg.window_secs))
+        .collect();
+    if fresh.is_empty() {
+        return match sites.iter().max_by_key(|b| b.seen_ms) {
+            None => (None, 0, 0, 0),
+            Some(b) => (
+                Some(b.msg.overall_color.clone()),
+                b.msg.sample_count,
+                b.msg.window_secs,
+                b.seen_ms,
+            ),
+        };
+    }
+    let worst = fresh
+        .iter()
+        .max_by_key(|b| color_rank(&b.msg.overall_color))
+        .expect("fresh is non-empty");
+    (
+        Some(worst.msg.overall_color.clone()),
+        fresh.iter().map(|b| b.msg.sample_count).sum(),
+        worst.msg.window_secs,
+        worst.seen_ms,
+    )
+}
+
+/// Severity order for picking the worst site: a grounded fault outranks a
+/// grounded clean reading, and any grounded reading outranks idle/unmetered.
+fn color_rank(color: &str) -> u8 {
+    match color {
+        "red" => 4,
+        "amber" => 3,
+        "green" => 2,
+        "idle" => 1,
+        _ => 0, // unmetered / unknown
+    }
+}
+
+fn peer_site_row(
+    b: &Beat<EnvHealthV1>,
+    show_peers: bool,
+    is_stale: bool,
+    now_ms: u64,
+) -> PeerSiteRow {
+    let detail = match &b.msg.detail {
+        Some(EnvDetail::Peer(d)) => Some(d),
+        _ => None,
+    };
+    let peers: Vec<PeerRow> = detail
+        .map(|d| d.peers.iter().map(peer_row).collect())
+        .unwrap_or_default();
+    let withheld = if show_peers { 0 } else { peers.len() };
+    PeerSiteRow {
+        site: b.msg.scope.clone(),
+        state: if is_stale {
+            "idle".to_string()
+        } else {
+            b.msg.overall_color.clone()
+        },
+        verdict: if is_stale {
+            "stale".to_string()
+        } else {
+            detail.map(|d| d.verdict.clone()).unwrap_or_default()
+        },
+        reason: detail.map(|d| d.verdict_reason.clone()).unwrap_or_default(),
+        stale_age: is_stale.then(|| fmt_age(now_ms.saturating_sub(b.seen_ms) as i64)),
+        peering: detail.map(|d| d.peering.clone()).unwrap_or_default(),
+        peers: if show_peers { peers } else { Vec::new() },
+        peers_withheld: withheld,
+    }
+}
+
+fn peer_row(p: &PeerFaultV1) -> PeerRow {
+    PeerRow {
+        label: p
+            .attribution_name
+            .clone()
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| p.zid.clone()),
+        zid: p.zid.clone(),
+        offset_seconds: p.offset_seconds,
+        rejections_per_minute: p.rejections_per_minute,
+        direct_session: match p.direct_session {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => "unknown",
+        },
+        grade: p.grade.clone(),
+        color: p.color.clone(),
     }
 }
 
@@ -473,7 +641,9 @@ fn class_label(class: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::health_wire::{ClassHealthV1, ClassShareV1, MeshDetailV1, MeshLinkHealthV1};
+    use crate::health_wire::{
+        ClassHealthV1, ClassShareV1, MeshDetailV1, MeshLinkHealthV1, PeerFaultDetailV1,
+    };
     use panoscope_core::portal::EnvelopeRow;
     use std::collections::HashSet;
 
@@ -733,6 +903,153 @@ mod tests {
         );
         assert_eq!(v.producers[0].band_label, "OVER");
         assert_eq!(v.producers[0].band_color, "red");
+    }
+
+    fn peer_beat(site: &str, color: &str, seen_ms: u64, peering: &str) -> Beat<EnvHealthV1> {
+        Beat {
+            msg: EnvHealthV1 {
+                domain: "peer".into(),
+                scope: site.into(),
+                ts_unix_ms: 0,
+                overall_color: color.into(),
+                sample_count: 2,
+                window_secs: 30,
+                detail: Some(EnvDetail::Peer(PeerFaultDetailV1 {
+                    peers: vec![
+                        PeerFaultV1 {
+                            zid: "3c9a51e0d2b7f4a6c18e05d9b3a7f2e1".into(),
+                            offset_seconds: 17.7,
+                            rejections_per_minute: 12.0,
+                            attribution_name: Some("lab-router-b".into()),
+                            direct_session: Some(false),
+                            grade: "peer_at_fault".into(),
+                            color: "red".into(),
+                            ..Default::default()
+                        },
+                        PeerFaultV1 {
+                            zid: "9f2".into(),
+                            offset_seconds: 3.0,
+                            rejections_per_minute: 2.0,
+                            grade: "peer_at_fault".into(),
+                            color: "red".into(),
+                            ..Default::default()
+                        },
+                    ],
+                    verdict: "peer_at_fault".into(),
+                    verdict_reason: "2 peer(s) had timestamps rejected in the last 60 s".into(),
+                    peering: peering.into(),
+                    ..Default::default()
+                })),
+            },
+            seen_ms,
+        }
+    }
+
+    fn view(scope: &ViewerScope, src: &TopSources, now_ms: u64) -> TopView {
+        build_top_view(
+            scope,
+            src,
+            &empty_topology(),
+            &AliasRegistry::default(),
+            &EnvelopeRegistry::empty(),
+            now_ms,
+        )
+    }
+
+    #[test]
+    fn peer_domain_renders_a_site_row_with_peer_rows() {
+        let src = TopSources {
+            peer: vec![peer_beat("example-site", "red", 10_000, "partner-one")],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, 11_000);
+        let chip = v.chips.iter().find(|c| c.domain == "peer").unwrap();
+        assert_eq!(chip.state, "red");
+        assert_eq!(chip.sample_count, 2);
+        assert_eq!(v.peer_sites.len(), 1);
+        let s = &v.peer_sites[0];
+        assert_eq!(s.site, "example-site");
+        assert_eq!(s.state, "red");
+        assert_eq!(s.verdict, "peer_at_fault");
+        assert_eq!(s.peering, "partner-one");
+        assert_eq!(s.peers_withheld, 0);
+        // Attributed name when known, Zenoh ID otherwise.
+        assert_eq!(s.peers[0].label, "lab-router-b");
+        assert_eq!(s.peers[0].offset_seconds, 17.7);
+        assert_eq!(s.peers[0].rejections_per_minute, 12.0);
+        assert_eq!(s.peers[0].direct_session, "no");
+        assert_eq!(s.peers[1].label, "9f2");
+        assert_eq!(s.peers[1].direct_session, "unknown");
+    }
+
+    #[test]
+    fn peer_identities_are_withheld_below_full_scope() {
+        let src = TopSources {
+            peer: vec![peer_beat("example-site", "red", 10_000, "")],
+            ..Default::default()
+        };
+        for scope in [
+            ViewerScope::DataAll,
+            scoped(&[], false),
+            scoped(&["aaa111"], true),
+        ] {
+            let v = view(&scope, &src, 11_000);
+            let s = &v.peer_sites[0];
+            assert!(s.peers.is_empty(), "no Zenoh ID or owner name below Full");
+            assert_eq!(s.peers_withheld, 2);
+            // The identity-free grade stays visible.
+            assert_eq!(s.state, "red");
+            assert_eq!(
+                v.chips.iter().find(|c| c.domain == "peer").unwrap().state,
+                "red"
+            );
+        }
+    }
+
+    #[test]
+    fn peer_chip_is_the_worst_fresh_site_and_stale_sites_collapse() {
+        let src = TopSources {
+            peer: vec![
+                peer_beat("site-a", "green", 100_000, ""),
+                peer_beat("site-b", "amber", 100_000, ""),
+                // Stale (window 30 s, seen 100 s before now): its red must
+                // not drive the chip, and its own row reads idle.
+                peer_beat("site-c", "red", 10_000, ""),
+            ],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, 110_000);
+        let chip = v.chips.iter().find(|c| c.domain == "peer").unwrap();
+        assert_eq!(chip.state, "amber");
+        assert_eq!(chip.sample_count, 4, "n over the fresh sites");
+        let c = v.peer_sites.iter().find(|s| s.site == "site-c").unwrap();
+        assert_eq!(c.state, "idle");
+        assert_eq!(c.verdict, "stale");
+        assert!(c.stale_age.is_some());
+
+        // Every site stale: the chip collapses to idle with an age.
+        let src = TopSources {
+            peer: vec![peer_beat("site-c", "red", 10_000, "")],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, 110_000);
+        let chip = v.chips.iter().find(|c| c.domain == "peer").unwrap();
+        assert_eq!(chip.state, "idle");
+        assert!(chip.stale_age.is_some());
+    }
+
+    #[test]
+    fn peer_beats_decode_from_the_wire() {
+        let env = peer_beat("example-site", "red", 0, "").msg;
+        let back = EnvHealthV1::decode(env.encode_to_vec().as_slice()).unwrap();
+        match back.detail {
+            Some(EnvDetail::Peer(d)) => {
+                assert_eq!(d.peers.len(), 2);
+                assert_eq!(d.peers[0].direct_session, Some(false));
+                assert_eq!(d.peers[1].direct_session, None);
+            }
+            other => panic!("expected the peer arm, got {other:?}"),
+        }
     }
 
     #[test]

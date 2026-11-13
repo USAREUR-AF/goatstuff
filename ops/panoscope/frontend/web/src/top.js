@@ -56,11 +56,33 @@ const STALE_AFTER_MS = POLL_MS * 4;
  * @property {string} latency
  */
 /**
+ * @typedef {Object} PeerRow
+ * @property {string} label
+ * @property {string} zid
+ * @property {number} offset_seconds
+ * @property {number} rejections_per_minute
+ * @property {"yes" | "no" | "unknown"} direct_session
+ * @property {string} grade
+ * @property {string} color
+ */
+/**
+ * @typedef {Object} PeerSiteRow
+ * @property {string} site
+ * @property {string} state
+ * @property {string} verdict
+ * @property {string} reason
+ * @property {string} [stale_age]
+ * @property {string} peering
+ * @property {PeerRow[]} peers
+ * @property {number} peers_withheld
+ */
+/**
  * @typedef {Object} TopView
  * @property {string} scope_tier
  * @property {boolean} restricted
  * @property {Chip[]} chips
  * @property {ClassPane} classes
+ * @property {PeerSiteRow[]} peer_sites
  * @property {string} [site]
  * @property {number} [fabric_active_producers]
  * @property {ProducerRow[]} producers
@@ -144,6 +166,41 @@ function renderClasses(pane) {
     .join("");
 }
 
+function renderPeers(view) {
+  const sites = view.peer_sites ?? [];
+  $("peer-rows").innerHTML = sites
+    .map((s) => {
+      const stale = s.stale_age ? ` <span class="meta">(stale ${esc(s.stale_age)})</span>` : "";
+      const withheld =
+        s.peers_withheld > 0
+          ? `<tr><td colspan="6" class="state-dim">${s.peers_withheld} peer row(s) withheld at your role's scope</td></tr>`
+          : "";
+      const head = `<tr>
+        <td title="${esc(s.reason)}"><strong>${esc(s.site)}</strong></td>
+        <td class="${stateClass(s.state)}">${esc(s.verdict || s.state)}${stale}</td>
+        <td></td><td></td><td></td>
+        <td>${esc(s.peering || "—")}</td>
+      </tr>`;
+      const rows = s.peers
+        .map(
+          (p) => `<tr>
+        <td title="${esc(p.zid)}">&nbsp;&nbsp;${esc(p.label)}</td>
+        <td class="${stateClass(p.color)}">${esc(p.grade)}</td>
+        <td class="num">${p.offset_seconds.toFixed(1)} s</td>
+        <td class="num">${fmtRate(p.rejections_per_minute)}</td>
+        <td>${esc(p.direct_session)}</td>
+        <td>${esc(s.peering || "—")}</td>
+      </tr>`,
+        )
+        .join("");
+      return head + rows + withheld;
+    })
+    .join("");
+  const empty = $("peer-empty");
+  empty.hidden = sites.length > 0;
+  empty.textContent = "unmetered — no peer-health reading from any site";
+}
+
 function renderProducers(view) {
   const needle = filter.trim().toLowerCase();
   const rows = view.producers.filter(
@@ -212,6 +269,7 @@ function render(view) {
   renderScopeNote(view);
   renderChips(view.chips);
   renderClasses(view.classes);
+  renderPeers(view);
   renderProducers(view);
   renderTotals(view);
 }
