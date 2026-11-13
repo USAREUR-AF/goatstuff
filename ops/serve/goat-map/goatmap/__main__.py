@@ -616,10 +616,20 @@ class SiteHealth:
         self.reading: envhealth_mod.MeshHealth | None = None
         self.received_at: float | None = None
         self.error: str | None = None
+        # Peer-domain readings (arm 17), latest per scope. Kept so a key
+        # expression that also matches ops/peer/health/** decodes them instead
+        # of reporting an error; the map draws nothing new from them: a
+        # peer fault is a Zenoh ID, which joins to no declared system here.
+        self.peer: dict[str, envhealth_mod.PeerHealth] = {}
 
     def on_payload(self, payload: bytes) -> None:
         try:
-            self.reading = envhealth_mod.decode(payload)
+            reading = envhealth_mod.decode_any(payload)
+            if isinstance(reading, envhealth_mod.PeerHealth):
+                # Never replaces the mesh reading the map is built on.
+                self.peer[reading.scope] = reading
+                return
+            self.reading = reading
             self.received_at = time.time()
             self.error = None
         except Exception as exc:  # noqa: BLE001
