@@ -38,6 +38,15 @@ The reader never opens the docker socket. To see what it would publish without a
 
 When standard input ends, for example because the router container went away and `docker logs -f` exited, the reading turns `unmeasured` and stays that way. Restart the pipe to measure again.
 
+A deployment does not pass the router's whole log through. It feeds a file that holds two kinds of line:
+
+- the uhlc rejection lines only;
+- one heartbeat line every 30 s.
+
+Any line that is not a rejection proves the feed is alive. Without the heartbeat, a quiet router would read `unmeasured` once `--silence-after-secs` passes.
+
+The router's `Using ZID:` start-up line is not in such a feed, so the deployment sets `PEER_HEALTH_OBSERVED_BY` to the router's Zenoh ID.
+
 ## Flags and environment
 
 | Flag | Environment | Default | Meaning |

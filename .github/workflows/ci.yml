@@ -59,6 +59,7 @@ jobs:
           - ops/zenoh-trial-peers/presence-health
           - ops/zenoh-trial-peers/synth-vendor
           - ops/zenoh-trial-peers/time-health
+          - ops/zenoh-trial-peers/peer-health
     defaults:
       run:
         working-directory: ${{ matrix.dir }}
