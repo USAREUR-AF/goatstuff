@@ -71,6 +71,8 @@ The router's `Using ZID:` start-up line is not in such a feed, so the deployment
 
 `RUST_LOG` sets the log level (default `info`).
 
+If `PEER_HEALTH_ROOT_CA` did not issue the router's certificate, the reader exits with status 1 after logging `Unable to connect to tls/<host>:<port>! Can not create a new TLS link bound to <address>: invalid peer certificate: UnknownIssuer`. The router logs `received fatal alert: UnknownCA`.
+
 Peers file example:
 
 ```json
