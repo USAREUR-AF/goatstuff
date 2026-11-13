@@ -108,9 +108,9 @@ jobs:
             #     bundled roots): bumped by #1919; drop these when it lands.
             ignores: '--ignore RUSTSEC-2026-0041 --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0285 --ignore RUSTSEC-2026-0346 --ignore RUSTSEC-2026-0348 --ignore RUSTSEC-2026-0349 --ignore RUSTSEC-2026-0382 --ignore RUSTSEC-2026-0338 --ignore RUSTSEC-2026-0339 --ignore RUSTSEC-2026-0340 --ignore RUSTSEC-2026-0341 --ignore RUSTSEC-2026-0342 --ignore RUSTSEC-2026-0381 --ignore RUSTSEC-2026-0383'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           toolchain: stable
           components: ''
