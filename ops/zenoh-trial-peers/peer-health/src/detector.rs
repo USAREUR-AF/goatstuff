@@ -230,6 +230,11 @@ impl Detector {
         let active_count = active.len();
         let mut known: BTreeSet<String> = self.peers.keys().cloned().collect();
         known.extend(self.attribution.zids());
+        // A core router with many sessions and two fast peers must blame the
+        // two peers: every Zenoh ID holding a session is part of the population.
+        if let Some(sessions) = &self.sessions {
+            known.extend(sessions.iter().cloned());
+        }
         let peers_known = (known.len() as u32).max(self.cfg.peer_population);
         let ahead = active.iter().filter(|t| t.latest_offset > 0.0).count() as u32;
         let behind = active.iter().filter(|t| t.latest_offset < 0.0).count() as u32;
@@ -769,6 +774,39 @@ mod tests {
         assert_eq!(doc.peering.as_deref(), Some("partner-one"));
         let r = d.tick(T0 + 630_000, &LocalClock::Synced);
         assert!(r.verdicts.is_empty());
+    }
+
+    #[test]
+    fn the_population_includes_the_sessions_file() {
+        let sessions: Vec<String> = (1..=100).map(|i| format!("{i:x}0")).collect();
+        let feed_n = |n: usize| {
+            let mut d = det(Config::default());
+            d.set_sessions(Some(sessions.clone()));
+            for z in sessions.iter().take(n) {
+                feed(&mut d, z, T0, 2_000);
+            }
+            d.tick(T0 + 1_000, &LocalClock::Synced)
+        };
+        // 2 of 100 ahead: the two peers are at fault.
+        let r = feed_n(2);
+        assert_eq!(r.detail().peers_known, 100);
+        assert_eq!(r.detail().verdict, "peer_at_fault");
+        assert_eq!(r.verdicts.len(), 2);
+        // 60 of 100 ahead: our clock is the likelier fault.
+        let r = feed_n(60);
+        assert_eq!(r.detail().peers_known, 100);
+        assert_eq!(r.detail().verdict, "local_clock_suspect");
+        assert!(r.detail().verdict_reason.contains("60 of 100"));
+        assert!(r.verdicts.is_empty());
+        // Without the sessions file the same 2 fast peers are all it knows.
+        let mut d = det(Config::default());
+        for z in sessions.iter().take(2) {
+            feed(&mut d, z, T0, 2_000);
+        }
+        assert_eq!(
+            d.tick(T0 + 1_000, &LocalClock::Synced).detail().verdict,
+            "local_clock_suspect"
+        );
     }
 
     #[test]

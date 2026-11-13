@@ -98,7 +98,7 @@ The reader grades a reading before it blames any peer. The verdicts are checked 
 
 Rules behind the table:
 
-- **Known peers.** The count of known peers is the largest of three numbers: `--peer-population`, the number of peers tracked, and the number of Zenoh IDs in the peers file.
+- **Known peers.** The count of known peers is the number of distinct Zenoh IDs across the peers tracked, the peers file and the sessions file, or `--peer-population` if that is larger. A router with 100 sessions and 2 fast peers therefore blames the 2 peers. Without a sessions file or a declared population, 2 fast peers out of 2 known read as our clock.
 - **Majority rule.** The rule needs at least two known peers. With `--peering` it does not apply, because every stamping router then belongs to one partner network.
 - **Local clock.** The reader treats its host's clock as the router's clock, because it runs on the same host. The `auto` check reads the kernel's `STA_UNSYNC` flag through `adjtimex`, which needs no privilege. If the call is refused, for example by a seccomp profile, the clock reads `unknown` and nobody is blamed. Set `PEER_HEALTH_LOCAL_CLOCK=synced` only on a host whose sync is verified by other means.
 - **Event times.** A rejection is placed in the window at the router's own "now" from the line. A replayed history therefore lands in its real place and is not counted as new.
