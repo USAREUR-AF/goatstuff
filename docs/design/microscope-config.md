@@ -11,6 +11,7 @@ additional log lines.
 |---|---|
 | `MICROSCOPE_AUDIT_WINDOW_HOURS` | 24 |
 | `MICROSCOPE_AUDIT_MAX_ROWS` | 0, meaning the adapter's default row limit |
+| `MICROSCOPE_AUDIT_FETCH_CONCURRENCY` | 0, meaning the audit reader's default number of parallel fetches |
 | `MICROSCOPE_SUGGEST_TTL_SECS` | 120 |
 
 Valid numeric values retain their existing meaning. Unit tests in

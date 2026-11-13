@@ -35,6 +35,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::Result;
+use panoscope_core::audit_tail::DEFAULT_AUDIT_FETCH_CONCURRENCY;
 use panoscope_core::{AuditEvent, AuditTail, AuditTailConfig};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -69,6 +70,9 @@ pub struct MinioReplayConfig {
     /// audit-subscriber writes ~12 objects/min ≈ 17K/day; 20K covers
     /// just over a day at the live cadence.
     pub max_objects: usize,
+    /// Audit objects fetched at once by the walker; peak memory is about
+    /// this many object bodies. `PANOSCOPE_MINIO_FETCH_CONCURRENCY`.
+    pub fetch_concurrency: usize,
     /// Vendor prefixes to skip during replay. Audit retention is
     /// Object-Lock COMPLIANCE-protected (ADR 0811) so events cannot be
     /// deleted from MinIO, but a vendor that was retired from the portal
@@ -96,6 +100,7 @@ impl Default for MinioReplayConfig {
             secret_key: String::new(),
             window_hours: 24,
             max_objects: 20_000,
+            fetch_concurrency: DEFAULT_AUDIT_FETCH_CONCURRENCY,
             vendor_blocklist: HashSet::new(),
             topic_blocklist: Vec::new(),
         }
@@ -117,6 +122,7 @@ impl MinioReplayConfig {
             secret_key: self.secret_key.clone(),
             request_timeout: std::time::Duration::from_secs(30),
             max_objects: self.max_objects,
+            fetch_concurrency: self.fetch_concurrency,
         }
     }
 }

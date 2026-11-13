@@ -33,6 +33,10 @@ pub struct Config {
     /// ones). 0 = [`crate::adapters::DEFAULT_AUDIT_MAX_ROWS`]. Aggregates
     /// (per-surface counts, totals) still cover every event in the window.
     pub audit_max_rows: usize,
+    /// Audit objects fetched at once by the audit adapters; peak memory is
+    /// about this many object bodies. 0 = panoscope-core's
+    /// `DEFAULT_AUDIT_FETCH_CONCURRENCY`.
+    pub audit_fetch_concurrency: usize,
     /// Site label shown in the page chrome (e.g. `zagros`).
     pub site_label: String,
     /// `off` (default, inert) | `enforce` (in-app fail-closed group gate).
@@ -97,6 +101,11 @@ impl Config {
             audit_max_rows: parse_or(
                 "MICROSCOPE_AUDIT_MAX_ROWS",
                 &get("MICROSCOPE_AUDIT_MAX_ROWS"),
+                0,
+            ),
+            audit_fetch_concurrency: parse_or(
+                "MICROSCOPE_AUDIT_FETCH_CONCURRENCY",
+                &get("MICROSCOPE_AUDIT_FETCH_CONCURRENCY"),
                 0,
             ),
             site_label: {

@@ -2050,7 +2050,7 @@ dependencies = [
 [[package]]
 name = "panoscope-core"
 version = "0.1.0"
-source = "git+https://github.com/usareur-af/goatcore?tag=goatcore/v0.1.0#bc8593bf5f120c60fbdd6a20056e2337d134ab41"
+source = "git+https://github.com/usareur-af/goatcore?tag=goatcore/v0.2.0#2f83e33c14a3b1e7c6eeb693483b876e25d1a954"
 dependencies = [
  "anyhow",
  "chrono",

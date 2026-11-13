@@ -341,6 +341,10 @@ impl Config {
             c.minio_replay.max_objects =
                 v.parse().context("PANOSCOPE_MINIO_MAX_OBJECTS parse")?;
         }
+        if let Ok(v) = std::env::var("PANOSCOPE_MINIO_FETCH_CONCURRENCY") {
+            c.minio_replay.fetch_concurrency =
+                v.parse().context("PANOSCOPE_MINIO_FETCH_CONCURRENCY parse")?;
+        }
         if let Ok(v) = std::env::var("PANOSCOPE_MINIO_VENDOR_BLOCKLIST") {
             // Comma-separated list of vendor prefixes to skip during
             // replay (e.g. "caracal,community"). Whitespace + empty

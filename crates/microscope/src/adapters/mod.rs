@@ -8,7 +8,7 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::time::Duration;
 
-use panoscope_core::audit_tail::{AuditTail, AuditTailConfig};
+use panoscope_core::audit_tail::{AuditTail, AuditTailConfig, DEFAULT_AUDIT_FETCH_CONCURRENCY};
 
 use crate::config::Config;
 use crate::event::{SourceState, SourceStatus, TimelineEvent};
@@ -48,9 +48,20 @@ pub(crate) fn tail_from(cfg: &Config) -> Result<Option<AuditTail>, String> {
         secret_key: cfg.audit_secret_key.clone(),
         request_timeout: Duration::from_secs(30),
         max_objects: AUDIT_MAX_OBJECTS,
+        fetch_concurrency: audit_fetch_concurrency(cfg),
     })
     .map(Some)
     .map_err(|e| e.to_string())
+}
+
+/// The audit adapters' fetch concurrency for this config (0 means
+/// panoscope-core's default).
+pub(crate) fn audit_fetch_concurrency(cfg: &Config) -> usize {
+    if cfg.audit_fetch_concurrency == 0 {
+        DEFAULT_AUDIT_FETCH_CONCURRENCY
+    } else {
+        cfg.audit_fetch_concurrency
+    }
 }
 
 /// Default for [`Config::audit_max_rows`]: the most timeline rows one audit
@@ -381,6 +392,16 @@ mod tests {
         let want: Vec<String> = (N - K..N).map(ts_of).collect();
         assert_eq!(got, want);
         assert!(rows_clause(K, seen).unwrap().contains(&format!("newest {K} of {N}")));
+    }
+
+    #[test]
+    fn audit_fetch_concurrency_zero_means_default() {
+        assert_eq!(audit_fetch_concurrency(&Config::default()), DEFAULT_AUDIT_FETCH_CONCURRENCY);
+        let cfg = Config {
+            audit_fetch_concurrency: 2,
+            ..Default::default()
+        };
+        assert_eq!(audit_fetch_concurrency(&cfg), 2);
     }
 
     #[test]
