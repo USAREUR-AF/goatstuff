@@ -1,0 +1,51 @@
+name: peer-health-image
+# Builds ops/zenoh-trial-peers/peer-health/Dockerfile — goat-peer-health, the
+# reader beside a Zenoh router that turns the router's timestamp-rejection log
+# lines into a per-peer clock-fault reading (Rust + tokio + eclipse-zenoh +
+# prost) — and publishes to ghcr.io/usareur-af/goat-peer-health.
+#
+# Per goatcore docs/design/peer-fault-handling.md + ADR 1232, stage 1 (measure).
+# A normal mTLS Zenoh client peer that publishes ops/peer/health/<site> and
+# ops/peer/verdict/<zid>; enforces nothing, persists nothing.
+#
+# Per-arch native build + manifest combine, as time-health-image.yml:
+#   - linux/amd64 on ubuntu-24.04
+#   - linux/arm64 on ubuntu-24.04-arm (GitHub-hosted arm64 runner)
+#
+# Tag scheme:
+#   - On main push:                   :latest + :sha-<short>
+#   - On peer-health/v* tag:          :<tag-name>
+#   - On any build:                   :sha-<short>
+#
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/zenoh-trial-peers/peer-health/**'
+      - '.github/workflows/peer-health-image.yml'
+    tags: ['peer-health/v*']
+  pull_request:
+    paths:
+      - 'ops/zenoh-trial-peers/peer-health/**'
+      - '.github/workflows/peer-health-image.yml'
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref; never cancel on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  image:
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-peer-health
+      tag_prefix: peer-health
+      context: ops/zenoh-trial-peers/peer-health
+      description: "Peer domain of the environment-health surface: per-peer clock faults read from a router's log (ADR 1232)"

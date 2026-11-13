@@ -1,0 +1,44 @@
+# goat-peer-health — the `peer` domain of the environment-health surface.
+#
+# goatcore ADR 1232 + docs/design/peer-fault-handling.md, stage 1 (measure).
+# A reader beside a Zenoh router: it follows the router's log, turns the uhlc
+# timestamp-rejection lines into a per-peer clock offset and rate, grades the
+# reading before blaming anyone, and publishes it as a normal mTLS Zenoh client
+# (templated on goat-time-health):
+#   ops/peer/health/<site>   <- EnvHealthV1{domain:"peer"} (PeerFaultDetailV1, arm 17)
+#   ops/peer/verdict/<zid>   <- one JSON verdict per faulty peer
+# Enforces nothing. Persists nothing.
+#
+# protobuf via prost-derive on hand-written structs (no protoc/build.rs); the
+# canonical schema is ../time-health/proto/env_health_v1.proto. zenoh pinned
+# =1.9.0 (docs/design/zenoh-version-pinning.md).
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+# Same as goat-time-health: thin LTO + parallel codegen for an IO-bound service.
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "goat-peer-health"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Peer domain of the environment-health surface — per-peer clock faults read from a router's log (ADR 1232)."
+repository = "https://github.com/usareur-af/goatstuff"
+
+[dependencies]
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+humantime = "2"
+libc = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

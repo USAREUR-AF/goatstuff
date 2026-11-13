@@ -386,8 +386,63 @@ message PeeringDetailV1 {
   uint32 snapshot_age_secs = 13;
 }
 
+// -- peer domain (goatcore docs/design/peer-fault-handling.md, ADR 1232) ------
+// Faults on peers we do not own, measured at the router we own. Published by
+// goat-peer-health, a reader beside a router that follows the router's log, on
+// ops/peer/health/<site>. The first detector is the clock: a peer whose
+// timestamps the router rejects as too far ahead (uhlc "exceeding delta").
+//
+// GRADED BEFORE BLAMED. When the reader's own host clock is not synchronized,
+// or more than half of the known peers show an offset in the same direction,
+// the verdict is local_clock_suspect and no peer row is graded at fault. When
+// no router log line has arrived for the silence period, or the input ended,
+// the verdict is unmeasured and overall_color is unmetered, never green.
+
+enum PeerFaultKindV1 {
+  PEER_FAULT_KIND_UNSPECIFIED = 0;
+  CLOCK_AHEAD                 = 1;  // the router rejected this peer's timestamps as ahead of its clock
+}
+
+message PeerFaultV1 {
+  string zid                     = 1;   // Zenoh ID that STAMPED the rejected samples
+  PeerFaultKindV1 kind           = 2;
+  double offset_seconds          = 3;   // latest: peer time minus our router's time
+  double min_offset_seconds      = 4;   // over the window
+  double max_offset_seconds      = 5;
+  double rejections_per_minute   = 6;
+  uint64 rejections_in_window    = 7;
+  int64  first_seen_unix_ms      = 8;   // since the reader started (not persisted)
+  int64  last_seen_unix_ms       = 9;
+  string observed_by             = 10;  // our router's Zenoh ID; "" when not known
+  optional string attribution_name  = 11; // from the peers file, or the peering name
+  optional string attribution_owner = 12;
+  string grade                   = 13;  // peer_at_fault|local_clock_suspect|quiet|cleared|unmeasured
+  string color                   = 14;  // red|idle|amber|green|unmetered
+  double limit_seconds           = 15;  // the router's limit, parsed from the line
+  // Whether this Zenoh ID holds a session with our router. Absent = unknown. A
+  // rejected timestamp names the router that stamped the sample, which can be
+  // a router behind one we hold a session with.
+  optional bool direct_session   = 16;
+}
+
+message PeerFaultDetailV1 {
+  repeated PeerFaultV1 peers     = 1;   // a cleared peer appears once with grade=cleared
+  string verdict                 = 2;   // peer_at_fault|local_clock_suspect|recovering|clean|unmeasured
+  string verdict_reason          = 3;
+  string local_clock             = 4;   // synced|unsynced|unknown
+  string observed_by             = 5;
+  uint32 peers_known             = 6;   // denominator of the majority rule
+  int64  last_line_age_ms        = 7;   // -1 = no line read yet
+  uint64 unparsed_lines_window   = 8;   // uhlc lines that did not parse; > 0 never grades green
+  // Set when the reader sits beside one per-partner edge router: every
+  // rejection is attributed to this peering and `peers` is detail under it.
+  string peering                 = 9;
+  double peering_rejections_per_minute = 10;
+  double peering_max_offset_seconds    = 11;
+}
+
 message EnvHealthV1 {
-  string domain        = 1;   // "time" | "fabric" | "mesh" | "presence" | "net" | "consistency" | "peering" | future "gnss"/"power"/"thermal"
+  string domain        = 1;   // "time" | "fabric" | "mesh" | "presence" | "net" | "consistency" | "peering" | "peer" | future "gnss"/"power"/"thermal"
   string scope         = 2;   // site tag (or host id for per-host domains)
   int64  ts_unix_ms    = 3;
   string overall_color = 4;   // 5-state honesty; worst grounded, never a false green
@@ -401,5 +456,6 @@ message EnvHealthV1 {
     NetDetailV1         net         = 14;
     ConsistencyDetailV1 consistency = 15;
     PeeringDetailV1     peering     = 16;
+    PeerFaultDetailV1   peer        = 17;
   }
 }
