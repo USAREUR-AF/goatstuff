@@ -66,7 +66,7 @@ struct Args {
     /// Comma-separated key-expressions to EXCLUDE from the audit /
     /// persistence path. Samples whose key intersects any of these are
     /// counted in `goat_audit_excluded_total` and dropped before hashing
-    /// + upload — they never reach the MinIO bucket. The subscription
+    /// and upload — they never reach the MinIO bucket. The subscription
     /// stays `**` (future-proof against new top-level classes); the
     /// filter is applied client-side. Default `volatile/**` per ADR 1032:
     /// the non-persisted class (high-throughput telemetry + bounded
