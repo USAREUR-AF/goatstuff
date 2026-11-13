@@ -32,6 +32,22 @@
       </section>
 
       <section class="panel">
+        <h2>PEER FAULTS</h2>
+        <div class="table-scroll">
+          <table class="data-table" id="peer-table">
+            <thead>
+              <tr>
+                <th>SITE / PEER</th><th>STATE</th><th class="num">OFFSET</th>
+                <th class="num">REJ/MIN</th><th>SESSION</th><th>PEERING</th>
+              </tr>
+            </thead>
+            <tbody id="peer-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="peer-empty" hidden></p>
+      </section>
+
+      <section class="panel">
         <h2 id="producers-title">PRODUCERS</h2>
         <input
           type="search"

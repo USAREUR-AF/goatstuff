@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Minimal EnvHealthV1 decoder — just enough of the mesh domain to join health.
+"""Minimal EnvHealthV1 decoder — the mesh domain the map joins, and the peer
+domain (arm 17, goatcore ADR 1232) so a peer reading is decoded rather than
+dropped as an error.
 
 Why hand-rolled rather than `protobuf`: this service has two dependencies, and
 adding a code-generation toolchain plus a runtime for ONE message shape is a
@@ -28,6 +30,12 @@ _VARINT, _I64, _LEN, _I32 = 0, 1, 2, 5
 # Field numbers — keep in lock-step with env_health_v1.proto.
 _ENV_DOMAIN, _ENV_SCOPE, _ENV_TS, _ENV_COLOR = 1, 2, 3, 4
 _ENV_DETAIL_MESH = 12
+_ENV_DETAIL_PEER = 17
+
+_PEERD_PEERS, _PEERD_VERDICT, _PEERD_PEERING = 1, 2, 9
+
+_PEER_ZID, _PEER_OFFSET, _PEER_RATE = 1, 3, 6
+_PEER_NAME, _PEER_GRADE, _PEER_COLOR, _PEER_DIRECT = 11, 13, 14, 16
 
 _MESH_LINKS, _MESH_VANTAGE = 1, 2
 _MESH_ALWAYS_UP_ABSENT, _MESH_CONNECTING_STUCK = 5, 6
@@ -119,6 +127,64 @@ class MeshHealth:
         return {l.peer_fqdn: l for l in self.links if l.peer_fqdn}
 
 
+@dataclass
+class PeerFault:
+    zid: str = ""
+    name: str = ""
+    offset_seconds: float = 0.0
+    rejections_per_minute: float = 0.0
+    grade: str = ""
+    color: str = ""
+    # None = unknown: the reader had no sessions file.
+    direct_session: bool | None = None
+
+    @property
+    def label(self) -> str:
+        """The attributed name when there is one, else the Zenoh ID."""
+        return self.name or self.zid
+
+
+@dataclass
+class PeerHealth:
+    domain: str = ""
+    scope: str = ""
+    ts_unix_ms: int = 0
+    overall_color: str = ""
+    verdict: str = ""
+    peering: str = ""
+    peers: list[PeerFault] = field(default_factory=list)
+
+
+def _decode_peer_fault(buf: bytes) -> PeerFault:
+    p = PeerFault()
+    for fnum, wtype, val in _fields(buf):
+        if fnum == _PEER_ZID and wtype == _LEN:
+            p.zid = val.decode("utf-8", "replace")
+        elif fnum == _PEER_OFFSET and wtype == _I64:
+            p.offset_seconds = val
+        elif fnum == _PEER_RATE and wtype == _I64:
+            p.rejections_per_minute = val
+        elif fnum == _PEER_NAME and wtype == _LEN:
+            p.name = val.decode("utf-8", "replace")
+        elif fnum == _PEER_GRADE and wtype == _LEN:
+            p.grade = val.decode("utf-8", "replace")
+        elif fnum == _PEER_COLOR and wtype == _LEN:
+            p.color = val.decode("utf-8", "replace")
+        elif fnum == _PEER_DIRECT and wtype == _VARINT:
+            p.direct_session = bool(val)
+    return p
+
+
+def _decode_peer(buf: bytes, out: PeerHealth) -> None:
+    for fnum, wtype, val in _fields(buf):
+        if fnum == _PEERD_PEERS and wtype == _LEN:
+            out.peers.append(_decode_peer_fault(val))
+        elif fnum == _PEERD_VERDICT and wtype == _LEN:
+            out.verdict = val.decode("utf-8", "replace")
+        elif fnum == _PEERD_PEERING and wtype == _LEN:
+            out.peering = val.decode("utf-8", "replace")
+
+
 def _decode_link(buf: bytes) -> MeshLink:
     link = MeshLink()
     for fnum, wtype, val in _fields(buf):
@@ -169,6 +235,37 @@ def decode(payload: bytes) -> MeshHealth:
         raise DecodeError(f"not a mesh reading: domain={out.domain!r}")
     if not saw_mesh and not out.domain:
         raise DecodeError("no EnvHealthV1 fields recognised")
+    return out
+
+
+def decode_any(payload: bytes) -> MeshHealth | PeerHealth:
+    """Decode an EnvHealthV1 reading of a domain this map knows: mesh or peer.
+
+    Raises DecodeError on nonsense and on any other domain, as `decode` does.
+    """
+    head = MeshHealth()
+    peer_detail: bytes | None = None
+    for fnum, wtype, val in _fields(payload):
+        if fnum == _ENV_DOMAIN and wtype == _LEN:
+            head.domain = val.decode("utf-8", "replace")
+        elif fnum == _ENV_DETAIL_PEER and wtype == _LEN:
+            peer_detail = val
+    if head.domain != "peer" and peer_detail is None:
+        return decode(payload)
+    if head.domain not in ("", "peer"):
+        raise DecodeError(f"peer detail under domain={head.domain!r}")
+    out = PeerHealth()
+    for fnum, wtype, val in _fields(payload):
+        if fnum == _ENV_DOMAIN and wtype == _LEN:
+            out.domain = val.decode("utf-8", "replace")
+        elif fnum == _ENV_SCOPE and wtype == _LEN:
+            out.scope = val.decode("utf-8", "replace")
+        elif fnum == _ENV_TS and wtype == _VARINT:
+            out.ts_unix_ms = _as_i64(val)
+        elif fnum == _ENV_COLOR and wtype == _LEN:
+            out.overall_color = val.decode("utf-8", "replace")
+    if peer_detail is not None:
+        _decode_peer(peer_detail, out)
     return out
 
 
