@@ -49,10 +49,10 @@ pub(crate) fn rule_intents_yaml() -> String {
     })
 }
 
-/// Tests read the rule intents this repository carries, as a fixture.
+/// Tests read a fixed copy of rule intents (tests/fixtures/acl/), as a fixture.
 #[cfg(test)]
 pub(crate) fn rule_intents_yaml() -> String {
-    include_str!("../../../ops/warrant/rule-intents/netbird-acl.yaml").to_string()
+    include_str!("../tests/fixtures/acl/netbird-acl.yaml").to_string()
 }
 
 /// Parsed once per process, not per request.
@@ -196,8 +196,8 @@ pub fn paths(d: &Doc, a: usize, b: usize) -> Vec<Value> {
 mod warrant_lens_tests {
     use super::*;
 
-    const TAXONOMY: &str = include_str!("../../../ops/ansible/netbird_acl_taxonomy.yml");
-    const MATRIX: &str = include_str!("../../../ops/ansible/netbird_acl_matrix.yml");
+    const TAXONOMY: &str = include_str!("../tests/fixtures/acl/netbird_acl_taxonomy.yml");
+    const MATRIX: &str = include_str!("../tests/fixtures/acl/netbird_acl_matrix.yml");
 
     /// The lens is only worth rendering if it actually names real rules.
     ///

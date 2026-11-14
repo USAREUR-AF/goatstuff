@@ -99,9 +99,12 @@ class TestGroupSplit(unittest.TestCase):
         for p in ("ZAGROS", "ZAGROS-PROD", "SITE-A", "EX-DEMO"):
             self.assertIn(p, self.tax["prefixes"], p)
 
-    def test_the_committed_taxonomy_loads(self):
+    def test_a_full_taxonomy_loads(self):
+        # A fixed copy of a full declaration; the deployed taxonomy is the
+        # assembled tree's ops/ansible/netbird_acl_taxonomy.yml, from goatcore.
         real = pv.load_taxonomy(
-            os.path.join(REPO, "ops", "ansible", "netbird_acl_taxonomy.yml"))
+            os.path.join(REPO, "crates", "netvis", "tests", "fixtures", "acl",
+                         "netbird_acl_taxonomy.yml"))
         self.assertTrue(real["ok"])
 
     def test_longest_prefix_wins(self):
