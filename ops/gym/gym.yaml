@@ -4393,28 +4393,93 @@ modules:
   title: Host an outside service behind your goatnet
   level: working
   minutes: 45
-  status: planned
-  summary: >-
-    A service that runs off the management host, on a machine that is already a mesh peer, is
-    published by one declaration file and one play, with no code added to the core for it. The
-    path is built and in use on a standing goatnet. This module is not written yet. It opens with
-    a drill that declares a service, reaches it by its mesh name, and retires it again.
+  quirks:
+  - claim: Adding an outside service is adding one declaration file and running one play. Nothing in the
+      core is written for it, and the same file marked withdrawn and the same play take it all away.
+    evidence: docs/adr/1178-external-service-golden-path.md
+    so: If a service seems to need a code change in the core, stop. The declaration or the host is wrong.
+  - claim: No node class mints the `EXTERNAL-INFRA` tier. The service's host is moved into it by
+      `ops/scripts/external-service-finish.py`, and the play's pre-flight refuses a host that is not in it.
+    evidence: docs/design/external-service-golden-path.md
+    so: When the pre-flight names the host's group, fix the host's membership, never the participants'.
+  - claim: An enabled declaration renders its route and certificate name on any edge deploy, not only
+      on this play. A declaration merged before its backend is serving ships `enabled false`.
+    evidence: docs/design/external-service-golden-path.md
+    so: Turn it on only once the host answers on its health path, or an unrelated deploy puts a dead
+      route on the shared edge.
+  - claim: The play refuses a mesh zone that does not match the declaration, in either direction.
+    evidence: docs/design/external-service-golden-path.md
+    so: Regenerate and re-sign the zone before every run, adding and withdrawing alike.
+  drill:
+    do: Declare a service on a host that is already a mesh peer, reach it by its mesh name, then retire it.
+    run: >-
+      ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini
+      -e target=<site>_hosts -e service=<name> -e state=present external-service.yml
+    pass: After state=present, `curl -s -o /dev/null -w '%{http_code}' https://<name>.<site>.<zone><health_path>`
+      prints 200 and the status page's External services page lists the row. After state=absent, `getent
+      hosts <name>.<site>.<zone>` prints nothing.
+    safety: admin
+    needs: mesh
   deeper:
   - doc: docs/design/external-service-golden-path.md
     why: The one declaration, the play that applies and removes it, and what the host must already be.
   - doc: docs/adr/1178-external-service-golden-path.md
     why: Why a hosted service costs no per-service code in the core, and the retirement date every declaration carries.
+  status: written
+  summary: >-
+    A service that runs off the management host, on a machine that is already a mesh peer, is
+    published by one declaration file and one play, and retired by the same two. The goatnet lends it
+    its identity plane, a name on the mesh and a status-page row; nothing in the core is named for it.
+  walkthrough:
+  - do: Make the host ready.
+    note: It is already a mesh peer, its service binds the mesh address and never 0.0.0.0, and the
+      finish script has moved it into the EXTERNAL-INFRA tier.
+  - do: Write the declaration.
+    note: One file, ops/ansible/group_vars/<site>_hosts/external-service-<name>.yml, with the name,
+      the backend's mesh address, the health path, the door, the owner and, for a temporary service, the
+      retirement date. Keep it `enabled false` until the backend answers.
+  - do: Turn it on and regenerate the zone.
+    run: python3 ops/dns/generate-mesh-hosts.py
+    note: Then sign the name snapshot and check its signature, as the design's "The command" section
+      shows, and commit the declaration, the zone and the signed snapshot together.
+  - do: Run the play with state=present.
+    note: It checks the declaration, the zone and the host's health and tier, registers the identity
+      client when one is declared, prints what the owner configures on their side, then renders the edge,
+      pushes the zone and re-renders the status page.
+  - do: Reach it by its mesh name.
+    note: The health path answers 200 over the mesh, and the External services page lists the row.
+  - do: Retire it in order.
+    note: Set `enabled false`, regenerate and re-sign the zone, then run the play with state=absent. Keep
+      the file unless the owner says the service will not return; it is the seed for bringing it back.
 - id: find-and-fix-quality-of-service
   title: Find a quality-of-service fault and fix the right thing
   level: mastery
   minutes: 60
-  status: planned
-  summary: >-
-    On a fabric with no broker, a slow or lossy flow has no central queue to inspect. The fault is
-    found from what each side reveals, the health surface, the demand a peer places, and the bytes
-    each plane carries, and it is fixed at the publisher, the reservation or the link, never by
-    adding a central control. The surfaces are built. This module is not written yet. It opens with
-    a drill on a flow that is made slow on purpose.
+  quirks:
+  - claim: A fabric with no broker has no central queue to inspect. A slow or lossy flow is found from
+      what each side reveals, not from a place that sees everything.
+    evidence: docs/design/zenoh-qos-and-prioritization.md
+    so: Read the health surface, the producer footprint, the peer demand and the bytes on each plane,
+      and fix the publisher, the reservation or the link. Never add a central control.
+  - claim: '`idle` on the health surface means too little traffic to confirm anything. It is not healthy.'
+    evidence: docs/design/fabric-health-surface.md
+    so: Report idle as unconfirmed. Only green, amber and red are grounded readings.
+  - claim: A producer below its envelope's floor shows `LOW`, a fault signal and not benign quiet. An
+      actor that declares a floor of zero never shows it.
+    evidence: docs/design/qos-throughput-envelopes.md
+    so: Check what envelope a producer declared before reading the absence of `LOW` as good news.
+  - claim: A fabric message crossing the mesh is counted on two planes on one host, as tunnel traffic
+      and as the fabric connection inside it.
+    evidence: docs/design/mesh-bandwidth-attribution.md
+    so: Judge a link's headroom from one plane. Adding the two doubles the number you decide on.
+  drill:
+    do: Slow one publisher of your own below its envelope's floor, find it from what the fabric reveals,
+      and restore it at the publisher.
+    run: goat top --once
+    pass: '`goat top --once` shows your producer as LOW while it is slowed, and within its range once you
+      restore its rate. Nothing outside the publisher was changed.'
+    safety: writes
+    needs: fabric
   deeper:
   - doc: docs/design/zenoh-qos-and-prioritization.md
     why: How priority is given by identity and namespace, and what the fabric cannot do for you.
@@ -4426,6 +4491,30 @@ modules:
     why: Which peer is asking for what, joined on the access log.
   - doc: docs/design/mesh-bandwidth-attribution.md
     why: The two planes that carry bytes, and why their totals are never added.
+  status: written
+  summary: >-
+    On a fabric with no broker, a slow or lossy flow has no central queue to inspect. The fault is
+    found from what each side reveals, the health surface, the producer footprint against its envelope,
+    the demand a peer places and the bytes each plane carries, and it is fixed at the publisher, the
+    reservation or the link, never by adding a central control.
+  walkthrough:
+  - do: Make one flow slow on purpose.
+    note: Use a publisher of your own whose envelope declares a floor above zero, and publish below that
+      floor. Do not slow anything you do not own.
+  - do: Read the fabric weather.
+    run: goat health
+    note: Note whether each class is grounded or idle. Idle says nothing about health either way.
+  - do: Find the producer.
+    run: goat top --once
+    note: Your producer shows LOW against its envelope. A producer above its maximum would show OVER; both
+      ends are faults.
+  - do: Rule out the link and the demand.
+    note: The peer demand page shows who is asking for what, and the bandwidth dashboard shows each plane
+      of the host's link on its own. If both are quiet, the fault is at the publisher.
+  - do: Fix it at the publisher, then read it again.
+    run: goat top --once
+    note: Restore the rate. The band returns to within range. If it does not, the fault is elsewhere; go
+      back to the link and the reservation before changing anything central.
 - id: fail-over-to-island-mode
   title: Cut a site off and keep working
   level: mastery
