@@ -24,6 +24,12 @@ the lane then marks it "frontier" and says so, so a reader can tell a lesson tha
 only unwritten from one whose subject does not exist yet. `check.py` refuses `frontier`
 on a written module.
 
+## Lane headings and the next lane
+
+A lane may carry `headings:`, a map from a module id in the lane to a heading shown before
+it, and `next:`, the id of the lane to go on to. The learner ladder is kept to its ten rungs
+and points at "Beyond the ladder" this way, so a newcomer sees the ladder and not a longer list.
+
 ## Adding a module
 
 **Point first.** If any doc in the tree explains the thing, the module is a

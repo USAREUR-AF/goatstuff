@@ -194,12 +194,8 @@ lanes:
     sealed data across a sovereign boundary, one rung at a time.
   outcome: You have used a goatnet, joined one with a moon-pod, rehearsed a new one on the fixture, stood up
     a goatlite and grown it, broken and rebuilt it, federated a node and a boundary node, federated across to
-    another sovereign, and released sealed data across that boundary. You then run it well, changing network
-    access from code, hosting an outside service, using direct peer links and finding a quality-of-service
-    fault. You prove its value on real work, a model at a site that publishes what it sees and is
-    updated in place, machines that coordinate with no central station, and two sovereigns that fill in
-    one shared picture. Then you reach the advanced rungs, marked frontier where the tooling is not built yet, a site that keeps working when it is cut off, a hub that
-    overrules and severs, and a pod, a site and an environment rebuilt from nothing.
+    another sovereign, and released sealed data across that boundary.
+  next: beyond-the-ladder
   modules:
   - enrol-your-laptop
   - the-cli-field-guide
@@ -215,6 +211,21 @@ lanes:
   - cross-sovereign-federation
   - release-across-the-boundary
   - per-reader-grant-encryption
+- id: beyond-the-ladder
+  title: Beyond the ladder
+  audience: Someone who has climbed the ten rungs of the learner ladder and runs a goatnet. Nothing here is
+    needed to finish the ladder.
+  outcome: You run a goatnet well, changing network access from code, hosting an outside service, using
+    direct peer links and finding a quality-of-service fault. You prove its value on real work, a model at a
+    site that publishes what it sees and is updated in place, machines that coordinate with no central
+    station, and two sovereigns that fill in one shared picture. Then you reach the frontier, where the
+    tooling is not built yet, a site that keeps working when it is cut off, a hub that overrules and severs,
+    and a pod, a site and an environment rebuilt from nothing.
+  headings:
+    change-network-access-warrant-way: Run it well
+    publish-events-from-a-model-at-the-edge: Prove its value
+    fail-over-to-island-mode: The frontier
+  modules:
   - change-network-access-warrant-way
   - host-an-external-service
   - p2p-graduation

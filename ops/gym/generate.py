@@ -537,8 +537,11 @@ def build(reg: dict, out_dir: str, services: dict, rev: str) -> dict:
     for lane in lanes:
         rows = []
         n = 0
+        headings = lane.get("headings") or {}
         for mid in lane["modules"]:
             mod = modules[mid]
+            if mid in headings:
+                rows.append(f'<li class="heading">{R.esc(headings[mid])}</li>')
             if mod.get("status") == "written":
                 n += 1
                 rows.append(
@@ -568,6 +571,10 @@ def build(reg: dict, out_dir: str, services: dict, rev: str) -> dict:
             f'<p class="meta chips"><span class="chip">{n} modules ready</span>'
             f'<span class="chip">about {mins} min</span></p>'
             f'<ul class="rowlist">{"".join(rows)}</ul>')
+        nxt = next((x for x in lanes if x["id"] == lane.get("next")), None)
+        if nxt:
+            body += (f'<p class="meta">Finished this lane? Next: '
+                     f'<a href="{nxt["id"]}.html">{R.esc(nxt["title"])}</a>.</p>')
         write_page(os.path.join(out_dir, "lanes", f'{lane["id"]}.html'),
                    page(f'{lane["title"]} — goat gym', body, 1, footer))
 

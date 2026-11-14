@@ -188,6 +188,12 @@ def check_registry(reg: dict, errors: list[str]) -> dict:
         for key in ("id", "title", "audience", "outcome", "modules"):
             if not lane.get(key):
                 errors.append(f"lane {lane.get('id', '?')}: missing {key}")
+        # headings: a heading shown before a module of this lane; next: the lane to go on to.
+        for mid in (lane.get("headings") or {}):
+            if mid not in lane.get("modules", []):
+                errors.append(f"lane {lane.get('id')}: heading placed before {mid!r}, which is not in the lane")
+        if lane.get("next") and lane["next"] not in {x.get("id") for x in lanes}:
+            errors.append(f"lane {lane.get('id')}: next names no lane — {lane['next']!r}")
         for mid in lane.get("modules", []):
             if mid not in modules:
                 errors.append(f"lane {lane.get('id')}: unknown module {mid!r}")
