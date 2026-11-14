@@ -53,12 +53,13 @@ fn files() -> Option<&'static (String, String)> {
     .as_ref()
 }
 
-/// Tests read the declaration this repository carries, as a fixture.
+/// Tests read a fixed copy of a declaration (tests/fixtures/acl/), never a
+/// goatnet's. The deployed one comes from the assembled tree at run time.
 #[cfg(test)]
 pub(crate) const TAXONOMY_YAML: &str =
-    include_str!("../../../ops/ansible/netbird_acl_taxonomy.yml");
+    include_str!("../tests/fixtures/acl/netbird_acl_taxonomy.yml");
 #[cfg(test)]
-pub(crate) const MATRIX_YAML: &str = include_str!("../../../ops/ansible/netbird_acl_matrix.yml");
+pub(crate) const MATRIX_YAML: &str = include_str!("../tests/fixtures/acl/netbird_acl_matrix.yml");
 #[cfg(test)]
 fn files() -> Option<&'static (String, String)> {
     static CELL: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();

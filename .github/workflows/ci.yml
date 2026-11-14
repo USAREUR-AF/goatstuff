@@ -117,7 +117,7 @@ jobs:
           cd ops/ansible
           rc=0
           for p in *.yml; do
-            case "$p" in netbird_acl_matrix.yml|netbird_acl_taxonomy.yml|requirements.yml) continue;; esac
+            case "$p" in requirements.yml) continue;; esac
             ansible-playbook --syntax-check -i localhost, -e target=all -e herd_connector_target_hosts=all "$p" >/dev/null 2>&1 || { echo "syntax: $p"; rc=1; }
           done
           exit $rc
