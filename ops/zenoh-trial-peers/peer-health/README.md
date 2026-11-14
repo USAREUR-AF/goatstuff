@@ -64,7 +64,7 @@ The router's `Using ZID:` start-up line is not in such a feed, so the deployment
 | `--peer-population` | `PEER_HEALTH_PEER_POPULATION` | 0 | Declared number of peers this router serves; the denominator of the majority rule |
 | `--peers-file <path>` | `PEER_HEALTH_PEERS_FILE` | | JSON map from Zenoh ID (or source address) to `{"name", "owner"}` |
 | `--sessions-file <path>` | `PEER_HEALTH_SESSIONS_FILE` | | JSON list of the Zenoh IDs that hold a session with our router; re-read every tick |
-| `--peering <name>` | `PEER_HEALTH_PEERING` | | The one peering this reader serves (beside a per-partner edge router) |
+| `--peering <name>` | `PEER_HEALTH_PEERING` | | The one peering this reader serves (beside a per-partner edge router). 2 to 16 characters of `a-z`, `0-9` and `-`; the reader exits on any other name |
 | `--observed-by <zid>` | `PEER_HEALTH_OBSERVED_BY` | from the log | Our router's Zenoh ID |
 | `--local-clock` | `PEER_HEALTH_LOCAL_CLOCK` | `auto` | `auto` asks the kernel (adjtimex); `synced` or `unsynced` overrides it |
 | `--dry-run` | | off | Print instead of publishing; open no session |

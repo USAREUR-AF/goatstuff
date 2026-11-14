@@ -100,6 +100,15 @@ pub fn is_zid(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// A peering name is one key segment of `ops/peer/verdict/peering/<name>`:
+/// 2 to 16 characters of lowercase letters, digits and hyphens. A slash or a
+/// wildcard would change which key the verdict is published on.
+pub fn is_peering_name(s: &str) -> bool {
+    (2..=16).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
 /// Canonical form for comparing Zenoh IDs: lowercase, leading zeros removed.
 pub fn normalize_zid(s: &str) -> String {
     let lower = s.trim().to_ascii_lowercase();
@@ -326,5 +335,26 @@ mod tests {
         assert!(is_zid("0"));
         assert!(!is_zid(""));
         assert!(!is_zid("ABC"));
+    }
+
+    #[test]
+    fn a_peering_name_is_one_plain_key_segment() {
+        for ok in ["xa", "partner-1", "abcdefghijklmnop"] {
+            assert!(is_peering_name(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "x",
+            "abcdefghijklmnopq",
+            "Partner",
+            "a/b",
+            "a*",
+            "**",
+            "a b",
+            "a$b",
+            "a.b",
+        ] {
+            assert!(!is_peering_name(bad), "{bad}");
+        }
     }
 }

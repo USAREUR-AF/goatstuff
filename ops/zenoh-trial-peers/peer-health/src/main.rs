@@ -235,6 +235,13 @@ async fn run<P: Publisher>(args: &Args, mut publisher: P) -> Result<()> {
         None => Attribution::default(),
     };
     let clock_check = clock::from_mode(&args.local_clock).map_err(anyhow::Error::msg)?;
+    let peering = args.peering.clone().filter(|p| !p.is_empty());
+    if let Some(name) = &peering {
+        anyhow::ensure!(
+            goat_peer_health::parse::is_peering_name(name),
+            "--peering {name:?} is not a peering name: use 2 to 16 characters of a-z, 0-9 and '-'"
+        );
+    }
     let cfg = Config {
         site: args.site.clone(),
         window_ms: (args.window_secs.max(1) * 1000) as i64,
@@ -242,7 +249,7 @@ async fn run<P: Publisher>(args: &Args, mut publisher: P) -> Result<()> {
         silence_after_ms: (args.silence_after_secs * 1000) as i64,
         peer_population: args.peer_population,
         observed_by: args.observed_by.clone(),
-        peering: args.peering.clone().filter(|p| !p.is_empty()),
+        peering,
     };
     info!(
         site = args.site.as_str(),
