@@ -26,13 +26,22 @@
 // per-peer row carries a Zenoh ID and an attributed name. Those rows are
 // shown at the Full tier only; every other tier sees the per-site grade
 // and a count of the rows withheld, never the identities.
+//
+// The trust-refusal reading (a client refuses the router's certificate) is
+// site-level and identity-free: the trust verdict, its reason and the TLS
+// alert counts per name show at every tier. Its candidate rows (declared
+// peers with no session while refusals arrive) carry a Zenoh ID or a source
+// address, so they follow the identity rule: Full tier only. A candidate is
+// worded as a candidate, never as a machine at fault, and is never red. A
+// trust reading that is not measured is said so and never reads green.
 
 use serde::Serialize;
 
 use crate::health_wire::{
-    fmt_age, short_name, EnvDetail, EnvHealthV1, FabricHealthV1, PeerFaultV1,
+    fmt_age, short_name, EnvDetail, EnvHealthV1, FabricHealthV1, PeerFaultDetailV1, PeerFaultV1,
     ProducerFootprintV1, FOOTPRINT_PREFIX, HEALTH_PREFIX, MESH_HEALTH_PREFIX,
-    PEER_HEALTH_PREFIX, PRESENCE_HEALTH_PREFIX, TIME_HEALTH_PREFIX,
+    PEER_FAULT_CLOCK_AHEAD, PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE, PEER_HEALTH_PREFIX,
+    PRESENCE_HEALTH_PREFIX, TIME_HEALTH_PREFIX,
 };
 use crate::sample_buffer::SampleBuffer;
 use crate::viewer::ViewerScope;
@@ -78,7 +87,10 @@ pub fn collect_sources(buf: &SampleBuffer) -> TopSources {
         let Some(raw) = &e.raw_bytes else { continue };
         if let Ok(h) = FabricHealthV1::decode(raw.as_slice()) {
             if src.fabric.as_ref().map_or(true, |b| e.ts_ms >= b.seen_ms) {
-                src.fabric = Some(Beat { msg: h, seen_ms: e.ts_ms });
+                src.fabric = Some(Beat {
+                    msg: h,
+                    seen_ms: e.ts_ms,
+                });
             }
         }
     }
@@ -86,7 +98,10 @@ pub fn collect_sources(buf: &SampleBuffer) -> TopSources {
         let Some(raw) = &e.raw_bytes else { continue };
         if let Ok(fp) = ProducerFootprintV1::decode(raw.as_slice()) {
             if !fp.peer.is_empty() {
-                src.footprints.push(Beat { msg: fp, seen_ms: e.ts_ms });
+                src.footprints.push(Beat {
+                    msg: fp,
+                    seen_ms: e.ts_ms,
+                });
             }
         }
     }
@@ -99,7 +114,10 @@ pub fn collect_sources(buf: &SampleBuffer) -> TopSources {
             let Some(raw) = &e.raw_bytes else { continue };
             if let Ok(env) = EnvHealthV1::decode(raw.as_slice()) {
                 if slot.as_ref().map_or(true, |b| e.ts_ms >= b.seen_ms) {
-                    *slot = Some(Beat { msg: env, seen_ms: e.ts_ms });
+                    *slot = Some(Beat {
+                        msg: env,
+                        seen_ms: e.ts_ms,
+                    });
                 }
             }
         }
@@ -192,20 +210,64 @@ pub struct Totals {
     pub dropped: u32,
 }
 
-/// One peer-fault row (Full tier only): who, how far ahead, how often.
+/// One peer-fault row (Full tier only): who, how far ahead, how often; or
+/// a trust-refusal candidate: who holds no session while refusals arrive.
 #[derive(Serialize)]
 pub struct PeerRow {
-    /// The attributed name when the reader had one, else the Zenoh ID.
+    /// The attributed name when the reader had one, else the Zenoh ID, else
+    /// the source address (a candidate declared by address has no Zenoh ID).
     pub label: String,
     pub zid: String,
+    /// "clock_ahead" / "trust_candidate" / "unknown".
+    pub kind: &'static str,
+    /// A trust-refusal candidate: not confirmed, not a machine at fault.
+    pub candidate: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_address: Option<String>,
+    /// Candidates: how long the reader has seen the peer hold no session,
+    /// e.g. "4m ago" (since the reader started; a lower bound).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub absent_since: Option<String>,
+    /// What the pane prints in the grade column: the grade, or
+    /// "candidate (not confirmed)" for a candidate.
+    pub grade_label: String,
     pub offset_seconds: f64,
     pub rejections_per_minute: f64,
     /// "yes" / "no" / "unknown" (the reader had no sessions file).
     pub direct_session: &'static str,
     /// The row's grade from the reader: peer_at_fault, local_clock_suspect,
-    /// quiet, cleared, unmeasured.
+    /// quiet, cleared, unmeasured, candidate.
     pub grade: String,
+    /// The row's color; a candidate is amber whatever the reader sent.
     pub color: String,
+}
+
+/// One TLS alert name the router received in the window (identity-free).
+#[derive(Serialize)]
+pub struct TlsAlertRow {
+    pub name: String,
+    pub count: u64,
+    pub per_minute: f64,
+    /// In the trust-refusal set; other names are counted, grade nothing.
+    pub trust_refusal: bool,
+}
+
+/// The trust-refusal line of one site (identity-free, every tier).
+#[derive(Serialize)]
+pub struct TrustLine {
+    /// The reader's trust verdict: clean / unattributed / candidates /
+    /// unmeasured, or "stale" when the beat is stale.
+    pub verdict: String,
+    /// What the pane prints: "not measured" for unmeasured, never "clean".
+    pub label: String,
+    /// green / amber / unmetered / idle. Unmeasured is unmetered, never green.
+    pub state: &'static str,
+    /// The trust part of the reader's reason.
+    pub reason: String,
+    pub alerts: Vec<TlsAlertRow>,
+    /// Declared peers holding no session; None = cannot be judged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub declared_peers_absent: Option<u32>,
 }
 
 /// One site's peer-domain reading.
@@ -226,6 +288,11 @@ pub struct PeerSiteRow {
     pub peers: Vec<PeerRow>,
     /// Peer rows withheld at this viewer's scope (identities).
     pub peers_withheld: usize,
+    /// Of those, trust-refusal candidates.
+    pub candidates_withheld: usize,
+    /// The trust-refusal line; None from a reader that predates it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust: Option<TrustLine>,
 }
 
 #[derive(Serialize)]
@@ -321,8 +388,7 @@ pub fn build_top_view(
                         domain: domain.to_string(),
                         state: if is_stale { "idle".to_string() } else { color },
                         sample_count: n,
-                        stale_age: is_stale
-                            .then(|| fmt_age(now_ms.saturating_sub(seen) as i64)),
+                        stale_age: is_stale.then(|| fmt_age(now_ms.saturating_sub(seen) as i64)),
                     }
                 }
             }
@@ -468,7 +534,7 @@ fn peer_chip_inputs(
         return match sites.iter().max_by_key(|b| b.seen_ms) {
             None => (None, 0, 0, 0),
             Some(b) => (
-                Some(b.msg.overall_color.clone()),
+                Some(peer_color(&b.msg)),
                 b.msg.sample_count,
                 b.msg.window_secs,
                 b.seen_ms,
@@ -477,10 +543,10 @@ fn peer_chip_inputs(
     }
     let worst = fresh
         .iter()
-        .max_by_key(|b| color_rank(&b.msg.overall_color))
+        .max_by_key(|b| color_rank(&peer_color(&b.msg)))
         .expect("fresh is non-empty");
     (
-        Some(worst.msg.overall_color.clone()),
+        Some(peer_color(&worst.msg)),
         fresh.iter().map(|b| b.msg.sample_count).sum(),
         worst.msg.window_secs,
         worst.seen_ms,
@@ -499,26 +565,112 @@ fn color_rank(color: &str) -> u8 {
     }
 }
 
+fn peer_detail(msg: &EnvHealthV1) -> Option<&PeerFaultDetailV1> {
+    match &msg.detail {
+        Some(EnvDetail::Peer(d)) => Some(d),
+        _ => None,
+    }
+}
+
+/// The reading's color, held to the honesty rule: a reading whose trust part
+/// is not measured never shows green, whatever the envelope says.
+fn peer_color(msg: &EnvHealthV1) -> String {
+    let trust_unmeasured = peer_detail(msg).is_some_and(|d| d.trust_verdict == "unmeasured");
+    if trust_unmeasured && msg.overall_color == "green" {
+        "unmetered".to_string()
+    } else {
+        msg.overall_color.clone()
+    }
+}
+
+/// The trust part of the reader's combined reason. The reader writes the
+/// trust reason alone when its verdict is a trust word, and after "; also: "
+/// when the clock verdict leads.
+fn trust_reason(d: &PeerFaultDetailV1) -> String {
+    if d.verdict.starts_with("trust_") {
+        return d.verdict_reason.clone();
+    }
+    if let Some((_, tail)) = d.verdict_reason.split_once("; also: ") {
+        return tail.to_string();
+    }
+    match d.trust_verdict.as_str() {
+        "clean" => "no trust-refusal alert in the window".to_string(),
+        // Unmeasured because the whole reading is: the clock reason says why.
+        "unmeasured" => d.verdict_reason.clone(),
+        _ => String::new(),
+    }
+}
+
+fn trust_line(d: &PeerFaultDetailV1, is_stale: bool) -> Option<TrustLine> {
+    if d.trust_verdict.is_empty() {
+        return None;
+    }
+    let candidates = d
+        .peers
+        .iter()
+        .filter(|p| p.kind == PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE)
+        .count();
+    let (label, state) = match d.trust_verdict.as_str() {
+        "clean" => ("no client refuses the router's certificate".to_string(), "green"),
+        "unattributed" => (
+            "a client refuses the router's certificate; the router's log cannot name it"
+                .to_string(),
+            "amber",
+        ),
+        "candidates" => (
+            format!(
+                "a client refuses the router's certificate; {candidates} declared peer(s) without a session are candidates, not confirmed"
+            ),
+            "amber",
+        ),
+        "unmeasured" => ("not measured".to_string(), "unmetered"),
+        other => (format!("{other} (unknown trust verdict)"), "unmetered"),
+    };
+    Some(TrustLine {
+        verdict: if is_stale {
+            "stale".to_string()
+        } else {
+            d.trust_verdict.clone()
+        },
+        label,
+        state: if is_stale { "idle" } else { state },
+        reason: trust_reason(d),
+        alerts: d
+            .tls_alerts
+            .iter()
+            .map(|a| TlsAlertRow {
+                name: a.name.clone(),
+                count: a.count_in_window,
+                per_minute: a.per_minute,
+                trust_refusal: a.trust_refusal,
+            })
+            .collect(),
+        declared_peers_absent: d.declared_peers_absent,
+    })
+}
+
 fn peer_site_row(
     b: &Beat<EnvHealthV1>,
     show_peers: bool,
     is_stale: bool,
     now_ms: u64,
 ) -> PeerSiteRow {
-    let detail = match &b.msg.detail {
-        Some(EnvDetail::Peer(d)) => Some(d),
-        _ => None,
-    };
+    let detail = peer_detail(&b.msg);
     let peers: Vec<PeerRow> = detail
-        .map(|d| d.peers.iter().map(peer_row).collect())
+        .map(|d| d.peers.iter().map(|p| peer_row(p, now_ms)).collect())
         .unwrap_or_default();
     let withheld = if show_peers { 0 } else { peers.len() };
+    let candidates_withheld = if show_peers {
+        0
+    } else {
+        peers.iter().filter(|p| p.candidate).count()
+    };
     PeerSiteRow {
         site: b.msg.scope.clone(),
         state: if is_stale {
             "idle".to_string()
         } else {
-            b.msg.overall_color.clone()
+            peer_color(&b.msg)
         },
         verdict: if is_stale {
             "stale".to_string()
@@ -530,17 +682,40 @@ fn peer_site_row(
         peering: detail.map(|d| d.peering.clone()).unwrap_or_default(),
         peers: if show_peers { peers } else { Vec::new() },
         peers_withheld: withheld,
+        candidates_withheld,
+        trust: detail.and_then(|d| trust_line(d, is_stale)),
     }
 }
 
-fn peer_row(p: &PeerFaultV1) -> PeerRow {
+fn peer_row(p: &PeerFaultV1, now_ms: u64) -> PeerRow {
+    let candidate = p.kind == PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE;
+    let source_address = p.source_address.clone().filter(|a| !a.is_empty());
+    let label = p
+        .attribution_name
+        .clone()
+        .filter(|n| !n.is_empty())
+        .or_else(|| (!p.zid.is_empty()).then(|| p.zid.clone()))
+        .or_else(|| source_address.clone())
+        .unwrap_or_else(|| "—".to_string());
     PeerRow {
-        label: p
-            .attribution_name
-            .clone()
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| p.zid.clone()),
+        label,
         zid: p.zid.clone(),
+        kind: match p.kind {
+            PEER_FAULT_CLOCK_AHEAD => "clock_ahead",
+            PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE => "trust_candidate",
+            _ => "unknown",
+        },
+        candidate,
+        source_address,
+        absent_since: p
+            .absent_since_unix_ms
+            .filter(|_| candidate)
+            .map(|t| fmt_age(now_ms as i64 - t)),
+        grade_label: if candidate {
+            "candidate (not confirmed)".to_string()
+        } else {
+            p.grade.clone()
+        },
         offset_seconds: p.offset_seconds,
         rejections_per_minute: p.rejections_per_minute,
         direct_session: match p.direct_session {
@@ -549,7 +724,11 @@ fn peer_row(p: &PeerFaultV1) -> PeerRow {
             None => "unknown",
         },
         grade: p.grade.clone(),
-        color: p.color.clone(),
+        color: if candidate {
+            "amber".to_string()
+        } else {
+            p.color.clone()
+        },
     }
 }
 
@@ -620,7 +799,9 @@ fn mesh_join(
 
 /// Relay short label: "via relay-dub" from "rels://relay-dub.example.net:33073".
 fn relay_label(addr: &str) -> String {
-    let host = addr.trim_start_matches("rels://").trim_start_matches("rel://");
+    let host = addr
+        .trim_start_matches("rels://")
+        .trim_start_matches("rel://");
     match host.split(['.', ':']).next() {
         Some(h) if !h.is_empty() => format!("via {h}"),
         _ => "via relay".to_string(),
@@ -642,14 +823,17 @@ fn class_label(class: &str) -> &'static str {
 mod tests {
     use super::*;
     use crate::health_wire::{
-        ClassHealthV1, ClassShareV1, MeshDetailV1, MeshLinkHealthV1, PeerFaultDetailV1,
+        ClassHealthV1, ClassShareV1, MeshDetailV1, MeshLinkHealthV1, PeerFaultDetailV1, TlsAlertV1,
     };
     use panoscope_core::portal::EnvelopeRow;
     use std::collections::HashSet;
 
     fn scoped(anchors: &[&str], include_notional: bool) -> ViewerScope {
         ViewerScope::Scoped {
-            anchors: anchors.iter().map(|s| s.to_string()).collect::<HashSet<_>>(),
+            anchors: anchors
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<HashSet<_>>(),
             include_notional,
         }
     }
@@ -751,7 +935,10 @@ mod tests {
         );
         assert_eq!(v.scope_tier, "floor");
         assert!(v.restricted, "floor viewers must see the scoped-view note");
-        assert!(v.producers.is_empty(), "app producer identities are scoped information");
+        assert!(
+            v.producers.is_empty(),
+            "app producer identities are scoped information"
+        );
         // Identity-free aggregates stay: class rows + meter's own count.
         assert!(matches!(v.classes, ClassPane::Rows { .. }));
         assert_eq!(v.fabric_active_producers, Some(7));
@@ -814,7 +1001,10 @@ mod tests {
     #[test]
     fn stale_fabric_collapses_to_idle_and_hides_bars() {
         // Beat window 5s, seen at t=0, now t=20s → past 3× window.
-        let src = TopSources { fabric: Some(fabric(5, 0)), ..Default::default() };
+        let src = TopSources {
+            fabric: Some(fabric(5, 0)),
+            ..Default::default()
+        };
         let v = build_top_view(
             &ViewerScope::Full,
             &src,
@@ -824,9 +1014,15 @@ mod tests {
             20_000,
         );
         let fab = v.chips.iter().find(|c| c.domain == "fabric").unwrap();
-        assert_eq!(fab.state, "idle", "stale beat never re-asserts its live color");
+        assert_eq!(
+            fab.state, "idle",
+            "stale beat never re-asserts its live color"
+        );
         assert!(fab.stale_age.is_some());
-        assert!(matches!(v.classes, ClassPane::Stale { .. }), "bars hidden, not faked");
+        assert!(
+            matches!(v.classes, ClassPane::Stale { .. }),
+            "bars hidden, not faked"
+        );
     }
 
     #[test]
@@ -839,7 +1035,10 @@ mod tests {
             &EnvelopeRegistry::empty(),
             1_000,
         );
-        assert!(v.chips.iter().all(|c| c.state == "unmetered" && c.sample_count == 0));
+        assert!(v
+            .chips
+            .iter()
+            .all(|c| c.state == "unmetered" && c.sample_count == 0));
         assert!(matches!(v.classes, ClassPane::Absent));
     }
 
@@ -859,7 +1058,10 @@ mod tests {
             &EnvelopeRegistry::empty(),
             26_000,
         );
-        assert!(v.producers.is_empty(), "quiet producers drop, never false-live");
+        assert!(
+            v.producers.is_empty(),
+            "quiet producers drop, never false-live"
+        );
     }
 
     #[test]
@@ -1080,13 +1282,310 @@ mod tests {
             })),
         };
         // Anchor matches the link short-name → joined.
-        let (path, latency) = mesh_join(&fp("thor", 1.0).msg, &AliasRegistry::default(), Some(&mesh));
+        let (path, latency) =
+            mesh_join(&fp("thor", 1.0).msg, &AliasRegistry::default(), Some(&mesh));
         assert_eq!(path, "direct P2P");
         assert_eq!(latency, "12 ms");
         // Different namespace (UUID anchor) → honest blank, never a guess.
-        let (path, latency) =
-            mesh_join(&fp("2cf6aaaa", 1.0).msg, &AliasRegistry::default(), Some(&mesh));
+        let (path, latency) = mesh_join(
+            &fp("2cf6aaaa", 1.0).msg,
+            &AliasRegistry::default(),
+            Some(&mesh),
+        );
         assert_eq!(path, "—");
         assert_eq!(latency, "—");
+    }
+
+    // ---- the trust-refusal reading ---------------------------------------
+
+    const T_NOW: u64 = 1_794_674_760_000;
+
+    fn alert(name: &str, count: u64, trust_refusal: bool) -> TlsAlertV1 {
+        TlsAlertV1 {
+            name: name.into(),
+            count_in_window: count,
+            per_minute: count as f64,
+            trust_refusal,
+            last_seen_unix_ms: 0,
+        }
+    }
+
+    fn candidate(zid: &str, addr: Option<&str>, name: Option<&str>) -> PeerFaultV1 {
+        PeerFaultV1 {
+            zid: zid.into(),
+            kind: PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE,
+            source_address: addr.map(Into::into),
+            attribution_name: name.map(Into::into),
+            direct_session: Some(false),
+            absent_since_unix_ms: Some(T_NOW as i64 - 240_000),
+            grade: "candidate".into(),
+            // A reader that sent red must still render amber: never red.
+            color: "red".into(),
+            ..Default::default()
+        }
+    }
+
+    fn trust_beat(
+        color: &str,
+        verdict: &str,
+        reason: &str,
+        trust_verdict: &str,
+        peers: Vec<PeerFaultV1>,
+        tls_alerts: Vec<TlsAlertV1>,
+    ) -> Beat<EnvHealthV1> {
+        Beat {
+            msg: EnvHealthV1 {
+                domain: "peer".into(),
+                scope: "example-site".into(),
+                ts_unix_ms: 0,
+                overall_color: color.into(),
+                sample_count: 3,
+                window_secs: 30,
+                detail: Some(EnvDetail::Peer(PeerFaultDetailV1 {
+                    peers,
+                    verdict: verdict.into(),
+                    verdict_reason: reason.into(),
+                    tls_alerts,
+                    trust_verdict: trust_verdict.into(),
+                    declared_peers_absent: Some(2),
+                    ..Default::default()
+                })),
+            },
+            seen_ms: T_NOW - 1_000,
+        }
+    }
+
+    fn candidates_beat() -> Beat<EnvHealthV1> {
+        trust_beat(
+            "red",
+            "peer_at_fault",
+            "1 peer(s) had timestamps rejected in the last 60 s; also: 6 TLS handshake(s) ended in the last 60 s with a trust-refusal alert (UnknownCA x5, BadCertificate x1); 2 declared peer(s) hold no session and are candidates, not confirmed: the router's log cannot name the refusing client",
+            "candidates",
+            vec![
+                PeerFaultV1 {
+                    zid: "3c9a51e0d2b7f4a6c18e05d9b3a7f2e1".into(),
+                    kind: PEER_FAULT_CLOCK_AHEAD,
+                    offset_seconds: 17.7,
+                    rejections_per_minute: 3.0,
+                    grade: "peer_at_fault".into(),
+                    color: "red".into(),
+                    ..Default::default()
+                },
+                candidate("", Some("10.0.0.7"), None),
+                candidate("7e41c0d9a2b4", None, Some("lab-router-d")),
+            ],
+            vec![
+                alert("BadCertificate", 1, true),
+                alert("CertificateExpired", 1, false),
+                alert("UnknownCA", 5, true),
+            ],
+        )
+    }
+
+    #[test]
+    fn candidates_render_as_amber_candidates_at_full_scope() {
+        let src = TopSources {
+            peer: vec![candidates_beat()],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, T_NOW);
+        let s = &v.peer_sites[0];
+        assert_eq!(s.state, "red", "the clock fault leads the site");
+        assert_eq!(s.peers.len(), 3);
+
+        let clock = &s.peers[0];
+        assert_eq!(clock.kind, "clock_ahead");
+        assert!(!clock.candidate);
+        assert_eq!(clock.grade_label, "peer_at_fault");
+        assert_eq!(clock.color, "red");
+
+        // Declared by address: no Zenoh ID, the address is the label.
+        let by_addr = &s.peers[1];
+        assert_eq!(by_addr.kind, "trust_candidate");
+        assert!(by_addr.candidate);
+        assert_eq!(by_addr.label, "10.0.0.7");
+        assert_eq!(by_addr.zid, "");
+        assert_eq!(by_addr.source_address.as_deref(), Some("10.0.0.7"));
+        assert_eq!(by_addr.grade_label, "candidate (not confirmed)");
+        assert_eq!(by_addr.color, "amber", "a candidate is never red");
+        assert_eq!(by_addr.absent_since.as_deref(), Some("4m ago"));
+        assert_eq!(by_addr.direct_session, "no");
+
+        let named = &s.peers[2];
+        assert_eq!(named.label, "lab-router-d");
+        assert_eq!(named.source_address, None);
+
+        let t = s.trust.as_ref().expect("a trust line");
+        assert_eq!(t.verdict, "candidates");
+        assert_eq!(t.state, "amber");
+        assert_eq!(
+            t.label,
+            "a client refuses the router's certificate; 2 declared peer(s) without a session are candidates, not confirmed"
+        );
+        assert!(t.reason.starts_with("6 TLS handshake(s)"), "{}", t.reason);
+        assert!(
+            !t.reason.contains("timestamps rejected"),
+            "the clock part is not repeated"
+        );
+        let names: Vec<(&str, u64, bool)> = t
+            .alerts
+            .iter()
+            .map(|a| (a.name.as_str(), a.count, a.trust_refusal))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("BadCertificate", 1, true),
+                ("CertificateExpired", 1, false),
+                ("UnknownCA", 5, true),
+            ]
+        );
+        assert_eq!(t.declared_peers_absent, Some(2));
+    }
+
+    #[test]
+    fn candidates_are_withheld_below_full_scope_and_the_trust_line_is_not() {
+        let src = TopSources {
+            peer: vec![candidates_beat()],
+            ..Default::default()
+        };
+        for scope in [
+            ViewerScope::DataAll,
+            scoped(&[], false),
+            scoped(&["aaa111"], true),
+        ] {
+            let v = view(&scope, &src, T_NOW);
+            let s = &v.peer_sites[0];
+            assert!(
+                s.peers.is_empty(),
+                "no Zenoh ID or source address below Full"
+            );
+            assert_eq!(s.peers_withheld, 3);
+            assert_eq!(s.candidates_withheld, 2);
+            let json = serde_json::to_string(s).unwrap();
+            assert!(!json.contains("10.0.0.7"), "{json}");
+            assert!(!json.contains("lab-router-d"), "{json}");
+            // The trust line is a fact about the router: every tier sees it.
+            let t = s.trust.as_ref().unwrap();
+            assert_eq!(t.verdict, "candidates");
+            assert_eq!(t.alerts.len(), 3);
+        }
+    }
+
+    #[test]
+    fn an_unattributed_refusal_reads_amber_with_the_readers_reason() {
+        let reason = "2 TLS handshake(s) ended in the last 60 s with a trust-refusal alert (UnknownCA x2): a client is refusing the router's certificate and cannot be named from the router's log; no peers file declares the expected peers";
+        let src = TopSources {
+            peer: vec![trust_beat(
+                "amber",
+                "trust_refused_unattributed",
+                reason,
+                "unattributed",
+                vec![],
+                vec![alert("UnknownCA", 2, true)],
+            )],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, T_NOW);
+        let s = &v.peer_sites[0];
+        assert_eq!(s.state, "amber");
+        let t = s.trust.as_ref().unwrap();
+        assert_eq!(t.state, "amber");
+        assert_eq!(
+            t.label,
+            "a client refuses the router's certificate; the router's log cannot name it"
+        );
+        assert_eq!(t.reason, reason);
+        assert!(s.peers.is_empty());
+    }
+
+    #[test]
+    fn trust_not_measured_is_said_so_and_never_green() {
+        // A reader that (wrongly) sent green with an unmeasured trust part:
+        // the pane still refuses to show green.
+        for overall in ["green", "unmetered"] {
+            let src = TopSources {
+                peer: vec![trust_beat(
+                    overall,
+                    "trust_unmeasured",
+                    "trust refusal is not measured: no TLS fatal-alert line has been read and the router is not declared to log one (PEER_HEALTH_TLS_ALERTS_LOGGED)",
+                    "unmeasured",
+                    vec![],
+                    vec![],
+                )],
+                ..Default::default()
+            };
+            let v = view(&ViewerScope::DataAll, &src, T_NOW);
+            let s = &v.peer_sites[0];
+            assert_eq!(s.state, "unmetered", "from {overall}");
+            let t = s.trust.as_ref().unwrap();
+            assert_eq!(t.label, "not measured");
+            assert_eq!(t.state, "unmetered");
+            assert!(t.reason.contains("not measured"));
+            let chip = v.chips.iter().find(|c| c.domain == "peer").unwrap();
+            assert_eq!(chip.state, "unmetered");
+        }
+
+        // A clean trust reading is green, and says what it means.
+        let src = TopSources {
+            peer: vec![trust_beat(
+                "green",
+                "clean",
+                "no timestamp rejected",
+                "clean",
+                vec![],
+                vec![],
+            )],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, T_NOW);
+        let t = v.peer_sites[0].trust.as_ref().unwrap();
+        assert_eq!(t.state, "green");
+        assert_eq!(t.label, "no client refuses the router's certificate");
+        assert_eq!(t.reason, "no trust-refusal alert in the window");
+    }
+
+    #[test]
+    fn a_stale_trust_line_is_idle_and_an_old_reader_has_none() {
+        let mut b = candidates_beat();
+        b.seen_ms = T_NOW - 100_000; // window 30 s: stale
+        let src = TopSources {
+            peer: vec![b],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, T_NOW);
+        let t = v.peer_sites[0].trust.as_ref().unwrap();
+        assert_eq!(t.verdict, "stale");
+        assert_eq!(t.state, "idle");
+
+        // A reader that predates the trust detector: no trust line at all.
+        let src = TopSources {
+            peer: vec![peer_beat("example-site", "red", 10_000, "")],
+            ..Default::default()
+        };
+        let v = view(&ViewerScope::Full, &src, 11_000);
+        assert!(v.peer_sites[0].trust.is_none());
+        assert!(v.peer_sites[0].peers.iter().all(|p| !p.candidate));
+    }
+
+    #[test]
+    fn trust_fields_decode_from_the_wire() {
+        let env = candidates_beat().msg;
+        let back = EnvHealthV1::decode(env.encode_to_vec().as_slice()).unwrap();
+        let Some(EnvDetail::Peer(d)) = back.detail else {
+            panic!("expected the peer arm")
+        };
+        assert_eq!(d.trust_verdict, "candidates");
+        assert_eq!(d.declared_peers_absent, Some(2));
+        assert_eq!(d.tls_alerts.len(), 3);
+        assert_eq!(d.tls_alerts[2].name, "UnknownCA");
+        assert!(!d.tls_alerts[1].trust_refusal);
+        assert_eq!(d.peers[1].kind, PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE);
+        assert_eq!(d.peers[1].source_address.as_deref(), Some("10.0.0.7"));
+        assert_eq!(
+            d.peers[1].absent_since_unix_ms,
+            Some(T_NOW as i64 - 240_000)
+        );
+        assert_eq!(d.peers[0].source_address, None);
     }
 }

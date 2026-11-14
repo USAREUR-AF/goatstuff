@@ -183,8 +183,17 @@ pub struct PresenceDetailV1 {
     pub dropped_recent: u32,
 }
 
+/// PeerFaultKindV1::CLOCK_AHEAD: the router rejected this peer's timestamps.
+pub const PEER_FAULT_CLOCK_AHEAD: i32 = 1;
+/// PeerFaultKindV1::TRUST_ROOT_REFUSED_CANDIDATE: clients refuse the router's
+/// certificate and this declared peer holds no session. A candidate, never a
+/// confirmed cause: the router's log cannot name the refusing client.
+pub const PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE: i32 = 2;
+
 /// Peer domain (goatcore ADR 1232): one fault row per Zenoh ID that our
-/// router saw stamp a rejected timestamp. Published by goat-peer-health.
+/// router saw stamp a rejected timestamp, or one candidate row per absent
+/// declared peer while clients refuse the router's certificate. Published by
+/// goat-peer-health.
 #[derive(Clone, PartialEq, prost::Message)]
 pub struct PeerFaultV1 {
     #[prost(string, tag = "1")]
@@ -220,6 +229,31 @@ pub struct PeerFaultV1 {
     /// None = unknown (the reader had no sessions file).
     #[prost(bool, optional, tag = "16")]
     pub direct_session: Option<bool>,
+    /// The peers-file key when it is a source address; a candidate row for
+    /// such an entry has `zid` = "".
+    #[prost(string, optional, tag = "17")]
+    pub source_address: Option<String>,
+    /// Candidate rows: the first reading at which the reader saw the peer hold
+    /// no session (since the reader started; not persisted).
+    #[prost(int64, optional, tag = "18")]
+    pub absent_since_unix_ms: Option<i64>,
+}
+
+/// One TLS alert name the router received in the window: a fact about the
+/// router, not about a named peer (no identity in it).
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct TlsAlertV1 {
+    #[prost(string, tag = "1")]
+    pub name: String,
+    #[prost(uint64, tag = "2")]
+    pub count_in_window: u64,
+    #[prost(double, tag = "3")]
+    pub per_minute: f64,
+    /// In the trust-refusal set (UnknownCA, BadCertificate, CertificateUnknown).
+    #[prost(bool, tag = "4")]
+    pub trust_refusal: bool,
+    #[prost(int64, tag = "5")]
+    pub last_seen_unix_ms: i64,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -246,6 +280,16 @@ pub struct PeerFaultDetailV1 {
     pub peering_rejections_per_minute: f64,
     #[prost(double, tag = "11")]
     pub peering_max_offset_seconds: f64,
+    /// Trust detector, site level: every TLS alert name in the window.
+    #[prost(message, repeated, tag = "12")]
+    pub tls_alerts: Vec<TlsAlertV1>,
+    /// clean | unattributed | candidates | unmeasured; "" from a reader that
+    /// predates the trust detector.
+    #[prost(string, tag = "13")]
+    pub trust_verdict: String,
+    /// Declared peers holding no session; None = cannot be judged.
+    #[prost(uint32, optional, tag = "14")]
+    pub declared_peers_absent: Option<u32>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
