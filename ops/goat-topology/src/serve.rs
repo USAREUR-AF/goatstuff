@@ -224,6 +224,7 @@ mod tests {
                 link_state_e: peers.len() as u32,
                 member_zids: vec![zid.into()],
                 session_count: peers.len() as u32,
+                ..Default::default()
             }],
             sessions: peers
                 .iter()

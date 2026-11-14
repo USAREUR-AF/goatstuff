@@ -3,7 +3,7 @@
 //
 // Pure arithmetic over the same `terms()` the server uses, so the page and the
 // findings engine cannot disagree about the cost of a shape.
-import { $, esc, terms } from "../lib.js";
+import { $, esc, terms, displayName } from "../lib.js";
 
 let onPick = () => {};
 export function onSelectionChange(fn) { onPick = fn; }
@@ -43,11 +43,13 @@ export function projectCarve(n, k, largestNow) {
 }
 
 export function renderPlanner(d, picks) {
+  // Every drawn router counts toward a group's size, reporting or not: a
+  // partner's router costs route entries whether or not it tells us about itself.
   const names = d.routers.map(r => r.node || r.zid);
   for (const p of [...picks]) if (!names.includes(p)) picks.delete(p);
 
   $("#picks").innerHTML = names.map(n =>
-    `<span class="pick${picks.has(n) ? " on" : ""}" data-n="${esc(n)}">${esc(n)}</span>`).join("");
+    `<span class="pick${picks.has(n) ? " on" : ""}" data-n="${esc(n)}">${esc(displayName(n))}</span>`).join("");
   for (const el of $("#picks").querySelectorAll(".pick")) {
     el.onclick = () => onPick(el.dataset.n);
   }

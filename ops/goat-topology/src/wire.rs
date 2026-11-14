@@ -92,6 +92,46 @@ pub struct SessionV1 {
     pub link_dst: Vec<String>,
 }
 
+/// Whether a `Custom` gateway admits a default-configured client.
+///
+/// A router whose `gateway.south` is a Custom list puts every peer that matches
+/// no subregion in NORTH. A client is never allowed north of a router, so the
+/// client refuses the session (`Remote's custom configuration conflicts with
+/// auto preset`, zenoh-1.9.0 net/runtime/region.rs:58). A Custom list with no
+/// subregion that matches clients therefore refuses EVERY default client —
+/// applications, meters, and this tool's own publisher. Finding T-013.
+///
+/// `Unspecified` is what a publisher older than this field sends, and what
+/// `Auto` and `Unreadable` carry: no claim is made, so no finding fires.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ::prost::Enumeration, Serialize)]
+#[repr(i32)]
+pub enum ClientAdmission {
+    Unspecified = 0,
+    /// At least one subregion matches clients (or might: an `interfaces` or a
+    /// negated filter is counted as admitting, so this never cries wolf).
+    Admitted = 1,
+    /// No subregion can match a client. Every default client is refused.
+    Refused = 2,
+}
+
+/// One router-to-router link in a region's link-state graph, by ZID.
+///
+/// Carried so the surface can draw routers that send no snapshot of their own
+/// (a partner's router, a host without a publisher): a router two hops away is
+/// known only from these pairs, never from this router's sessions.
+#[derive(Clone, PartialEq, ::prost::Message, Serialize)]
+pub struct LinkV1 {
+    #[prost(string, tag = "1")]
+    pub a: String,
+    #[prost(string, tag = "2")]
+    pub b: String,
+}
+
+/// The most links one region carries on the wire. A region this large is far
+/// past the size the T-009 curve says to split at; the cap keeps a snapshot
+/// bounded whatever the fabric does, and `links_truncated` says it was hit.
+pub const MAX_LINKS_PER_REGION: usize = 1024;
+
 #[derive(Clone, PartialEq, ::prost::Message, Serialize)]
 pub struct RegionV1 {
     #[prost(string, tag = "1")]
@@ -104,6 +144,13 @@ pub struct RegionV1 {
     pub member_zids: Vec<String>,
     #[prost(uint32, tag = "5")]
     pub session_count: u32,
+    /// Every edge of this region's link-state graph, as ZID pairs. Empty from a
+    /// publisher older than this field; the surface then falls back to drawing
+    /// only this router's own sessions.
+    #[prost(message, repeated, tag = "6")]
+    pub links: Vec<LinkV1>,
+    #[prost(bool, tag = "7")]
+    pub links_truncated: bool,
 }
 
 impl RegionV1 {
@@ -142,6 +189,31 @@ fn ser_gateway_mode<S: serde::Serializer>(v: &i32, s: S) -> Result<S::Ok, S::Err
     )
 }
 
+impl ClientAdmission {
+    pub fn label(self) -> &'static str {
+        match self {
+            ClientAdmission::Unspecified => "unspecified",
+            ClientAdmission::Admitted => "admitted",
+            ClientAdmission::Refused => "refused",
+        }
+    }
+}
+
+fn ser_client_admission<S: serde::Serializer>(v: &i32, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(
+        ClientAdmission::try_from(*v)
+            .unwrap_or(ClientAdmission::Unspecified)
+            .label(),
+    )
+}
+
+/// True for a region whose members are ROUTERS: `north` on a router, and a
+/// gateway's `south:<id>:router`. A `south:<id>:peer` or `:client` region lists
+/// peers or clients, which are not routers and are not drawn as routers.
+pub fn is_router_region(name: &str) -> bool {
+    name == "north" || name.ends_with(":router")
+}
+
 #[derive(Clone, PartialEq, ::prost::Message, Serialize)]
 pub struct RouterTopologyV1 {
     #[prost(string, tag = "1")]
@@ -178,6 +250,11 @@ pub struct RouterTopologyV1 {
 
     #[prost(string, tag = "13")]
     pub observe_error: String,
+
+    /// Serialized as its label, like `gateway_mode`.
+    #[prost(enumeration = "ClientAdmission", tag = "14")]
+    #[serde(serialize_with = "ser_client_admission")]
+    pub client_admission: i32,
 }
 
 impl RouterTopologyV1 {
@@ -189,6 +266,10 @@ impl RouterTopologyV1 {
     /// regions this router holds. Checked, not assumed (finding T-005).
     pub fn expected_successors(&self) -> u32 {
         self.regions.iter().map(RegionV1::successor_terms).sum()
+    }
+
+    pub fn admission(&self) -> ClientAdmission {
+        ClientAdmission::try_from(self.client_admission).unwrap_or(ClientAdmission::Unspecified)
     }
 
     pub fn region(&self, name: &str) -> Option<&RegionV1> {
@@ -211,7 +292,50 @@ mod tests {
             link_state_e: e,
             member_zids: vec![],
             session_count: 0,
+            ..Default::default()
         }
+    }
+
+    #[test]
+    fn router_regions_are_north_and_south_router_only() {
+        assert!(is_router_region("north"));
+        assert!(is_router_region("south:0:router"));
+        assert!(!is_router_region("south:0:peer"));
+        assert!(!is_router_region("south:1:client"));
+    }
+
+    #[test]
+    fn links_and_admission_round_trip_and_old_snapshots_decode() {
+        let r = RouterTopologyV1 {
+            zid: "a1".into(),
+            client_admission: ClientAdmission::Refused as i32,
+            regions: vec![RegionV1 {
+                name: "north".into(),
+                link_state_v: 2,
+                link_state_e: 1,
+                links: vec![LinkV1 {
+                    a: "a1".into(),
+                    b: "b2".into(),
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let d = RouterTopologyV1::decode(&*r.encode_vec()).expect("decode");
+        assert_eq!(d.admission(), ClientAdmission::Refused);
+        assert_eq!(d.regions[0].links[0].b, "b2");
+        // A snapshot from a publisher that predates both fields: no links, no claim.
+        let old = RouterTopologyV1 {
+            zid: "c3".into(),
+            ..Default::default()
+        };
+        let d = RouterTopologyV1::decode(&*old.encode_vec()).expect("decode");
+        assert_eq!(d.admission(), ClientAdmission::Unspecified);
+        let j = serde_json::to_string(&d).unwrap();
+        assert!(
+            j.contains(r#""client_admission":"unspecified""#),
+            "got: {j}"
+        );
     }
 
     #[test]

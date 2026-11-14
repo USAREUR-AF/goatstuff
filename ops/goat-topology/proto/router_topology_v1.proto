@@ -13,6 +13,11 @@
 // think another router's config is": a router cannot observe another router's
 // gateway config, and a field for it would invite a guess. The surface joins the
 // per-router snapshots; it does not ask any router to speak for another.
+//
+// The one thing a router does say about others is its own link-state graph
+// (RegionV1.links): who it sees connected to whom. That is observed, not
+// guessed, and it is how the surface draws a router that has no publisher —
+// as "not reporting", with its links and nothing else.
 
 syntax = "proto3";
 
@@ -54,6 +59,29 @@ message GatewayFilterV1 {
   bool negated = 5;
 }
 
+// Whether a Custom gateway admits a default-configured client. zenoh 1.9.0 puts
+// a peer that matches no subregion NORTH of a Custom gateway, and a client
+// refuses to be north of a router ("Remote's custom configuration conflicts with
+// auto preset", net/runtime/region.rs:58). A Custom list with no subregion that
+// can match a client therefore refuses EVERY default client — applications, the
+// meters, this publisher. The surface raises T-013 on REFUSED. UNSPECIFIED is
+// what Auto, Unreadable and a publisher older than this field carry: no claim.
+enum ClientAdmission {
+  CLIENT_ADMISSION_UNSPECIFIED = 0;
+  // A subregion matches, or might (interfaces / negated filters count as
+  // admitting, so this never raises a false critical).
+  CLIENT_ADMISSION_ADMITTED = 1;
+  CLIENT_ADMISSION_REFUSED = 2;
+}
+
+// One router-to-router link of a region's link-state graph, by ZID. Carried so
+// the surface can draw routers that send no snapshot of their own: a router two
+// hops away is known only from these pairs, never from this router's sessions.
+message LinkV1 {
+  string a = 1;
+  string b = 2;
+}
+
 // One entry of the `gateway.south` Custom list.
 //
 // `index` IS the region id — zenoh assigns `south:<index>:<mode>` from the
@@ -86,6 +114,10 @@ message RegionV1 {
   uint32 link_state_e = 3;      // edges
   repeated string member_zids = 4;
   uint32 session_count = 5;     // sessions this router holds in this region
+  // Every edge of the link-state graph, capped at 1024 per region; empty from a
+  // publisher older than this field.
+  repeated LinkV1 links = 6;
+  bool links_truncated = 7;     // the cap was hit
 }
 
 message RouterTopologyV1 {
@@ -115,4 +147,7 @@ message RouterTopologyV1 {
   // Set when the adminspace read itself failed; regions/sessions are then
   // empty and the surface must render this router as unknown, not as isolated.
   string observe_error = 13;
+
+  // From the declared gateway block; see ClientAdmission.
+  ClientAdmission client_admission = 14;
 }
