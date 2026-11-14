@@ -194,7 +194,10 @@ lanes:
     sealed data across a sovereign boundary, one rung at a time.
   outcome: You have used a goatnet, joined one with a moon-pod, rehearsed a new one on the fixture, stood up
     a goatlite and grown it, broken and rebuilt it, federated a node and a boundary node, federated across to
-    another sovereign, and released sealed data across that boundary.
+    another sovereign, and released sealed data across that boundary. You then run it well, changing network
+    access from code, hosting an outside service, using direct peer links and finding a quality-of-service
+    fault, and you reach the advanced rungs, a site that keeps working when it is cut off, a hub that
+    overrules and severs, and a pod, a site and an environment rebuilt from nothing.
   modules:
   - enrol-your-laptop
   - the-cli-field-guide
@@ -210,6 +213,16 @@ lanes:
   - cross-sovereign-federation
   - release-across-the-boundary
   - per-reader-grant-encryption
+  - change-network-access-warrant-way
+  - host-an-external-service
+  - p2p-graduation
+  - qos-and-envelopes
+  - find-and-fix-quality-of-service
+  - fail-over-to-island-mode
+  - prove-hub-authority
+  - phoenix-rebuild-a-tactical-pod
+  - phoenix-rebuild-a-host-site
+  - phoenix-rebuild-an-environment
 modules:
 - id: runnable-examples
   title: The runnable examples, and which one answers your question
@@ -4306,3 +4319,114 @@ modules:
     why: The decision that put per-reader encryption on the machine plane.
   - doc: docs/measurements/M-090-grant-keyed-encryption-live-fire-zagros.md
     why: The live fire — a bundle minted, published, received, rotated and revoked end to end.
+- id: host-an-external-service
+  title: Host an outside service behind your goatnet
+  level: working
+  minutes: 45
+  status: planned
+  summary: >-
+    A service that runs off the management host, on a machine that is already a mesh peer, is
+    published by one declaration file and one play, with no code added to the core for it. The
+    path is built and in use on a standing goatnet. This module is not written yet. It opens with
+    a drill that declares a service, reaches it by its mesh name, and retires it again.
+  deeper:
+  - doc: docs/design/external-service-golden-path.md
+    why: The one declaration, the play that applies and removes it, and what the host must already be.
+  - doc: docs/adr/1178-external-service-golden-path.md
+    why: Why a hosted service costs no per-service code in the core, and the retirement date every declaration carries.
+- id: find-and-fix-quality-of-service
+  title: Find a quality-of-service fault and fix the right thing
+  level: mastery
+  minutes: 60
+  status: planned
+  summary: >-
+    On a fabric with no broker, a slow or lossy flow has no central queue to inspect. The fault is
+    found from what each side reveals, the health surface, the demand a peer places, and the bytes
+    each plane carries, and it is fixed at the publisher, the reservation or the link, never by
+    adding a central control. The surfaces are built. This module is not written yet. It opens with
+    a drill on a flow that is made slow on purpose.
+  deeper:
+  - doc: docs/design/zenoh-qos-and-prioritization.md
+    why: How priority is given by identity and namespace, and what the fabric cannot do for you.
+  - doc: docs/design/qos-throughput-envelopes.md
+    why: The envelope a publisher declares, and how an overrun is seen.
+  - doc: docs/design/fabric-health-surface.md
+    why: The five health states and where each is read.
+  - doc: docs/design/peer-demand-surface.md
+    why: Which peer is asking for what, joined on the access log.
+  - doc: docs/design/mesh-bandwidth-attribution.md
+    why: The two planes that carry bytes, and why their totals are never added.
+- id: fail-over-to-island-mode
+  title: Cut a site off and keep working
+  level: mastery
+  minutes: 90
+  status: planned
+  summary: >-
+    A site of a goatnet that loses its link to the others is meant to keep doing everything,
+    admitting people, enrolling machines and changing access, and to merge cleanly when the link
+    returns. Today a cut-off joined site keeps its mesh, enrolls machines and signs people in. The
+    admin surfaces and their data are at the first site only, and the design that places them at
+    every site is decided and not built. This module opens when the cut-apart drill has passed on
+    a standing two-site goatnet.
+  deeper:
+  - doc: docs/adr/1165-island-mode-multi-writer-every-site-admits.md
+    why: The decision, the five classes of write, and the rule each follows while sites are apart.
+  - doc: docs/design/island-mode-multi-writer.md
+    why: The schema, the cut-apart test for every class, and the gates each step passes.
+- id: prove-hub-authority
+  title: Prove the hub overrules and can sever a site
+  level: mastery
+  minutes: 90
+  status: planned
+  summary: >-
+    One site of a goatnet outranks the others. Its changes win over any other site, it alone can
+    cut a compromised site out of the goatnet, and a severed site returns only by being rebuilt
+    and restored. Every other site checks where an instruction was committed before it obeys.
+    The mechanism is written and passes the cut-apart test. No goatnet runs it. This module opens
+    when a hub has severed and restored a site in a drill on a standing goatnet.
+  deeper:
+  - doc: docs/adr/1205-the-highest-echelon-site-overrides-and-can-sever-every-other-site.md
+    why: The two overrides, how a site tells a hub instruction from a forged one, and how a severed site comes back.
+- id: phoenix-rebuild-a-tactical-pod
+  title: Burn a tactical pod down and rebuild it from its identities
+  level: mastery
+  minutes: 60
+  status: planned
+  summary: >-
+    A pod is rebuilt from nothing by carrying over only the identities of its people, machines and
+    processes, and every account is checked again before it exists on the rebuilt pod. Teardown
+    and standup are built. The identity extract and the recheck of each account are being
+    designed. This module opens when a pod has been rebuilt this way against the clock.
+  deeper:
+  - doc: docs/design/phoenix-architecture.md
+    why: Why a rebuild is treated as routine, and the four inputs every piece of state must be regenerated from.
+  - doc: docs/adr/0208-phoenix-native-peer-discipline.md
+    why: The test a peer passes when it can be rebuilt without anything kept by hand.
+- id: phoenix-rebuild-a-host-site
+  title: Burn a host site down and rebuild it from its identities
+  level: mastery
+  minutes: 120
+  status: planned
+  summary: >-
+    The same rebuild for a whole host site, its core pair and its observability pair, with the
+    accounts that hold more privilege approved by a named person and the routine ones by machine
+    checks. Teardown and standup are built. The extract, the recheck and the clock for a host site
+    are being designed. This module opens when a host site has been rebuilt this way.
+  deeper:
+  - doc: docs/design/phoenix-architecture.md
+    why: Why a rebuild is treated as routine, and the four inputs every piece of state must be regenerated from.
+- id: phoenix-rebuild-an-environment
+  title: Burn a whole environment down and rebuild it, hub first
+  level: mastery
+  minutes: 240
+  status: planned
+  summary: >-
+    Every site of a goatnet is rebuilt from nothing, the hub first, and each other site rejoins
+    only when the hub authorizes it. Nobody has done this yet, the project's own team included.
+    This module opens when one environment of several sites has been rebuilt end to end and the
+    record of every recheck is kept.
+  deeper:
+  - doc: docs/design/phoenix-architecture.md
+    why: Why a rebuild is treated as routine, and the four inputs every piece of state must be regenerated from.
+  - doc: docs/adr/1205-the-highest-echelon-site-overrides-and-can-sever-every-other-site.md
+    why: Why the hub is rebuilt first and authorizes every rejoin.
