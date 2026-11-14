@@ -4399,7 +4399,7 @@ modules:
     evidence: docs/adr/1178-external-service-golden-path.md
     so: If a service seems to need a code change in the core, stop. The declaration or the host is wrong.
   - claim: No node class mints the `EXTERNAL-INFRA` tier. The service's host is moved into it by
-      `ops/scripts/external-service-finish.py`, and the play's pre-flight refuses a host that is not in it.
+      the external-service finish script, and the play's pre-flight refuses a host that is not in it.
     evidence: docs/design/external-service-golden-path.md
     so: When the pre-flight names the host's group, fix the host's membership, never the participants'.
   - claim: An enabled declaration renders its route and certificate name on any edge deploy, not only
@@ -4444,8 +4444,8 @@ modules:
       the backend's mesh address, the health path, the door, the owner and, for a temporary service, the
       retirement date. Keep it `enabled false` until the backend answers.
   - do: Turn it on and regenerate the zone.
-    run: python3 ops/dns/generate-mesh-hosts.py
-    note: Then sign the name snapshot and check its signature, as the design's "The command" section
+    note: Run the zone generator, generate-mesh-hosts.py, from the root of your goatnet's checkout. Then
+      sign the name snapshot and check its signature, as the design's "The command" section
       shows, and commit the declaration, the zone and the signed snapshot together.
   - do: Run the play with state=present.
     note: It checks the declaration, the zone and the host's health and tier, registers the identity
