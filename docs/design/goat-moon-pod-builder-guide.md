@@ -1,6 +1,6 @@
 # goat-moon-pod builder guide — for vendors and partners building their own
 
-> **Scope: a moon pod is a learning tool.** Partners use it in an exercise environment to learn how goat works. It is not the operational path for sharing data between nations. Operationally, each sovereign runs its own environment and manages its own pods, and data passes between sovereigns only across boundary nodes that federate their environments ([ADR 1157](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1157-cross-sovereign-federation-edge-terminated.md), [ADR 1208](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1208-sovereign-environments-release-namespaces-and-grant-encryption.md)). Where this document describes a pod joining another nation's environment, read it as the learning setup.
+> **A moon-pod is a learning tool, not a sovereignty guarantee.** Read [`goat-moon-pod.md` §Position](goat-moon-pod.md#position-a-learning-tool-not-a-sovereignty-guarantee) before building one. Where this guide describes a pod joining another nation's environment, read it as the learning setup.
 
 | Field | Value |
 |---|---|
@@ -60,7 +60,7 @@ A conformant goat-moon-pod must:
 
 - **Read it to understand a conformant shape.** Our pod implements all six pieces; reading the source shows one way each piece can be satisfied.
 - **Copy specific overlays.** The IdP overlays (Kanidm / Dex / Authelia / Zitadel) are reusable across moon-pods if they fit your product shape.
-- **Crib the first-boot script.** Sovereignty-transition mechanics (rotating every shipped credential before declaring operational) are the same for every moon-pod. Don't reinvent this; use ours or copy it.
+- **Crib the first-boot script.** Custody-transition mechanics (rotating every shipped credential before the pod is handed over) are the same for every moon-pod. Don't reinvent this; use ours or copy it.
 - **Run our conformance smoke-test against your moon-pod.** Same suite, same expectations, regardless of what you're building.
 
 You should not feel obligated to reuse anything. A vendor moon-pod that is structurally different (e.g., a moon-pod hosted inside a vendor's data platform, where the "container" is an application running inside that platform) will look very different from `goat-moon-open-pod` and that is fine.
@@ -69,8 +69,8 @@ You should not feel obligated to reuse anything. A vendor moon-pod that is struc
 
 The trickiest piece for vendors is requirement 1 (identity assurance + IdP standard) and requirement 6(b) (partner controls operator credentials). Three patterns work:
 
-- **Pod ships a local IdP, partner administers it.** What `goat-moon-open-pod` does. Partner has full custody.
-- **Pod federates to a partner-existing IdP at install time.** If the partner already operates an OIDC-compliant IdP (Keycloak, Ory, vendor IdP), the moon-pod's web UI just consumes that. No local IdP shipped. Partner has full custody by definition.
+- **Pod ships a local IdP, partner administers it.** What `goat-moon-open-pod` does. Partner has custody of the credential database.
+- **Pod federates to a partner-existing IdP at install time.** If the partner already operates an OIDC-compliant IdP (Keycloak, Ory, vendor IdP), the moon-pod's web UI just consumes that. No local IdP shipped. Partner has custody of the credential database by definition.
 - **Pod federates to a vendor-managed IdP that the partner has tenant control over.** Acceptable *if* the partner controls the credential database for their tenant — they can add/remove operators, the vendor cannot read or modify operator credentials, and the partner can export the credential database on demand. If the vendor holds the partner's credentials in an unrecoverable form, this fails requirement 6(b).
 
 When in doubt, default to pattern 1 or 2. Pattern 3 requires careful vendor architecture and we'll need to review it explicitly during conformance evaluation.
@@ -81,7 +81,7 @@ Requirement 6(a) says partner data lands at rest only on partner-controlled infr
 
 - **Pod runs on partner hardware, data lands on local disk.** Default for `goat-moon-open-pod`.
 - **Pod runs in a partner-controlled cloud account, data lands in partner-controlled storage.** Acceptable. The partner pays the cloud bill on a partner-controlled account.
-- **Pod runs in vendor-hosted SaaS, data lands in vendor storage.** **Fails the sovereignty floor.** Not a conformant goat-moon-pod. The vendor would need to publish a self-hosted variant for partner-controlled deployment.
+- **Pod runs in vendor-hosted SaaS, data lands in vendor storage.** **Fails the custody floor.** Not a conformant goat-moon-pod. The vendor would need to publish a self-hosted variant for partner-controlled deployment.
 
 If your product is fundamentally a vendor-hosted SaaS, you can still publish a goat-moon-pod that integrates with your SaaS — but the *data* must persist on partner infrastructure, not in your SaaS. The moon-pod is the partner's data plane; your SaaS, if involved, is a control-plane consumer that fetches data from the moon-pod under partnership terms.
 
@@ -107,7 +107,7 @@ We do not issue conformance certifications today. Your conformance claim is what
 
 - **A `goat-moon init` scaffolder / SDK.** Deferred until at least one external vendor actually starts building.
 - **A formal vendor-conformance-certification process.** Deferred until at least one external vendor actually ships.
-- **Cross-moon-pod federation or peering.** Each moon-pod is sovereign-orbital; no inter-moon-pod relationships at this layer.
+- **Cross-moon-pod federation or peering.** Each moon-pod orbits the environment it joins; no inter-moon-pod relationships at this layer.
 
 If you build something here you would like to upstream, open an issue first to discuss scope; we want to keep the contract surface narrow per the no-overdo-preoptimization guidance.
 

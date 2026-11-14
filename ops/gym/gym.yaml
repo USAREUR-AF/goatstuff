@@ -173,6 +173,7 @@ lanes:
   - read-partition
   - find-whats-published
   - moon-pod
+  - moon-or-pod
   - cross-sovereign-federation
   - external-icam
   - runnable-examples
@@ -300,8 +301,8 @@ modules:
       decrypt.'
   - do: Take the pod one if you are standing infrastructure up rather than building on it.
     note: '**Stand up a pod** — a runnable pod standup and bidirectional peering smoke test, driven
-      by a central registry. It leads into the **moon-pod** itself, which is the appliance you would
-      actually run in your own facility.'
+      by a central registry. It leads into the **moon-pod** itself, rung 2 of the learner ladder: a
+      learning tool, not an appliance for operations (the moon-pod design, section Position).'
   - do: Know how to read one honestly.
     note: Each repository carries a section naming what is live, what is a faithful reference
       implementation, what is a model, and what does not exist yet. A demonstration that models
@@ -3558,9 +3559,9 @@ modules:
     so: Two of OUR OWN goatnets federate the same way a foreign nation's does, and a close ally who
       runs a node in our mesh is a pod. If a conversation about federating starts with how much we
       trust them, it has started in the wrong place.
-  - claim: A pod is the DEFAULT and federation is the EXCEPTION. A partner who can run a node
-      inside our mesh should, and none of this applies to them.
-    evidence: docs/adr/1092-moon-pod-peer-classes.md
+  - claim: A pod is for learning, inside an environment someone else runs, and is not a sovereignty
+      guarantee. Federation is for a party that needs sovereignty.
+    evidence: docs/design/goat-moon-pod.md
     so: Ask 'must they own their own authority and identity plane?' before reaching for any of
       this. If the answer is no, you are on the wrong lesson.
   - claim: The access layer matches a certificate's Subject Common Name by string equality and
@@ -3603,7 +3604,8 @@ modules:
   status: written
   summary: A partner who runs their own environment, their own certificate authority and their own
     identity plane. Neither side joins the other's network or vouches for the other's identities,
-    and both still have to say exactly what crosses. A pod is the default; this is the exception.
+    and both still have to say exactly what crosses. A pod is for learning; this is for a party that
+    needs sovereignty.
   walkthrough:
   - do: Decide first whether this is a federation at all.
     note: A partner who can join our coordination plane on a key we issue, holding certificates from
@@ -3625,37 +3627,88 @@ modules:
     note: Whether validated cryptography was used and whether a real counterparty took part. Both are
       still no. The driver has run end to end on real hosts across the internet, both sovereigns ours.
 - id: moon-pod
-  title: Moon pod — a foreign-stack goatnet on one passage peer
+  title: Build a moon-pod and join with it
+  level: working
+  minutes: 90
+  quirks:
+  - claim: A moon-pod is a learning tool, not a sovereignty guarantee. The environment it joins is
+      run by someone else, and its owner decides who enrols, what the access rules are and what data
+      may leave the pod.
+    evidence: docs/design/goat-moon-pod.md
+    so: Build one to learn how the fabric works. Do not present it as an operational capability; the
+      moon-pod design's Position section says when it could become one.
+  - claim: Every environment-specific value the pod uses comes from the signed join bundle. A profile
+      holds only what the bundle does not carry.
+    evidence: docs/design/goat-moon-pod.md
+    so: When a value is wrong, ask for a corrected bundle. Do not edit the compose stack or the router
+      template to fit one goatnet.
+  - claim: goat ships with no goatnet built in, so the pod cannot verify its bundle until it trusts
+      your goatnet's certificate authority root.
+    evidence: docs/design/goat-moon-pod.md
+    so: Add the root only after its fingerprint matches the one the goat side gave you.
+  drill:
+    do: Bring a pod up from a welcome package with the reference setup script, and run its verify
+      part.
+    run: sudo bash moon_pod_setup.sh
+    pass: Part 3 ends "ALL DONE - POD VERIFIED", with mesh, health, containers, a round-trip publish
+      within your slot and the doctor timer all PASS.
+    safety: writes
+  deeper:
+  - doc: docs/design/goat-moon-pod.md
+    why: The pod's pieces, the signed join bundle as source of truth, the 24-hour path, and its
+      position.
+  - doc: docs/design/moon-pod-conformance.md
+    why: The seven requirements a pod meets to join an exercise environment.
+  status: written
+  summary: You build the reference moon-pod on a host of your own and join it to an environment someone
+    else runs, then prove a publish within your slot goes round. It is rung 2 of the learner ladder and
+    a learning tool, not an operational one.
+  walkthrough:
+  - do: Get a welcome package from the environment's owner.
+    note: It carries the enrolment quota, your namespace and a single-use setup key. The owner decides
+      all three.
+  - do: On the pod host, clone the reference implementation and fill in its configuration.
+    note: 'In USAREUR-AF/zagros-moon-pod, set GOATNET, NETBIRD_MANAGEMENT_URL, PARTNER_NAMESPACE and
+      POD_ID in the CONFIG block of moon_pod_setup.sh. Pass NETBIRD_SETUP_KEY as an environment variable
+      only; never write a real key into the file.'
+  - do: Run Part 1, bring-up.
+    run: sudo bash moon_pod_setup.sh
+    note: The host checklist ends with the mesh joined and goat on the path.
+  - do: Run Part 2, stand-up.
+    note: It adds your goatnet's root after you confirm its fingerprint, and first boot reads the
+      signed bundle.
+  - do: Run Part 3, verify, and read every line.
+    note: Five checks. The round trip publishes within your slot and reads it back from the audit tail.
+      A publish outside your slot is silently denied, so only a publish within it can pass.
+- id: moon-or-pod
+  title: MOON or POD — which peer class a partner box is
   level: mastery
   minutes: 25
   quirks:
-  - claim: '`MOON` and `POD` are not two names for the same thing. A MOON is sovereign — nothing initiates
-      toward it, not even an INFRA probe. A POD is ours and is a normal admin destination.'
+  - claim: '`MOON` and `POD` are not two names for the same thing. A MOON runs its own complete stack
+      and nothing initiates toward it, not even an INFRA probe. A POD is inside our identity planes and
+      is a normal admin destination.'
     evidence: docs/adr/1092-moon-pod-peer-classes.md
     so: Ask 'whose identity plane' first; everything else follows from it.
-  - claim: The signed join bundle is the source of truth for the pod, not our registry.
-    evidence: docs/design/goat-moon-pod.md
-    so: Take the bundle as authoritative rather than reconciling it against our registry.
   drill:
     do: For one hypothetical partner box, decide which class it is.
     pass: Your answer turns on who owns the identity plane, not who owns the hardware.
     safety: read-only
   deeper:
-  - doc: docs/design/goat-moon-pod.md
-    why: The pod, the signed join bundle as source of truth, and the two peer classes.
   - doc: docs/adr/1092-moon-pod-peer-classes.md
-    why: MOON vs POD — sovereign box vs appliance inside our planes.
+    why: MOON vs POD — a foreign stack's uplink peer vs an appliance inside our planes.
+  - doc: docs/design/goat-moon-pod.md
+    why: What a pod is, and its position.
   status: written
-  summary: A pod is somebody else's stack reachable through one passage peer. The distinction that matters
-    is who owns the identity plane, not who owns the hardware.
+  summary: A MOON is somebody else's complete stack reachable through one uplink peer. A POD is a
+    moon-pod appliance inside our identity planes. The distinction that matters is who owns the identity
+    plane, not who owns the hardware.
   walkthrough:
   - do: Decide which class the box is.
-    note: 'One class is sovereign: nothing initiates toward it, not even a health probe, and its presence
-      here is a single data passage. The other is ours, inside our identity planes, and a normal administrable
-      destination.'
-  - do: Read the join bundle as the source of truth.
-    note: For a sovereign pod, the signed join bundle is authoritative — not our registry.
-  - do: Do not probe a sovereign pod.
+    note: 'A MOON runs its own stack: nothing initiates toward it, not even a health probe, and its
+      presence here is a single data passage. A POD uses our NetBird, our Ory and our certificate
+      authority, and is a normal administrable destination.'
+  - do: Do not probe a MOON.
     note: Health arrives by publication. A probe is a boundary violation, not a diagnostic.
 - id: external-icam
   title: External ICAM federation

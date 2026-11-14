@@ -1,6 +1,6 @@
 # Moon-pod conformance — exercise environment
 
-> **Scope: exercise environment only.** This is the list a moon pod meets to join an exercise environment, where partners learn how goat works. It is not how nations share data in operation. Operationally, each nation runs its own environment: its own pods, NetBird coordination plane, routers, republisher and conditioning. Data passes between nations only across boundary nodes that federate their environments ([ADR 1157](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1157-cross-sovereign-federation-edge-terminated.md), [ADR 1208](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1208-sovereign-environments-release-namespaces-and-grant-encryption.md)). Nothing in this list places one nation's data, identity, audit or infrastructure in another nation's environment. There is no NetBird-to-NetBird bridge.
+> **Scope: exercise environment only.** This is the list a moon pod meets to join an exercise environment, where partners learn how goat works. A moon-pod is a learning tool, not a sovereignty guarantee: see [`goat-moon-pod.md` §Position](goat-moon-pod.md#position-a-learning-tool-not-a-sovereignty-guarantee). There is no NetBird-to-NetBird bridge.
 >
 > Moved from goatcore `docs/design/partner-receiver-requirements.md`.
 
@@ -24,12 +24,12 @@ The list is the same for all three. We commit to maintaining the list and `goat-
 
 ## The "moon" metaphor (defined once, used everywhere)
 
-In the exercise, partner pods orbit the exercise environment's fabric like moons orbit a planet. Each moon is its own sovereign body — its own hardware, its own identity database, its own audit log, its own administrative custody — held in a gravitational (data-flow) relationship with the goat fabric, not contained within it. Multiple moons coexist; each can be ours (`goat-moon-open-pod`) or a vendor's (`goat-moon-<product>-pod`); each is independently sovereign.
+In the exercise, partner pods orbit the exercise environment's fabric like moons orbit a planet. Each moon is its own body — its own hardware, its own identity database, its own audit log — held in a gravitational (data-flow) relationship with the fabric of the environment it joins. That relationship is not sovereignty ([`goat-moon-pod.md` §Position](goat-moon-pod.md#position-a-learning-tool-not-a-sovereignty-guarantee)). Multiple moons coexist; each can be ours (`goat-moon-open-pod`) or a vendor's (`goat-moon-<product>-pod`).
 
 A **goat-moon-pod** (or just **moon-pod**) is a deployable instance of this orbital pattern — the artifact a partner runs to participate. The naming convention is `goat-<plane>-<provider>-<service>` where:
 
 - `goat` — project
-- `moon` — relationship plane (sovereign-orbital partner)
+- `moon` — relationship plane (orbital partner)
 - `<provider>` — `open` for our reference implementation, vendor-product-name otherwise
 - `pod` — service type (a deployable unit)
 
@@ -52,11 +52,11 @@ Every partner-side operator who can read or publish `release/<partner>/...` carr
 - **Below the floor:** assurance levels lower than IAL2/AAL2; identity systems without an OIDC discovery endpoint or equivalent SAML metadata; bearer-token-only systems with no operator-identity binding.
 - **Why this line:** below IAL2/AAL2, "an unknown partner-side principal accessed releasable data" is the audit record we'd be left with. That is not a defensible record.
 
-### 2. Network / transport sovereignty
+### 2. Network / transport key custody
 
 Bytes between the partner edge and the goat edge are end-to-end encrypted with keys neither side delegates to a third party, and the partner-side network handshake is silent at the public boundary.
 
-- **Floor:** WireGuard preferred (silent handshake, sovereign key custody, by-design property). IPsec acceptable. mTLS over public HTTPS acceptable as a fallback with documented loss of the silent-control-plane property at the partner boundary.
+- **Floor:** WireGuard preferred (silent handshake, key custody on the pod, by-design property). IPsec acceptable. mTLS over public HTTPS acceptable as a fallback with documented loss of the silent-control-plane property at the partner boundary.
 - **Below the floor:** SaaS VPN providers where the provider holds one side of the keys; networks terminating in cloud-vendor-managed PKI without partner key custody; plaintext transports.
 - **Why this line:** this is the same invariant we hold for our own substrate (see [ADR 0313](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0313-silent-control-plane-outer-wg-wrap.md), [ADR 0314](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0314-no-public-dns-for-control-plane.md)) — "no part of the secure plane on the public internet." Relaxing it at the partner boundary effectively publishes the boundary.
 
@@ -84,7 +84,9 @@ Any topic the partner publishes under `release/<partner>/...` carries a schema d
 - **Below the floor:** opaque payloads with no schema; ad-hoc schema descriptions that change without versioning; topics that exist on the wire but not in the data dictionary.
 - **Why this line:** every downstream consumer needs schema for citation, lineage, and downstream conditioning to function. An opaque partner topic forces every downstream task to degrade to "trust the bytes, don't ask what they mean."
 
-### 6. Sovereignty floor
+### 6. Custody floor
+
+What the pod holds, and where. Meeting this floor does not make the pod sovereign ([`goat-moon-pod.md` §Position](goat-moon-pod.md#position-a-learning-tool-not-a-sovereignty-guarantee)).
 
 Three nested invariants, all of which must hold:
 
@@ -92,30 +94,30 @@ Three nested invariants, all of which must hold:
 - **(b) Identity:** partner operator credentials live in the partner's controlled IdP. We may ship the IdP binary (Kanidm, Dex, Authelia, Zitadel, or other); once it is running on the partner's host and the partner has enrolled their first admin, the credential database is theirs. We do not host their user database.
 - **(c) Audit:** partner audit logs live in partner storage. We do not aggregate partner audit by default; symmetric audit federation is a separate negotiation per partnership.
 
-- **Floor:** if any of the three flips — partner data persisting on goat hosts, partner credentials living in goat-managed storage, partner audit aggregated into goat infrastructure by default — it is not sovereign.
-- **Why this line:** this is the difference between "we publish a substrate the partner operates" (our posture, [ADR 0512 §"Posture"](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0512-rapid-adaptation-with-ai.md)) and "we host the partner's platform" (the vendor-platform-as-tenant shape, which we explicitly reject). Without this line the easy button collapses into a SaaS offering wearing a sovereignty costume.
+- **Floor:** if any of the three flips — partner data persisting on goat hosts, partner credentials living in goat-managed storage, partner audit aggregated into goat infrastructure by default — the pod fails this floor.
+- **Why this line:** this is the difference between "we publish a substrate the partner operates" (our posture, [ADR 0512 §"Posture"](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0512-rapid-adaptation-with-ai.md)) and "we host the partner's platform" (the vendor-platform-as-tenant shape, which we explicitly reject). Without this line the easy button collapses into a hosted SaaS offering.
 
-#### Sovereignty-floor edge cases (explicit resolution)
+#### Custody-floor edge cases (explicit resolution)
 
-The sovereignty floor needs four edge cases nailed down because they are exactly where a hostile reviewer would push:
+The custody floor needs four edge cases nailed down because they are exactly where a hostile reviewer would push:
 
 **E1. The exercise environment's coordination plane.** In the exercise environment, goat runs a separate NetBird management plane for moon pods, distinct from the main fabric management plane. It holds WG public keys, setup keys, peer addressing, peer-name and group metadata and last-seen timestamps. It does **not** hold partner data, operator credentials or audit logs.
-- **Resolution:** in the exercise, this coordination plane is a connection-metadata service, not in the data path, and not a sovereignty violation. Requirement 6 covers data at rest, identity custody and audit storage; connection metadata is excluded. Operationally there is no shared coordination plane: each nation runs its own, and there is no NetBird-to-NetBird bridge.
+- **Resolution:** in the exercise, this coordination plane is a connection-metadata service, not in the data path, and within the custody floor. Requirement 6 covers data at rest, identity custody and audit storage; connection metadata is excluded. Operationally there is no shared coordination plane: each nation runs its own, and there is no NetBird-to-NetBird bridge.
 
 **E2. Release-bridge in the exercise data path.** In the exercise environment, a goat-run release-bridge (see [`mission-partner-sharing.md`](https://github.com/usareur-af/goatcore/blob/main/docs/design/mission-partner-sharing.md) §"Bridge data-conditioning checkpoint") processes partner data in flight: schema enforcement, allowlist, conditioning and audit emission.
 - **Resolution:** in the exercise, partner data may transit that bridge in flight and may not persist at rest in goat infrastructure. Requirement 6 is about *data at rest*, not *data in motion*. Operationally, each nation runs the republisher and conditioning for what it releases, on its own hosts ([ADR 1157](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1157-cross-sovereign-federation-edge-terminated.md)).
 
-**E3. Goat-shipped binaries (IdP, pod bundle, polygloat) running on the partner's host.** Sovereignty is about administrative custody, not code provenance. The partner runs the binary on their host, the first-boot script rotates every shipped credential and key, the source is open and replaceable.
-- **Resolution:** sovereignty begins at the partner's first-boot completion, after default keys and credentials are rotated. The bundle in transit is not yet a sovereign asset; it becomes sovereign at takeover.
+**E3. Goat-shipped binaries (IdP, pod bundle, polygloat) running on the partner's host.** Custody is about who administers the running system, not code provenance. The partner runs the binary on their host, the first-boot script rotates every shipped credential and key, the source is open and replaceable.
+- **Resolution:** the partner's custody begins at first-boot completion, after default keys and credentials are rotated. The bundle in transit is not yet in the partner's custody; it is at takeover.
 
 **E4. Pre-imaged hardware in transit.** From the moment we image a hardware unit to the moment the partner takes physical custody and runs first-boot, the device is in supply-chain status (covered by bundle-signing, tamper-evident packaging, and Block 40 reproducible-build discipline).
-- **Resolution:** same line as E3 — sovereignty timer starts at first-boot completion. Supply-chain integrity covers the transit segment.
+- **Resolution:** same line as E3 — the partner's custody starts at first-boot completion. Supply-chain integrity covers the transit segment.
 
 If a fifth edge case emerges, append it here in the same shape (situation, resolution, requirement-clause it ties to). Do not relax requirement 6 in response to an edge case; instead, add an explicit exclusion with rationale.
 
 ### 7. Leaving the exercise cleanly
 
-A partner that learned on a moon pod builds its own sovereign environment ([ADR 1208](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1208-sovereign-environments-release-namespaces-and-grant-encryption.md)) and federates with other nations through boundary nodes. Its own environment has its own certificate authority, identities and management. Nothing on the pod locks the partner in.
+A partner that learned on a moon pod and needs sovereignty builds its own environment ([ADR 1208](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1208-sovereign-environments-release-namespaces-and-grant-encryption.md)) and federates with other nations through boundary nodes. Its own environment has its own certificate authority, identities and management. Nothing on the pod locks the partner in.
 
 - **Floor:** WG keys, IdP, hardware and bundle version can all be rotated or replaced; the pod holds nothing the partner's own environment depends on.
 - **Below the floor:** identity systems that cannot be replaced; allowlist entries tied to specific bundle internals rather than the partner identity.
@@ -125,9 +127,9 @@ A partner that learned on a moon pod builds its own sovereign environment ([ADR 
 
 A candidate goat-moon-pod (ours, vendor's, or partner-built) is **conformant** when all seven requirements hold at the boundary. Conformance is asserted by the implementation, evaluated by goat against the list, and validated by the conformance smoke-test suite at [goatcore `tests/moon-pod-conformance/`](https://github.com/usareur-af/goatcore/blob/main/tests/moon-pod-conformance/).
 
-The smoke-test suite walks the 24-hour deployment path against a candidate pod and asserts each of the seven requirements. The suite runs on `goat-moon-open-pod` continuously; vendors and partners may run it locally to self-check before requesting evaluation.
+The smoke-test suite is to walk the 24-hour deployment path against a candidate pod and assert each of the seven requirements. Today it is a skeleton ([goatcore `tests/moon-pod-conformance/`](https://github.com/usareur-af/goatcore/blob/main/tests/moon-pod-conformance/)) and runs nowhere continuously; vendors and partners may run what exists locally to self-check before requesting evaluation.
 
-We do not issue conformance certifications today. Conformance is a partnership-by-partnership evaluation against this document. If volume of vendor-built moon-pods grows past ~3 distinct products in production, we revisit whether a lightweight conformance-attestation process is warranted.
+We do not issue conformance certifications today. Conformance is a partnership-by-partnership evaluation against this document. If volume of vendor-built moon-pods grows past ~3 distinct products in use, we revisit whether a lightweight conformance-attestation process is warranted.
 
 ## Vendor candidates
 
@@ -145,9 +147,9 @@ Any vendor or partner with a standards-compliant identity system and the ability
 ## Trigger conditions to revise this list
 
 - **A requirement consistently disqualifies plausible partners.** Revisit the floor placement.
-- **A new edge case for the sovereignty floor surfaces.** Append to §"Sovereignty-floor edge cases" with explicit resolution.
+- **A new edge case for the custody floor surfaces.** Append to §"Custody-floor edge cases" with explicit resolution.
 - **A vendor moon-pod ships and our cookbook misrepresents the integration.** Update the cookbook; if the list itself was wrong, update the list.
-- **Vendor moon-pod count crosses ~3 in production.** Revisit whether a lightweight conformance-attestation process is warranted.
+- **Vendor moon-pod count crosses ~3 in use.** Revisit whether a lightweight conformance-attestation process is warranted.
 - **Cross-domain release becomes a partner requirement.** Cross-link the CDS conditioning pattern; do not extend this list to cover it.
 
 ## References

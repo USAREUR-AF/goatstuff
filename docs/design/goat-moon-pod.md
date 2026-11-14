@@ -1,6 +1,6 @@
 # goat-moon-pod — abstract spec + reference-implementation pointer
 
-> **Scope: a moon pod is a learning tool.** Partners use it in an exercise environment to learn how goat works. It is not the operational path for sharing data between nations. Operationally, each sovereign runs its own environment and manages its own pods, and data passes between sovereigns only across boundary nodes that federate their environments ([ADR 1157](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1157-cross-sovereign-federation-edge-terminated.md), [ADR 1208](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1208-sovereign-environments-release-namespaces-and-grant-encryption.md)). Where this document describes a pod joining another nation's environment, read it as the learning setup.
+> **A moon-pod is a learning tool, not a sovereignty guarantee.** Read its [Position](#position-a-learning-tool-not-a-sovereignty-guarantee) first. Where this document describes a pod joining another nation's environment, read it as the learning setup.
 
 | Field | Value |
 |---|---|
@@ -12,11 +12,11 @@
 
 ## What this is
 
-The **abstract spec** for a goat-moon-pod — a deployable instance of the sovereign-orbital partner-relationship pattern. This document defines the architectural shape; the requirements contract lives at [`moon-pod-conformance.md`](moon-pod-conformance.md); the reference implementation lives at [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod); a guide for vendors who want to build their own lives at [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md).
+The **abstract spec** for a goat-moon-pod — a deployable instance of the orbital partner-relationship pattern, used today only to learn ([Position](#position-a-learning-tool-not-a-sovereignty-guarantee)). This document defines the architectural shape; the requirements contract lives at [`moon-pod-conformance.md`](moon-pod-conformance.md); the reference implementation lives at [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod); a guide for vendors who want to build their own lives at [`goat-moon-pod-builder-guide.md`](goat-moon-pod-builder-guide.md).
 
 ## The shape in one paragraph
 
-A goat-moon-pod is a single-host containerized appliance a mission partner runs on their own hardware to participate in the goat fabric without engineering staff. It bundles a network client (joining a goat-hosted partner-net coordination plane), a Zenoh router (joining the data fabric over WireGuard), a translation engine (`polygloat`) that fans data out into whatever format the partner's downstream systems consume, an identity database (one of Kanidm / Dex / Authelia / Zitadel — partner picks), an audit sink with 90-day local retention, and a small operator-facing web UI. The partner runs it on their hardware, in their facility, on their power, with their identity database holding their operators' credentials. They could fork the bundle and run the coordination plane themselves any day; they just don't have to.
+A goat-moon-pod is a single-host containerized appliance a mission partner runs on their own hardware to participate in the goat fabric without engineering staff. It bundles a network client (joining a goat-hosted partner-net coordination plane), a Zenoh router (joining the data fabric over WireGuard), a translation engine (`polygloat`) that fans data out into whatever format the partner's downstream systems consume, an identity database (one of Kanidm / Dex / Authelia / Zitadel — partner picks), an audit sink with 90-day local retention, and a small operator-facing web UI. The partner runs it on their hardware, with their identity database holding their operators' credentials, inside an environment someone else runs ([Position](#position-a-learning-tool-not-a-sovereignty-guarantee)).
 
 ## Architecture sketch
 
@@ -57,7 +57,7 @@ A conformant goat-moon-pod has six pieces. Each piece has multiple acceptable im
 
 ### 1. Network client (partner-net peer)
 
-In the exercise environment, joins the goat-hosted **partner-net** — a separate netbird mgmt-plane instance distinct from the main fabric mgmt-plane — over WireGuard. Setup key embedded in the signed bundle at first deploy; rotated thereafter. Partner-net is goat-hosted *coordination metadata only*; partner data does not transit or persist there. Not a sovereignty violation per [`moon-pod-conformance.md`](moon-pod-conformance.md) §"Sovereignty-floor edge cases" E1.
+In the exercise environment, joins the goat-hosted **partner-net** — a separate netbird mgmt-plane instance distinct from the main fabric mgmt-plane — over WireGuard. Setup key embedded in the signed bundle at first deploy; rotated thereafter. Partner-net is goat-hosted *coordination metadata only*; partner data does not transit or persist there. It stays within the custody floor per [`moon-pod-conformance.md`](moon-pod-conformance.md) §"Custody-floor edge cases" E1.
 
 Acceptable implementations: native netbird client (default), wireguard-tools with manual config, equivalent ZTOL client.
 
@@ -111,7 +111,7 @@ The UI is part of the pod bundle and ships in the same repo.
 A conformant pod meets the seven-requirement contract **without** workload identity, so SPIFFE/SPIRE is **not** a required piece. It is offered as a **first-class optional overlay**, layered exactly like the local-IdP choice (piece 4): the partner picks their altitude.
 
 - **What it adds:** the pod runs its own SPIRE trust domain (`spiffe://<partner>.pod`) and attests its own containers (zenoh router, polygloat, audit, UI) with short-lived X509-SVIDs. Because the pod is a *controlled bundle*, its workloads are attestable — unlike a bare external publisher.
-- **Why the pod is the right home:** SPIFFE **federation** (pod trust domain ↔ goatnet trust domain, exchanging only public trust *bundles*) lets the pod's router carry a cryptographically-attested identity the goat-side ingress gateway (the [ADR 1020](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1020-zenoh-federated-peering-trust-model.md) Tier-2 receiver) can verify — an upgrade over trusting the bundle-embedded setup key. Sovereignty-clean: SPIRE runs *inside* the pod on partner hardware; goat hosts no partner SVIDs.
+- **Why the pod is the right home:** SPIFFE **federation** (pod trust domain ↔ goatnet trust domain, exchanging only public trust *bundles*) lets the pod's router carry a cryptographically-attested identity the goat-side ingress gateway (the [ADR 1020](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1020-zenoh-federated-peering-trust-model.md) Tier-2 receiver) can verify — an upgrade over trusting the bundle-embedded setup key. SPIRE runs *inside* the pod on partner hardware; goat hosts no partner SVIDs.
 - **Progressive disclosure, not a filter.** The 24-hour layman path stays an honest easy default — the base pod works end-to-end with no SPIRE. The SPIRE overlay is fully available to any partner who wants (or is required to have) attested workload identity. Neither path is second-class; offering the simple default does not withhold the capability.
 - **Status:** Phase 3+, partner-gated, off the 24-hour path. The goat-side analysis + the ZAGROS sandbox proving-ground for the same pattern live at `../project/spiffe-spire-spike-2026-06-09.md` (§6 moon-pod fit) + `../project/zagros-spire-implementation-plan.md`. Until a Zenoh URI-SAN matcher lands upstream (backlog `zenoh-uri-san-acl-matcher-upstream`), an SVID admitted at the wire uses the CN-bearing-SVID bridge or is verified off the core router by the ingress gateway. The reference-implementation overlay (a `profiles/<…>-spire` overlay alongside the IdP overlays) lives in the standalone [`USAREUR-AF/zagros-moon-pod`](https://github.com/USAREUR-AF/zagros-moon-pod) repo.
 
@@ -133,7 +133,7 @@ Per [ADR 0223](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0223-go
 
 ## Bundle is the source of truth (no stack over-specification)
 
-The pod runs against multiple goatnets — nova, the ZAGROS sandbox, production — so the compose
+The pod runs against more than one goatnet (the ZAGROS sandbox among them), so the compose
 stack, host scripts, and config templates **hardcode nothing stack-specific**. Every
 environment-specific value arrives at first-boot from the **signed join bundle** (minted by the
 operator onboarding flow, `goat admin onboard <handle> [--env <goatnet>]`); the handful the bundle
@@ -181,26 +181,32 @@ Calibrated for a non-engineer who can read a printed instruction sheet and follo
 | T+ | Step | What's happening |
 |---|---|---|
 | 0 | Partner runs `install.sh` on their Linux host (Shape A) OR plugs in the pre-imaged device (Shape B) | Bundle expands; containers pull; first-boot script runs |
-| 5 min | Pod prints a QR code on console (Shape A) or console display (Shape B), and a localhost URL | First-boot complete; default keys generated; sovereignty timer starts |
+| 5 min | Pod prints a QR code on console (Shape A) or console display (Shape B), and a localhost URL | First-boot complete; default keys generated |
 | 15 min | Partner scans QR with their phone → enrolls themselves as the pod's first admin in the local IdP → logs into the pod web UI | Partner now has IAL2/AAL2 identity in their own IdP, on their hardware |
 | 30 min | Partner picks output adapters from the web UI dropdown ("I want JSONL files in `/var/data/goat/` and a webhook to `https://my-system.local/ingest`") | Translator configured; pod ready to receive |
 | 1 hour | Goat issues their first per-topic allowlist entry through the policy engine ([ADR 0805](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0805-policy-engine-active-passive.md)) | This is the only step that requires goat-side action; deliberate gating |
 | 2 hours | First test message flows; partner sees it in their downstream system; audit log entry appears in pod web UI | Smoke test passed |
-| 24 hours | Operational use begins; audit log accumulating; partner-side downstream consuming | The pod is now a sovereign endpoint |
+| 24 hours | Learning use: audit log accumulating; partner-side downstream consuming | The pod is a working member of the environment it joined, not a sovereign endpoint ([Position](#position-a-learning-tool-not-a-sovereignty-guarantee)) |
 
 This path is what the conformance smoke-test at [`../../tests/moon-pod-conformance/`](https://github.com/usareur-af/goatcore/tree/main/tests/moon-pod-conformance) validates against any candidate pod (`goat-moon-open-pod`, vendor moon-pods, partner-built moon-pods).
 
-## Sovereignty preservation
+## Position: a learning tool, not a sovereignty guarantee
 
-The pod preserves partner sovereignty because:
+This is the moon-pod's position, stated once here; the conformance list, the builder guide and the
+gym point to it.
 
-- **Data lands on partner hardware** in partner's facility, on partner's power. Per [`moon-pod-conformance.md`](moon-pod-conformance.md) requirement 6(a).
-- **Partner's operators authenticate through partner's IdP** — even though we shipped the IdP binary, the partner administers it, the credential database is theirs. Per requirement 6(b).
-- **Partner audit logs live in partner storage**; we do not aggregate. Per requirement 6(c).
-- **Partner can fork the bundle** at any time and run the partner-net coordination plane themselves. The bundle is open source (Apache 2.0); the partner-net mgmt-plane Ansible roles + Terraform live in this repo as documented; there is no architectural lock-in. Per requirement 7.
-- **Goat hosts only coordination metadata** (WG metadata, setup keys, peer addressing) on the partner-net mgmt-plane. Not in the data path; not a sovereignty violation. Per requirement 6 §E1.
+- A moon-pod is used today only to learn: it is rung 2 of the learner ladder in the goat gym
+  ([`ops/gym/gym.yaml`](../../ops/gym/gym.yaml), module `moon-pod`). It is not in operational use.
+- It is not a sovereignty guarantee. A pod joins an environment someone else runs, and that
+  environment's owner controls enrolment, the access rules, and what data may leave the pod.
+- It could become a real capability on one condition: the pod's operator treats the environment
+  owner as trusted, and as the authority over the pod's ability to move data outside the pod.
+- A party that needs sovereignty runs its own environment and federates across a boundary
+  ([ADR 1157](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1157-cross-sovereign-federation-edge-terminated.md),
+  [ADR 1208](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1208-sovereign-environments-release-namespaces-and-grant-encryption.md)).
+  That is a different thing.
 
-What goat *does* host (and the partner depends on us for at Tier 0):
+What the environment's owner runs, and the pod depends on:
 
 - The partner-net netbird-mgmt instance.
 - The release-bridge that conditions data crossing into / out of the main fabric. For data
@@ -213,7 +219,7 @@ What goat *does* host (and the partner depends on us for at Tier 0):
 - The signed-bundle distribution + signing keys.
 - The per-vendor cookbooks and conformance smoke-test suite.
 
-The partner can take any of these in-house by transitioning to the [PRA](https://github.com/usareur-af/goatdocs/blob/main/docs/design/partner-reference-architecture.md), without re-onboarding under a different namespace or identity. That is the reversibility promise of requirement 7.
+A party that wants these in its own hands runs its own environment (the [PRA](https://github.com/usareur-af/goatdocs/blob/main/docs/design/partner-reference-architecture.md)); that is the last case under Position above, not a property of the pod.
 
 ## What this design does not specify
 
