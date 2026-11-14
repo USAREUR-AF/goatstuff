@@ -204,6 +204,13 @@ def check_registry(reg: dict, errors: list[str]) -> dict:
         status = mod.get("status")
         if status not in STATUS:
             errors.append(f"{w}: status must be one of {sorted(STATUS)}")
+        # frontier: the tooling the module teaches is not built yet. Only a planned
+        # module can be frontier territory; a written one teaches something that runs.
+        if "frontier" in mod:
+            if not isinstance(mod["frontier"], bool):
+                errors.append(f"{w}: frontier must be true or false")
+            elif mod["frontier"] and status != "planned":
+                errors.append(f"{w}: frontier is for a planned module; a written module teaches something that runs")
 
         for item in mod.get("deeper") or []:
             doc = item.get("doc")

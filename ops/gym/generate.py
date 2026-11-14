@@ -546,6 +546,12 @@ def build(reg: dict, out_dir: str, services: dict, rev: str) -> dict:
                     f'<span><a href="../modules/{mid}.html">{R.esc(mod["title"])}</a>'
                     f'<span class="why">{R.inline(teaser(mod.get("summary", "")))}</span></span>'
                     f'<span class="chip">{mod["minutes"]} min</span></li>')
+            elif mod.get("frontier"):
+                rows.append(
+                    f'<li class="planned"><span class="n">··</span>'
+                    f'<span>{R.esc(mod["title"])}'
+                    f'<span class="why">Frontier territory: the tooling for this is not built yet.</span></span>'
+                    f'<span class="chip frontier">frontier</span></li>')
             else:
                 rows.append(
                     f'<li class="planned"><span class="n">··</span>'

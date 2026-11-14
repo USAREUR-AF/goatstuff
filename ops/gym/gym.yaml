@@ -198,7 +198,7 @@ lanes:
     access from code, hosting an outside service, using direct peer links and finding a quality-of-service
     fault. You prove its value on real work, a model at a site that publishes what it sees and is
     updated in place, machines that coordinate with no central station, and two sovereigns that fill in
-    one shared picture. Then you reach the advanced rungs, a site that keeps working when it is cut off, a hub that
+    one shared picture. Then you reach the advanced rungs, marked frontier where the tooling is not built yet, a site that keeps working when it is cut off, a hub that
     overrules and severs, and a pod, a site and an environment rebuilt from nothing.
   modules:
   - enrol-your-laptop
@@ -4367,6 +4367,7 @@ modules:
   level: mastery
   minutes: 90
   status: planned
+  frontier: true
   summary: >-
     A site of a goatnet that loses its link to the others is meant to keep doing everything,
     admitting people, enrolling machines and changing access, and to merge cleanly when the link
@@ -4384,6 +4385,7 @@ modules:
   level: mastery
   minutes: 90
   status: planned
+  frontier: true
   summary: >-
     One site of a goatnet outranks the others. Its changes win over any other site, it alone can
     cut a compromised site out of the goatnet, and a severed site returns only by being rebuilt
@@ -4398,6 +4400,7 @@ modules:
   level: mastery
   minutes: 60
   status: planned
+  frontier: true
   summary: >-
     A pod is rebuilt from nothing by carrying over only the identities of its people, machines and
     processes, and every account is checked again before it exists on the rebuilt pod. Teardown
@@ -4413,6 +4416,7 @@ modules:
   level: mastery
   minutes: 120
   status: planned
+  frontier: true
   summary: >-
     The same rebuild for a whole host site, its core pair and its observability pair, with the
     accounts that hold more privilege approved by a named person and the routine ones by machine
@@ -4426,6 +4430,7 @@ modules:
   level: mastery
   minutes: 240
   status: planned
+  frontier: true
   summary: >-
     Every site of a goatnet is rebuilt from nothing, the hub first, and each other site rejoins
     only when the hub authorizes it. Nobody has done this yet, the project's own team included.
@@ -4460,6 +4465,7 @@ modules:
   level: mastery
   minutes: 60
   status: planned
+  frontier: true
   summary: >-
     A model that runs at a host site or a tactical node is replaced with a new version without a
     person at the box. Each node pulls the version its goatnet declares, checks its signature, and
@@ -4474,6 +4480,7 @@ modules:
   level: mastery
   minutes: 90
   status: planned
+  frontier: true
   summary: >-
     Systems that lose their link back to a central station keep exchanging what each one knows
     directly with the others in reach, and agree on who does what, with nothing in the middle. The
@@ -4490,6 +4497,7 @@ modules:
   level: mastery
   minutes: 90
   status: planned
+  frontier: true
   summary: >-
     Two sovereign parties each see part of the same thing. Each releases what it sees, each adds
     what the other lacks, and the shared topic gains detail every round without a value going

@@ -120,6 +120,7 @@ th { font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; color: 
 .chip.safety-admin, .chip.safety-writes { border-color: var(--warn); color: var(--warn); }
 .chip.open { border-color: var(--good); color: var(--good); }
 .chip.gated { border-color: var(--warn); color: var(--warn); }
+.chip.frontier { border-color: var(--warn); color: var(--warn); border-style: dashed; }
 /* A machine door — no web page behind the name, so the name is not a link. */
 .chip.machine { border-style: dashed; }
 
