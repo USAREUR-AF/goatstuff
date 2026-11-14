@@ -275,9 +275,13 @@ def open_session(endpoint, tls=None, mode="client", listen=None):
     return zenoh.open(conf)
 
 
+def is_put(sample):
+    import zenoh  # only reached when a sample arrives
+    return sample.kind == zenoh.SampleKind.PUT
+
+
 def run_system(session, slot, system, group, tasks, heartbeat=5.0, self_check=10.0,
                stop=None, out=sys.stdout):
-    import zenoh
     stop = stop or threading.Event()
     coord = Coordinator(slot, system, group, tasks)
     lock = threading.Lock()
@@ -285,7 +289,7 @@ def run_system(session, slot, system, group, tasks, heartbeat=5.0, self_check=10
 
     def on_token(sample):
         with lock:
-            coord.on_token(str(sample.key_expr), sample.kind == zenoh.SampleKind.PUT)
+            coord.on_token(str(sample.key_expr), is_put(sample))
         changed.set()
 
     def on_assignment(sample):
@@ -340,7 +344,6 @@ def run_system(session, slot, system, group, tasks, heartbeat=5.0, self_check=10
 
 
 def run_station(session, slot, group, tasks, heartbeat=5.0, stop=None, out=sys.stdout):
-    import zenoh
     stop = stop or threading.Event()
     live, lock, changed = set(), threading.Lock(), threading.Event()
 
@@ -348,7 +351,7 @@ def run_station(session, slot, group, tasks, heartbeat=5.0, stop=None, out=sys.s
         parsed = parse_token(str(sample.key_expr), group)
         if parsed and parsed[0] == "system":
             with lock:
-                (live.add if sample.kind == zenoh.SampleKind.PUT else live.discard)(parsed[1])
+                (live.add if is_put(sample) else live.discard)(parsed[1])
             changed.set()
 
     watch = session.liveliness().declare_subscriber(group_watch(group), on_token, history=True)

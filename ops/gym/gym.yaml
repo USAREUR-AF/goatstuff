@@ -4548,6 +4548,12 @@ modules:
   level: mastery
   minutes: 90
   quirks:
+  - claim: Presence is best-effort advisory. A router without the liveliness grant for your slot
+      denies your token silently, so the other systems never see you and nothing tells you so.
+    evidence: goatcore crates/panoscope-core/src/presence.rs, declare_presence_token ("treat presence as best-effort advisory"); ADR 1040
+    so: Take no task until your own token appears in your own watch; otherwise refuse and say why, as
+      the example does. A system whose token is denied then covers nothing, and the systems that are
+      seen cover all of its tasks, so no task is left without cover.
   - claim: The routers are edge-local, so systems that share their site's router keep publishing,
       subscribing and seeing each other's presence when the station or the link to it is gone. With
       no router in reach they cannot coordinate this way at all; router-less peer continuity is
@@ -4566,11 +4572,6 @@ modules:
     evidence: ops/zenoh-trial-peers/coordinate-without-a-station/test_coordinate.py
     so: Use this rule only for tasks where double coverage is safe. A task that must have exactly one
       owner needs a majority to decide, and a cut-off minority then stops; that is a different design.
-  - claim: A liveliness token is advisory. A router without the liveliness grant for your slot
-      denies it silently, and the other systems then never see you.
-    evidence: ADR 1040
-    so: Take no task until your own token appears in your own watch. The example exits with the reason
-      instead.
   - claim: Anyone can publish an assignment under their own slot. The per-slot write rule makes the
       slot in a key an identity, not the key's wording.
     evidence: docs/design/zenoh-volatile-class.md

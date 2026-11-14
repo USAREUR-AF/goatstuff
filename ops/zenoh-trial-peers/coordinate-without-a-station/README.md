@@ -20,7 +20,7 @@ This is the worked example for the goat gym module *Let autonomous systems coord
 | A partition | Each side covers every task itself. A task may be covered twice, never by nobody. When the sides see each other again they recompute, and the duplicates drop. |
 | The station | While the station's token is alive and it has published an assignment, the systems follow it. A task it gave to a member that is gone falls back to the rule at once. |
 | Trust | Each participant publishes only under its own slot, and the per-slot write rule makes that slot an identity. A system accepts an assignment only from the slot that holds the station token. |
-| A silently denied token | A router without the liveliness grant for a slot denies the token without an error. A system takes no task until it sees its own token in its own watch, and otherwise exits saying why. |
+| A silently denied token | Presence is best-effort advisory (goatcore `presence.rs`): a router without the liveliness grant for a slot denies the token without an error. A system takes no task until it sees its own token in its own watch, and otherwise exits saying why. The denied system then covers nothing, and the systems that are seen cover all its tasks, so no task goes uncovered. |
 
 Each system publishes what it covers on one stable key, `<slot>/coord/<group>/<system>/covering/v1`. It publishes on every change and every `--heartbeat` seconds. The payload carries `mode`, which is `station` or `self`, along with `covering`, `live`, `seq` and `at`.
 
@@ -63,6 +63,6 @@ The rule is tested over every live set drawn from a roster of six systems and ni
 - each side of a partition covers every task;
 - a merge returns to one owner per task.
 
-The event handling is tested without a fabric. It waits for the system's own token, follows the station, refuses an assignment from another slot, and covers a task the station gave to a member that has gone.
+The event handling is tested without a fabric. It waits for the system's own token; a system whose router denies its token refuses, publishes nothing and says why, and the others still cover every task. It follows the station, refuses an assignment from another slot, and covers a task the station gave to a member that has gone.
 
 One test starts real Zenoh sessions on loopback when the client library is installed. A router-mode session stands in for the site router, with the station and three systems as clients. It checks that every task is covered under the station and again after the station stops. It uses no certificates and no goatnet, so it shows the code works against the library, not against a goatnet's router, ACL or certificates. The example has not been run on a goatnet.

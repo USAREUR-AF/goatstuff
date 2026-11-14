@@ -217,6 +217,81 @@ class CoordinatorTest(unittest.TestCase):
         self.assertEqual(self.c.live, {self.me})
 
 
+class FakeDecl:
+    def __init__(self):
+        self.undeclared = False
+
+    def undeclare(self):
+        self.undeclared = True
+
+
+class DeniedTokenSession:
+    """A session whose router denies the presence token: the call succeeds, nothing is seen."""
+
+    def __init__(self):
+        self.puts, self.decls = [], []
+
+    def liveliness(self):
+        return self
+
+    def _decl(self, *args, **kwargs):
+        d = FakeDecl()
+        self.decls.append(d)
+        return d
+
+    declare_subscriber = _decl
+    declare_token = _decl
+
+    def put(self, key, payload, **kwargs):
+        self.puts.append((key, payload))
+
+
+class RefuseWithoutOwnTokenTest(unittest.TestCase):
+    """Presence is best-effort advisory, so a system acts only on a token it has seen."""
+
+    def test_a_system_that_never_sees_its_token_refuses_and_takes_no_task(self):
+        session = DeniedTokenSession()
+        with self.assertRaises(co.CoordError) as cm:
+            co.run_system(session, SLOTS[0], "alpha", "g", ["north", "east"],
+                          self_check=0.3, out=io.StringIO())
+        msg = str(cm.exception)
+        self.assertIn("never appeared", msg)
+        self.assertIn("liveliness grant", msg)
+        self.assertIn(co.system_token(SLOTS[0], "g", "alpha"), msg)
+        self.assertEqual(session.puts, [], "no covering was published")
+        self.assertTrue(all(d.undeclared for d in session.decls), "token and watches undeclared")
+
+    def test_a_denied_token_leaves_no_task_uncovered(self):
+        tasks = ["north", "east", "south", "west"]
+        roster = [(SLOTS[0], "alpha"), (SLOTS[1], "bravo"), (SLOTS[2], "charlie")]
+        denied = roster[2]
+        coords = {}
+        for slot, name in roster:
+            c = co.Coordinator(slot, name, "g", tasks)
+            for s2, n2 in roster:
+                if (s2, n2) != denied:  # nobody, the denied system included, sees its token
+                    c.on_token(co.system_token(s2, "g", n2), True)
+            coords[name] = c
+        self.assertEqual(coords["charlie"].decide(), ("waiting", []))
+        cover = {t: 0 for t in tasks}
+        for c in coords.values():
+            for t in c.decide()[1]:
+                cover[t] += 1
+        self.assertEqual(cover, {t: 1 for t in tasks}, "every task covered, by the systems seen")
+
+    def test_a_system_never_takes_a_task_before_its_token_is_seen_in_any_roster(self):
+        tasks = ["north", "east", "south"]
+        for others in subsets(ROSTER[1:4]):
+            c = co.Coordinator(SLOTS[0], "sys-1", "g", tasks)
+            for m in others:
+                slot, name = m.split("/")
+                c.on_token(co.system_token(slot, "g", name), True)
+            c.on_token(co.station_token(SLOTS[5], "g"), True)
+            c.on_assignment(co.assignment_key(SLOTS[5], "g"),
+                            {"assignment": {t: f"{SLOTS[0]}/sys-1" for t in tasks}})
+            self.assertEqual(c.decide(), ("waiting", []), others)
+
+
 class CliTest(unittest.TestCase):
     def test_plan_prints_one_owner_per_task(self):
         out = io.StringIO()
