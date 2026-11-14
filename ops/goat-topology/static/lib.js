@@ -22,3 +22,32 @@ export const ageSecs = (receivedMs, nowMs = Date.now()) =>
 
 export const severityChip = s =>
   s === "critical" ? "err" : s === "warning" ? "warn" : s === "advisory" ? "info" : "muted";
+
+/** A router's part in the fabric, read from what it reports: a router that
+ *  holds other routers in a south group is a gateway. Display only. */
+export const roleOf = x =>
+  (x.regions || []).some(r => /^south:.*:router$/.test(r.name) && r.link_state_e > 0) ||
+  x.gateway_mode === "custom" ? "gateway" : "member";
+
+// A router that never reports is known only by its ZID, and twenty hex strings
+// cannot be told apart at a glance. Give each a pronounceable display name,
+// derived from the ZID and from nothing else, so it is the same on every page
+// load and for every viewer. DISPLAY ONLY: it is not an identity, nothing
+// matches on it, and the ZID is always shown beside it.
+const ADJ = ["amber", "brisk", "calm", "clear", "cobalt", "coral", "crisp", "dusty", "early", "even",
+  "fern", "flint", "gold", "green", "high", "ivory", "jade", "keen", "late", "light", "lunar", "mild",
+  "north", "olive", "pale", "plain", "quiet", "rapid", "slate", "solar", "still", "tidal"];
+const NOUN = ["anchor", "basin", "beacon", "birch", "bridge", "canyon", "cedar", "cove", "delta", "dune",
+  "field", "fjord", "grove", "harbor", "heron", "island", "juniper", "lagoon", "ledge", "maple", "meadow",
+  "mesa", "orchard", "pier", "plateau", "quarry", "reef", "ridge", "summit", "valley", "willow", "yard"];
+const isZid = s => /^[0-9a-f]{8,32}$/.test(String(s));
+
+/** The label for a router: its node name when it has one; for a bare ZID, the
+ *  derived display name with the ZID's first six characters. */
+export function displayName(id) {
+  const s = String(id ?? "");
+  if (!isZid(s)) return s;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return `${ADJ[h % ADJ.length]}-${NOUN[(h >>> 8) % NOUN.length]} (${s.slice(0, 6)})`;
+}

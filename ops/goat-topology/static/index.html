@@ -10,7 +10,8 @@
   each asset gets its own cache lifetime instead of a copy edit re-sending the
   whole bundle.
 
-  ORDER: verdict, then the graph as the orientation device, then findings,
+  ORDER: verdict, then the graph as the orientation device, the detail of the
+  router selected in it, then findings,
   changes, routers, and the carve planner. The graph leads because it answers
   "where am I" before any of the words do; the verdict above it means nobody has
   to read a picture to learn whether anything is wrong.
@@ -49,11 +50,18 @@
         <span><i class="k-north"></i>routed link — both ends share a routing group</span>
         <span><i class="k-south"></i>terminated link — one end sits below the other</span>
         <span><i class="k-stale"></i>gone quiet</span>
-        <span style="color:var(--fg-faint)">amber arc = applications connected here · click a router to plan a carve</span>
+        <span style="color:var(--fg-faint)">amber arc = applications connected here · click a router for its detail</span>
       </div>
     </div>
   </section>
 
+  <section>
+    <div class="sec-head">
+      <h2 class="t-h4">Router detail</h2>
+      <span class="t-label" id="detail-note">—</span>
+    </div>
+    <div class="detail" id="detail"></div>
+  </section>
   <section>
     <div class="sec-head">
       <h2 class="t-h4">Findings</h2>
