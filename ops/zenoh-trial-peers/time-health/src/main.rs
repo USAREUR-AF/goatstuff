@@ -65,6 +65,12 @@ struct HostClockHealthV1 {
     attestation_age_ms: i64,
     #[prost(bool, tag = "11")]
     attested: bool,
+    #[prost(bool, tag = "12")]
+    observed_by_neighbor: bool,
+    #[prost(double, tag = "13")]
+    neighbor_offset_ms: f64,
+    #[prost(string, tag = "14")]
+    observed_by: String,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -100,6 +106,97 @@ enum EnvDetail {
     Fabric(FabricDetailV1),
     #[prost(message, tag = "11")]
     Time(TimeDetailV1),
+}
+
+// ---------------------------------------------------------------------------
+// The `peer` domain as this roll-up reads it (ADR 1232): the reading the peer
+// fault reader beside our router publishes on ops/peer/health/<site>. Only the
+// fields used here are mirrored; prost skips the rest. Tags follow
+// proto/env_health_v1.proto (EnvHealthV1 detail arm 17, PeerFaultDetailV1,
+// PeerFaultV1).
+// ---------------------------------------------------------------------------
+
+/// PeerFaultKindV1::CLOCK_AHEAD.
+const PEER_FAULT_CLOCK_AHEAD: i32 = 1;
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct PeerFaultV1 {
+    #[prost(string, tag = "1")]
+    zid: String,
+    #[prost(int32, tag = "2")]
+    kind: i32,
+    #[prost(double, tag = "3")]
+    offset_seconds: f64,
+    #[prost(string, tag = "10")]
+    observed_by: String,
+    #[prost(string, optional, tag = "11")]
+    attribution_name: Option<String>,
+    #[prost(string, tag = "13")]
+    grade: String,
+    #[prost(double, tag = "15")]
+    limit_seconds: f64,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct PeerFaultDetailV1 {
+    #[prost(message, repeated, tag = "1")]
+    peers: Vec<PeerFaultV1>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct PeerEnvelope {
+    #[prost(string, tag = "1")]
+    domain: String,
+    #[prost(message, optional, tag = "17")]
+    peer: Option<PeerFaultDetailV1>,
+}
+
+/// The latest `peer` reading for this site and when it arrived here.
+struct NeighborReading {
+    detail: PeerFaultDetailV1,
+    received_at: Instant,
+}
+
+/// One row per peer the router's reader grades at fault for a clock that runs
+/// ahead: a clock reading taken by a neighbor, not reported by the machine
+/// itself. A reading older than `stale_after` yields no row.
+fn neighbor_rows(
+    reading: Option<&NeighborReading>,
+    now: Instant,
+    stale_after: Duration,
+) -> Vec<HostClockHealthV1> {
+    let Some(r) = reading else { return Vec::new() };
+    let age = now.saturating_duration_since(r.received_at);
+    if age > stale_after {
+        return Vec::new();
+    }
+    r.detail
+        .peers
+        .iter()
+        .filter(|p| p.kind == PEER_FAULT_CLOCK_AHEAD && p.grade == "peer_at_fault")
+        .map(|p| {
+            let by = if p.observed_by.is_empty() { "our router".to_string() } else { format!("router {}", p.observed_by) };
+            HostClockHealthV1 {
+                host_id: p.attribution_name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| p.zid.clone()),
+                color: "red".to_string(),
+                verdict: "degraded".to_string(),
+                verdict_reasons: vec![format!(
+                    "observed by a neighbor, not self-reported: {by} sees this clock {:.1} s ahead of its own (limit {} s)",
+                    p.offset_seconds, p.limit_seconds
+                )],
+                rms_offset_ms: 0.0,
+                stratum: 0,
+                gnss_present: false,
+                peer_median_offset_ms: 0.0,
+                divergence_detected: false,
+                attestation_age_ms: age.as_millis() as i64,
+                attested: false,
+                observed_by_neighbor: true,
+                neighbor_offset_ms: p.offset_seconds * 1000.0,
+                observed_by: p.observed_by.clone(),
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +270,16 @@ fn now_unix_ms() -> i64 {
 }
 
 /// Build the per-site EnvHealthV1{domain:"time"} from the accumulator snapshot.
-fn roll_up(snapshot: &Accum, site: &str, stale_after: Duration, window_secs: u32) -> EnvHealthV1 {
+/// Rows observed by a neighbor are listed after the site's own hosts. They do
+/// not enter overall_color or sample_count: those grade this site's own
+/// clocks, and the `peer` domain grades and pages the neighbor's fault.
+fn roll_up(
+    snapshot: &Accum,
+    neighbor: Option<&NeighborReading>,
+    site: &str,
+    stale_after: Duration,
+    window_secs: u32,
+) -> EnvHealthV1 {
     let now = Instant::now();
     let mut hosts: Vec<HostClockHealthV1> = Vec::with_capacity(snapshot.len());
     for entry in snapshot.values() {
@@ -193,16 +299,26 @@ fn roll_up(snapshot: &Accum, site: &str, stale_after: Duration, window_secs: u32
             divergence_detected: false,
             attestation_age_ms: age.as_millis() as i64,
             attested: v.attested,
+            observed_by_neighbor: false,
+            neighbor_offset_ms: 0.0,
+            observed_by: String::new(),
         });
     }
     hosts.sort_by(|a, b| a.host_id.cmp(&b.host_id)); // deterministic ordering
-    let colors: Vec<&str> = hosts.iter().map(|h| h.color.as_str()).collect();
+    let overall = {
+        let colors: Vec<&str> = hosts.iter().map(|h| h.color.as_str()).collect();
+        overall_color(&colors).to_string()
+    };
+    let own = hosts.len() as u64;
+    let mut seen = neighbor_rows(neighbor, now, stale_after);
+    seen.sort_by(|a, b| a.host_id.cmp(&b.host_id));
+    hosts.extend(seen);
     EnvHealthV1 {
         domain: "time".to_string(),
         scope: site.to_string(),
         ts_unix_ms: now_unix_ms(),
-        overall_color: overall_color(&colors).to_string(),
-        sample_count: hosts.len() as u64,
+        overall_color: overall,
+        sample_count: own,
         window_secs,
         detail: Some(EnvDetail::Time(TimeDetailV1 { hosts })),
     }
@@ -251,8 +367,14 @@ async fn open_session(args: &Args) -> Result<zenoh::Session> {
         .insert_json5("connect/endpoints", &format!("[\"{}\"]", args.endpoint))
         .map_err(|e| anyhow::anyhow!("config connect/endpoints: {e}"))?;
     if args.endpoint.starts_with("tls/") {
-        let cert = args.cert.as_ref().context("--cert required for tls/ endpoint")?;
-        let key = args.key.as_ref().context("--key required for tls/ endpoint")?;
+        let cert = args
+            .cert
+            .as_ref()
+            .context("--cert required for tls/ endpoint")?;
+        let key = args
+            .key
+            .as_ref()
+            .context("--key required for tls/ endpoint")?;
         let root_ca = args
             .root_ca
             .as_ref()
@@ -286,7 +408,7 @@ async fn main() -> Result<()> {
         endpoint = args.endpoint.as_str(),
         site = args.site.as_str(),
         publishes = health_key.as_str(),
-        "session open; rolling up ops/time/attest/** -> ops/time/health/<site>"
+        "session open; rolling up ops/time/attest/** and ops/peer/health/<site> -> ops/time/health/<site>"
     );
 
     let accum: Arc<Mutex<Accum>> = Arc::new(Mutex::new(HashMap::new()));
@@ -296,6 +418,15 @@ async fn main() -> Result<()> {
         .declare_subscriber("ops/time/attest/**")
         .await
         .map_err(|e| anyhow::anyhow!("declare_subscriber(ops/time/attest/**): {e}"))?;
+
+    // The peer fault reader's roll-up for this site (ADR 1232). A site with no
+    // reader publishes nothing on this key, and the time reading is unchanged.
+    let peer_key = format!("ops/peer/health/{}", args.site);
+    let peer_subscriber = session
+        .declare_subscriber(&peer_key)
+        .await
+        .map_err(|e| anyhow::anyhow!("declare_subscriber({peer_key}): {e}"))?;
+    let mut neighbor: Option<NeighborReading> = None;
 
     let interval = Duration::from_millis(args.interval_ms);
     let stale_after = Duration::from_millis(args.stale_after_ms);
@@ -334,9 +465,24 @@ async fn main() -> Result<()> {
                     Err(e) => { warn!(error = %e, "subscriber closed"); break; }
                 }
             }
+            recv = peer_subscriber.recv_async() => {
+                match recv {
+                    Ok(sample) => {
+                        let bytes = sample.payload().to_bytes();
+                        match PeerEnvelope::decode(bytes.as_ref()) {
+                            Ok(env) if env.domain == "peer" => {
+                                neighbor = Some(NeighborReading { detail: env.peer.unwrap_or_default(), received_at: Instant::now() });
+                            }
+                            Ok(env) => warn!(domain = env.domain.as_str(), key = sample.key_expr().as_str(), "not a peer-domain reading; skipping"),
+                            Err(e) => warn!(error = %e, key = sample.key_expr().as_str(), "undecodable peer reading; skipping"),
+                        }
+                    }
+                    Err(e) => { warn!(error = %e, "peer subscriber closed"); break; }
+                }
+            }
             _ = ticker.tick() => {
                 let snapshot_guard = accum.lock().await;
-                let reading = roll_up(&snapshot_guard, &site, stale_after, (interval.as_secs() as u32).max(1));
+                let reading = roll_up(&snapshot_guard, neighbor.as_ref(), &site, stale_after, (interval.as_secs() as u32).max(1));
                 let n = reading.sample_count;
                 let overall = reading.overall_color.clone();
                 drop(snapshot_guard);
@@ -403,7 +549,7 @@ mod tests {
                 received_at: Instant::now(),
             },
         );
-        let e = roll_up(&acc, "nova-a", Duration::from_secs(90), 30);
+        let e = roll_up(&acc, None, "nova-a", Duration::from_secs(90), 30);
         assert_eq!(e.domain, "time");
         assert_eq!(e.scope, "nova-a");
         assert_eq!(e.sample_count, 1);
@@ -423,6 +569,186 @@ mod tests {
         let back = EnvHealthV1::decode(bytes.as_slice()).expect("decode");
         assert_eq!(back.domain, "time");
         assert_eq!(back.overall_color, "green");
+    }
+
+    fn healthy_host(id: &str) -> HostEntry {
+        HostEntry {
+            verdict: AgentVerdict {
+                host_id: id.to_string(),
+                ntp_class_str: "healthy".to_string(),
+                selected_source: "ntp".to_string(),
+                stratum: 3,
+                rms_offset_ns: 200_000,
+                attested: true,
+            },
+            received_at: Instant::now(),
+        }
+    }
+
+    fn fault(zid: &str, name: Option<&str>, grade: &str, kind: i32, offset: f64) -> PeerFaultV1 {
+        PeerFaultV1 {
+            zid: zid.to_string(),
+            kind,
+            offset_seconds: offset,
+            observed_by: "ab12".to_string(),
+            attribution_name: name.map(str::to_string),
+            grade: grade.to_string(),
+            limit_seconds: 0.5,
+        }
+    }
+
+    fn reading(peers: Vec<PeerFaultV1>, age: Duration) -> NeighborReading {
+        NeighborReading {
+            detail: PeerFaultDetailV1 { peers },
+            received_at: Instant::now() - age,
+        }
+    }
+
+    #[test]
+    fn a_neighbor_observed_clock_is_a_marked_row_outside_the_site_grade() {
+        let mut acc: Accum = HashMap::new();
+        acc.insert("host-a".to_string(), healthy_host("host-a"));
+        let r = reading(
+            vec![
+                fault("7f24", None, "peer_at_fault", PEER_FAULT_CLOCK_AHEAD, 17.7),
+                fault(
+                    "9c01",
+                    Some("edge-box"),
+                    "peer_at_fault",
+                    PEER_FAULT_CLOCK_AHEAD,
+                    2.5,
+                ),
+            ],
+            Duration::from_secs(5),
+        );
+        let e = roll_up(&acc, Some(&r), "example-site", Duration::from_secs(90), 30);
+        // The site's own clocks are healthy, and that is what the site grade says.
+        assert_eq!(e.overall_color, "green");
+        assert_eq!(e.sample_count, 1);
+        let Some(EnvDetail::Time(t)) = e.detail else {
+            panic!("expected Time detail")
+        };
+        let ids: Vec<&str> = t.hosts.iter().map(|h| h.host_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["host-a", "7f24", "edge-box"],
+            "own hosts first, then neighbor rows by name"
+        );
+        assert!(!t.hosts[0].observed_by_neighbor);
+        let n = &t.hosts[1];
+        assert!(n.observed_by_neighbor);
+        assert!(
+            !n.attested,
+            "a neighbor's observation is not the machine's own attestation"
+        );
+        assert_eq!(n.color, "red");
+        assert_eq!(n.neighbor_offset_ms, 17_700.0);
+        assert_eq!(n.observed_by, "ab12");
+        assert_eq!(
+            n.verdict_reasons,
+            ["observed by a neighbor, not self-reported: router ab12 sees this clock 17.7 s ahead of its own (limit 0.5 s)"]
+        );
+    }
+
+    #[test]
+    fn only_a_fresh_at_fault_clock_reading_makes_a_neighbor_row() {
+        let stale_after = Duration::from_secs(90);
+        let now = Instant::now() + Duration::from_secs(1);
+        // No reader at this site.
+        assert!(neighbor_rows(None, now, stale_after).is_empty());
+        // The reader blames our own clock, a peer is quiet or cleared, or the kind is not a clock fault.
+        let r = reading(
+            vec![
+                fault(
+                    "a1",
+                    None,
+                    "local_clock_suspect",
+                    PEER_FAULT_CLOCK_AHEAD,
+                    9.0,
+                ),
+                fault("a2", None, "cleared", PEER_FAULT_CLOCK_AHEAD, 0.0),
+                fault("a3", None, "peer_at_fault", 0, 9.0),
+            ],
+            Duration::from_secs(5),
+        );
+        assert!(neighbor_rows(Some(&r), now, stale_after).is_empty());
+        // A reader that stopped publishing: its last reading ages out.
+        let old = reading(
+            vec![fault(
+                "a4",
+                None,
+                "peer_at_fault",
+                PEER_FAULT_CLOCK_AHEAD,
+                9.0,
+            )],
+            Duration::from_secs(300),
+        );
+        assert!(neighbor_rows(Some(&old), now, stale_after).is_empty());
+        let fresh = reading(
+            vec![fault(
+                "a4",
+                None,
+                "peer_at_fault",
+                PEER_FAULT_CLOCK_AHEAD,
+                9.0,
+            )],
+            Duration::from_secs(5),
+        );
+        assert_eq!(neighbor_rows(Some(&fresh), now, stale_after).len(), 1);
+    }
+
+    #[test]
+    fn a_site_with_only_neighbor_rows_is_still_unmetered() {
+        let acc: Accum = HashMap::new();
+        let r = reading(
+            vec![fault(
+                "7f24",
+                None,
+                "peer_at_fault",
+                PEER_FAULT_CLOCK_AHEAD,
+                17.7,
+            )],
+            Duration::from_secs(5),
+        );
+        let e = roll_up(&acc, Some(&r), "example-site", Duration::from_secs(90), 30);
+        assert_eq!(
+            e.overall_color, "unmetered",
+            "no host of ours reported; a neighbor row is not a reading of our clocks"
+        );
+        assert_eq!(e.sample_count, 0);
+    }
+
+    #[test]
+    fn the_peer_envelope_reads_what_the_reader_publishes() {
+        // Encode with full tags as the reader does: domain (1), detail arm 17.
+        #[derive(Clone, PartialEq, prost::Message)]
+        struct Published {
+            #[prost(string, tag = "1")]
+            domain: String,
+            #[prost(string, tag = "4")]
+            overall_color: String,
+            #[prost(message, optional, tag = "17")]
+            peer: Option<PeerFaultDetailV1>,
+        }
+        let bytes = Published {
+            domain: "peer".to_string(),
+            overall_color: "red".to_string(),
+            peer: Some(PeerFaultDetailV1 {
+                peers: vec![fault(
+                    "7f24",
+                    Some("edge-box"),
+                    "peer_at_fault",
+                    PEER_FAULT_CLOCK_AHEAD,
+                    17.7,
+                )],
+            }),
+        }
+        .encode_to_vec();
+        let env = PeerEnvelope::decode(bytes.as_slice()).expect("decode");
+        assert_eq!(env.domain, "peer");
+        let peers = env.peer.expect("detail").peers;
+        assert_eq!(peers[0].attribution_name.as_deref(), Some("edge-box"));
+        assert_eq!(peers[0].offset_seconds, 17.7);
     }
 
     #[test]
