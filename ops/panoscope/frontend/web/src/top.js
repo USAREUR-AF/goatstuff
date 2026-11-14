@@ -59,6 +59,11 @@ const STALE_AFTER_MS = POLL_MS * 4;
  * @typedef {Object} PeerRow
  * @property {string} label
  * @property {string} zid
+ * @property {"clock_ahead" | "trust_candidate" | "unknown"} kind
+ * @property {boolean} candidate
+ * @property {string} [source_address]
+ * @property {string} [absent_since]
+ * @property {string} grade_label
  * @property {number} offset_seconds
  * @property {number} rejections_per_minute
  * @property {"yes" | "no" | "unknown"} direct_session
@@ -75,6 +80,24 @@ const STALE_AFTER_MS = POLL_MS * 4;
  * @property {string} peering
  * @property {PeerRow[]} peers
  * @property {number} peers_withheld
+ * @property {number} candidates_withheld
+ * @property {TrustLine} [trust]
+ */
+/**
+ * @typedef {Object} TlsAlertRow
+ * @property {string} name
+ * @property {number} count
+ * @property {number} per_minute
+ * @property {boolean} trust_refusal
+ */
+/**
+ * @typedef {Object} TrustLine
+ * @property {string} verdict
+ * @property {string} label
+ * @property {string} state
+ * @property {string} reason
+ * @property {TlsAlertRow[]} alerts
+ * @property {number} [declared_peers_absent]
  */
 /**
  * @typedef {Object} TopView
@@ -166,14 +189,61 @@ function renderClasses(pane) {
     .join("");
 }
 
+/**
+ * The trust-refusal line under a site: verdict label, reason and the TLS
+ * alert counts per name. Identity-free, so every tier sees it. "not
+ * measured" is printed as such and styled dim (unmetered), never green.
+ * @param {TrustLine} [t]
+ */
+function trustRow(t) {
+  if (!t) return "";
+  const alerts = t.alerts.length
+    ? t.alerts
+        .map(
+          (a) =>
+            `${esc(a.name)} ${a.count} (${fmtRate(a.per_minute)}/min)${a.trust_refusal ? "" : " <span class='meta'>not a trust refusal</span>"}`,
+        )
+        .join(" · ")
+    : "no TLS alert in the window";
+  const reason = t.reason ? ` <span class="meta">— ${esc(t.reason)}</span>` : "";
+  return `<tr>
+        <td class="state-dim">&nbsp;&nbsp;trust</td>
+        <td colspan="5"><span class="${stateClass(t.state)}">${esc(t.label)}</span>${reason}<br><span class="meta">alerts: ${alerts}</span></td>
+      </tr>`;
+}
+
+/** @param {PeerRow} p @param {PeerSiteRow} s */
+function peerRow(p, s) {
+  if (p.candidate) {
+    const who = p.zid || p.source_address || "";
+    const since = p.absent_since ? `no session, seen absent since ${esc(p.absent_since)}` : "no session";
+    return `<tr>
+        <td title="${esc(who)}">&nbsp;&nbsp;${esc(p.label)}</td>
+        <td class="state-amber">${esc(p.grade_label)}</td>
+        <td colspan="3" class="meta">${since}; may be the refusing client</td>
+        <td>${esc(s.peering || "—")}</td>
+      </tr>`;
+  }
+  return `<tr>
+        <td title="${esc(p.zid)}">&nbsp;&nbsp;${esc(p.label)}</td>
+        <td class="${stateClass(p.color)}">${esc(p.grade_label || p.grade)}</td>
+        <td class="num">${p.offset_seconds.toFixed(1)} s</td>
+        <td class="num">${fmtRate(p.rejections_per_minute)}</td>
+        <td>${esc(p.direct_session)}</td>
+        <td>${esc(s.peering || "—")}</td>
+      </tr>`;
+}
+
 function renderPeers(view) {
   const sites = view.peer_sites ?? [];
   $("peer-rows").innerHTML = sites
     .map((s) => {
       const stale = s.stale_age ? ` <span class="meta">(stale ${esc(s.stale_age)})</span>` : "";
+      const ofWhich =
+        s.candidates_withheld > 0 ? `, ${s.candidates_withheld} of them trust-refusal candidates` : "";
       const withheld =
         s.peers_withheld > 0
-          ? `<tr><td colspan="6" class="state-dim">${s.peers_withheld} peer row(s) withheld at your role's scope</td></tr>`
+          ? `<tr><td colspan="6" class="state-dim">${s.peers_withheld} peer row(s) withheld at your role's scope${ofWhich}</td></tr>`
           : "";
       const head = `<tr>
         <td title="${esc(s.reason)}"><strong>${esc(s.site)}</strong></td>
@@ -181,19 +251,8 @@ function renderPeers(view) {
         <td></td><td></td><td></td>
         <td>${esc(s.peering || "—")}</td>
       </tr>`;
-      const rows = s.peers
-        .map(
-          (p) => `<tr>
-        <td title="${esc(p.zid)}">&nbsp;&nbsp;${esc(p.label)}</td>
-        <td class="${stateClass(p.color)}">${esc(p.grade)}</td>
-        <td class="num">${p.offset_seconds.toFixed(1)} s</td>
-        <td class="num">${fmtRate(p.rejections_per_minute)}</td>
-        <td>${esc(p.direct_session)}</td>
-        <td>${esc(s.peering || "—")}</td>
-      </tr>`,
-        )
-        .join("");
-      return head + rows + withheld;
+      const rows = s.peers.map((p) => peerRow(p, s)).join("");
+      return head + trustRow(s.trust) + rows + withheld;
     })
     .join("");
   const empty = $("peer-empty");
