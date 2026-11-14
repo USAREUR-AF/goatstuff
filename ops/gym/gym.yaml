@@ -4410,6 +4410,11 @@ modules:
   - claim: The play refuses a mesh zone that does not match the declaration, in either direction.
     evidence: docs/design/external-service-golden-path.md
     so: Regenerate and re-sign the zone before every run, adding and withdrawing alike.
+  - claim: The zone push refuses to drop a record the live resolver still serves, and withdrawing a
+      service drops its name. The external-service play does not pass the names for you.
+    evidence: docs/design/external-service-golden-path.md
+    so: On state=absent, name exactly the records being withdrawn with `zone_record_removal_allow`.
+      Never use the blanket override, which disarms the guard for every record.
   drill:
     do: Declare a service on a host that is already a mesh peer, reach it by its mesh name, then retire it.
     run: >-
@@ -4417,7 +4422,7 @@ modules:
       -e target=<site>_hosts -e service=<name> -e state=present external-service.yml
     pass: After state=present, `curl -s -o /dev/null -w '%{http_code}' https://<name>.<site>.<zone><health_path>`
       prints 200 and the status page's External services page lists the row. After state=absent, `getent
-      hosts <name>.<site>.<zone>` prints nothing.
+      hosts <name>.<site>.<zone>` prints nothing and the row is gone.
     safety: admin
     needs: mesh
   deeper:
@@ -4449,8 +4454,11 @@ modules:
   - do: Reach it by its mesh name.
     note: The health path answers 200 over the mesh, and the External services page lists the row.
   - do: Retire it in order.
-    note: Set `enabled false`, regenerate and re-sign the zone, then run the play with state=absent. Keep
-      the file unless the owner says the service will not return; it is the seed for bringing it back.
+    note: >-
+      Set `enabled false`, regenerate and re-sign the zone, then run the play with state=absent,
+      adding `-e '{"zone_record_removal_allow": ["<name>.<site>.<zone>"]}'` with every name the
+      declaration listed. Without it the zone push refuses to drop a live record. Keep the file unless
+      the owner says the service will not return; it is the seed for bringing it back.
 - id: find-and-fix-quality-of-service
   title: Find a quality-of-service fault and fix the right thing
   level: mastery
@@ -4476,10 +4484,10 @@ modules:
     do: Slow one publisher of your own below its envelope's floor, find it from what the fabric reveals,
       and restore it at the publisher.
     run: goat top --once
-    pass: '`goat top --once` shows your producer as LOW while it is slowed, and within its range once you
+    pass: '`goat top --once` shows your producer''s BAND as LOW while it is slowed, and ok once you
       restore its rate. Nothing outside the publisher was changed.'
     safety: writes
-    needs: fabric
+    needs: mesh
   deeper:
   - doc: docs/design/zenoh-qos-and-prioritization.md
     why: How priority is given by identity and namespace, and what the fabric cannot do for you.
@@ -4500,20 +4508,21 @@ modules:
   walkthrough:
   - do: Make one flow slow on purpose.
     note: Use a publisher of your own whose envelope declares a floor above zero, and publish below that
-      floor. Do not slow anything you do not own.
+      floor without stopping. A producer that sends nothing in the window leaves no footprint to read.
+      Do not slow anything you do not own.
   - do: Read the fabric weather.
     run: goat health
     note: Note whether each class is grounded or idle. Idle says nothing about health either way.
   - do: Find the producer.
     run: goat top --once
-    note: Your producer shows LOW against its envelope. A producer above its maximum would show OVER; both
-      ends are faults.
+    note: Your producer's BAND reads LOW against its envelope. A producer above its maximum would read
+      OVER; both ends are faults.
   - do: Rule out the link and the demand.
     note: The peer demand page shows who is asking for what, and the bandwidth dashboard shows each plane
       of the host's link on its own. If both are quiet, the fault is at the publisher.
   - do: Fix it at the publisher, then read it again.
     run: goat top --once
-    note: Restore the rate. The band returns to within range. If it does not, the fault is elsewhere; go
+    note: Restore the rate. The BAND returns to ok. If it does not, the fault is elsewhere; go
       back to the link and the reservation before changing anything central.
 - id: fail-over-to-island-mode
   title: Cut a site off and keep working
