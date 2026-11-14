@@ -7,7 +7,7 @@ export function renderVerdict(d) {
   const c = d.counts;
   const cls = c.critical ? "is-crit" : c.warning ? "is-warn" : "is-ok";
   const head = c.critical
-    ? `${c.critical} thing${c.critical === 1 ? "" : "s"} need attention`
+    ? `${c.critical} thing${c.critical === 1 ? " needs" : "s need"} attention`
     : c.warning
     ? `${c.warning} thing${c.warning === 1 ? "" : "s"} worth a look`
     : "Nothing is wrong that this surface can see";
@@ -15,7 +15,8 @@ export function renderVerdict(d) {
     ? "Critical findings are configuration that is unsafe, or that silently does the opposite of its intent. Start at the top."
     : c.warning
     ? "No critical findings. Warnings are inconsistencies and unknowns — often a rollout mid-flight, sometimes not."
-    : `${c.routers} router${c.routers === 1 ? "" : "s"} reporting, ${c.stale} stale. `
+    : `${c.reporting ?? c.routers} router${(c.reporting ?? c.routers) === 1 ? "" : "s"} reporting, ${c.stale} stale`
+      + (c.not_reporting ? `, ${c.not_reporting} more known from routing maps and not reporting. ` : ". ")
       + `This states what was observed; a router that stopped reporting is listed as stale, never counted healthy.`;
 
   $("#verdict").className = "verdict " + cls;

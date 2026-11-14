@@ -25,11 +25,14 @@
 
 use anyhow::{Context, Result};
 
-use crate::wire::{GatewayFilterV1, GatewayMode, GatewaySubregionV1};
+use crate::wire::{ClientAdmission, GatewayFilterV1, GatewayMode, GatewaySubregionV1};
 
 pub struct Declared {
     pub mode: GatewayMode,
     pub subregions: Vec<GatewaySubregionV1>,
+    /// Whether a default client can hold a session with this router. Only a
+    /// Custom list makes a claim; see [`ClientAdmission`].
+    pub admission: ClientAdmission,
     /// Operator-facing reason the mode is `Unreadable`. Never parsed.
     pub error: String,
 }
@@ -39,6 +42,7 @@ impl Declared {
         Self {
             mode: GatewayMode::Unreadable,
             subregions: vec![],
+            admission: ClientAdmission::Unspecified,
             error: why.into(),
         }
     }
@@ -46,6 +50,7 @@ impl Declared {
         Self {
             mode: GatewayMode::Auto,
             subregions: vec![],
+            admission: ClientAdmission::Unspecified,
             error: String::new(),
         }
     }
@@ -105,6 +110,7 @@ pub fn parse(text: &str) -> Result<Declared> {
     };
 
     let mut subregions = Vec::with_capacity(list.len());
+    let mut admits = false;
     for (index, entry) in list.iter().enumerate() {
         // Absent `filters` matches EVERY peer; an empty list matches NONE.
         // The distinction is the whole of finding T-002, so it is carried
@@ -115,6 +121,7 @@ pub fn parse(text: &str) -> Result<Declared> {
             .and_then(|f| f.as_array())
             .map(|fs| fs.iter().map(read_filter).collect())
             .unwrap_or_default();
+        admits |= subregion_may_admit_clients(filters_present, filters_value);
         subregions.push(GatewaySubregionV1 {
             index: index as u32,
             filters_present,
@@ -125,7 +132,51 @@ pub fn parse(text: &str) -> Result<Declared> {
     Ok(Declared {
         mode: GatewayMode::Custom,
         subregions,
+        admission: if admits {
+            ClientAdmission::Admitted
+        } else {
+            ClientAdmission::Refused
+        },
         error: String::new(),
+    })
+}
+
+/// Could a default-configured client match this subregion?
+///
+/// zenoh 1.9.0 puts a peer that matches no subregion NORTH of a Custom gateway,
+/// and a client refuses to be north of a router. So the question that decides
+/// whether every application on this router is refused is: does ANY subregion
+/// match a client?
+///
+/// Errs toward "yes". A false `Refused` would raise a critical finding on a
+/// working router, so only shapes that certainly exclude a client count as
+/// excluding: an explicitly empty filter list, and filters that each pin
+/// `zids` or `region_names` (a client's ZID is random per process and a client
+/// asserts no region) or that list `modes` without `client`. An `interfaces`
+/// filter, a `negated` filter or anything unrecognised is counted as admitting.
+fn subregion_may_admit_clients(filters_present: bool, filters: Option<&serde_json::Value>) -> bool {
+    if !filters_present {
+        return true; // absent `filters` matches every peer
+    }
+    let Some(list) = filters.and_then(|f| f.as_array()) else {
+        return true;
+    };
+    list.iter().any(|f| {
+        if f.get("negated").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return true;
+        }
+        let pinned = |k: &str| !matches!(f.get(k), None | Some(serde_json::Value::Null));
+        if pinned("zids") || pinned("region_names") {
+            return false;
+        }
+        let is_client =
+            |m: &serde_json::Value| m.as_str().is_some_and(|m| m.eq_ignore_ascii_case("client"));
+        match f.get("modes") {
+            None | Some(serde_json::Value::Null) => true,
+            Some(serde_json::Value::Array(modes)) => modes.iter().any(is_client),
+            Some(serde_json::Value::String(_)) => is_client(f.get("modes").unwrap()),
+            Some(_) => true,
+        }
     })
 }
 
@@ -396,6 +447,57 @@ mod tests {
         assert!(
             !d.error.is_empty(),
             "an unreadable mode must carry its reason"
+        );
+    }
+
+    #[test]
+    fn a_zid_only_custom_list_refuses_every_default_client() {
+        // The nine-router rig's gateway shape: pods carved south by ZID, nothing
+        // for clients. zenoh puts an unmatched client north and the client
+        // refuses — this tool's own publisher included.
+        let d = parse(
+            r#"{ gateway: { south: [ { filters: [ { zids: ["b2b2b2b2", "b3b3b3b3"] } ] } ] } }"#,
+        )
+        .unwrap();
+        assert_eq!(d.admission, ClientAdmission::Refused);
+    }
+
+    #[test]
+    fn a_client_subregion_admits_clients() {
+        for txt in [
+            r#"{ gateway: { south: [ { filters: [ { zids: ["b2"] } ] }, { filters: [ { modes: ["client"] } ] } ] } }"#,
+            r#"{ gateway: { south: [ { filters: [ { zids: ["b2"] } ] }, { filters: [ { modes: "client" } ] } ] } }"#,
+            r#"{ gateway: { south: [ { } ] } }"#,
+            r#"{ gateway: { south: [ { filters: [ { interfaces: ["eth0"] } ] } ] } }"#,
+            r#"{ gateway: { south: [ { filters: [ { modes: ["router"], negated: true } ] } ] } }"#,
+        ] {
+            assert_eq!(
+                parse(txt).unwrap().admission,
+                ClientAdmission::Admitted,
+                "{txt}"
+            );
+        }
+    }
+
+    #[test]
+    fn modes_without_client_and_an_empty_list_refuse() {
+        for txt in [
+            r#"{ gateway: { south: [ { filters: [ { modes: ["router", "peer"] } ] } ] } }"#,
+            r#"{ gateway: { south: [ { filters: [] } ] } }"#,
+        ] {
+            assert_eq!(
+                parse(txt).unwrap().admission,
+                ClientAdmission::Refused,
+                "{txt}"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_makes_no_admission_claim() {
+        assert_eq!(
+            parse(REAL_SHAPE).unwrap().admission,
+            ClientAdmission::Unspecified
         );
     }
 }

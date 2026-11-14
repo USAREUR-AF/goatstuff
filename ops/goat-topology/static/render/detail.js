@@ -21,7 +21,7 @@ function neighbours(d, id, self) {
     const routed = e.region === "north";
     return {
       other,
-      reporting: d.routers.some(r => key(r) === other),
+      reporting: d.routers.some(r => key(r) === other && r.reporting !== false),
       kind: routed ? "routed" : "terminated",
       reads: routed ? "same routing group"
         : gateway ? "sits below this router" : "this router sits below it",
@@ -41,14 +41,19 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
     return;
   }
   const x = d.routers.find(r => key(r) === selected);
-  if (!x) {
-    // Known from another router's link table, never from its own report.
+  if (!x || x.reporting === false) {
+    // Known from another router's link table, never from its own report. The
+    // server lists such a router with `reporting: false` and the reporters
+    // whose maps name it; an older server leaves it out of `routers` entirely.
     const ns = neighbours(d, selected, null);
+    const from = (x?.known_from || []).map(displayName);
     box.innerHTML = `<div class="d-head"><span class="d-name">${esc(displayName(selected))}</span>
         <span class="chip chip--muted">not reporting</span></div>
-      <p class="d-plain">No report has arrived from this router. It is known only because
-        ${ns.length} reporting router${ns.length === 1 ? "" : "s"} list${ns.length === 1 ? "s" : ""} a link to it.</p>
-      <dl class="d-facts"><dt>ZID</dt><dd>${esc(selected)}</dd></dl>
+      <p class="d-plain">No report has arrived from this router. ${from.length
+        ? `It is known only because the routing map of ${esc(from.join(", "))} lists it.`
+        : `It is known only because ${ns.length} reporting router${ns.length === 1 ? "" : "s"} list${ns.length === 1 ? "s" : ""} a link to it.`}</p>
+      <dl class="d-facts"><dt>ZID</dt><dd>${esc(selected)}</dd>
+        ${x?.stale ? `<dt>State</dt><dd style="color:var(--status-err-fg)">every router that lists it has gone quiet</dd>` : ""}</dl>
       ${linkList(ns)}`;
     wire(box);
     $("#detail-note").textContent = displayName(selected);

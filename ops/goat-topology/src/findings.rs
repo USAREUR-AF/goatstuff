@@ -39,7 +39,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::wire::{GatewayMode, RouterTopologyV1};
+use crate::wire::{ClientAdmission, GatewayMode, RouterTopologyV1};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -121,15 +121,93 @@ pub fn evaluate(routers: &[Known<'_>]) -> Vec<Finding> {
     version_skew(routers, &mut out);
     growth(routers, &mut out);
 
-    // Most severe first; then stably by id and subject so the list does not
-    // reshuffle between refreshes for no reason.
+    sort(&mut out);
+    out
+}
+
+/// Most severe first; then stably by id and subject so the list does not
+/// reshuffle between refreshes for no reason.
+pub fn sort(out: &mut [Finding]) {
     out.sort_by(|a, b| {
         a.severity
             .cmp(&b.severity)
             .then_with(|| a.id.cmp(b.id))
             .then_with(|| a.subject.cmp(&b.subject))
     });
-    out
+}
+
+/// A router another router's link-state lists, that sends no snapshot of its
+/// own. Built by the view, which is where the join across snapshots happens.
+pub struct Silent<'a> {
+    pub zid: &'a str,
+    /// Names of the reporting routers whose link-state lists it.
+    pub known_from: Vec<&'a str>,
+}
+
+/// The ZID as a reader can say it aloud: the first eight characters, which is
+/// also how zenoh's own logs abbreviate it.
+pub fn short_zid(z: &str) -> &str {
+    &z[..z.len().min(8)]
+}
+
+// --- T-012 -----------------------------------------------------------------
+
+/// One finding for every router that is known and silent, not one each: on a
+/// goatnet partners dial into, most of them are expected to be silent, and a
+/// finding per partner router would bury everything else on the page.
+pub fn not_reporting(silent: &[Silent<'_>]) -> Option<Finding> {
+    if silent.is_empty() {
+        return None;
+    }
+    let mut seen_by: BTreeMap<&str, usize> = BTreeMap::new();
+    for s in silent {
+        for k in &s.known_from {
+            *seen_by.entry(k).or_default() += 1;
+        }
+    }
+    let subject = seen_by
+        .iter()
+        .max_by_key(|(name, n)| (**n, std::cmp::Reverse(**name)))
+        .map(|(name, _)| name.to_string())
+        .unwrap_or_default();
+    let n = silent.len();
+    let mut list: Vec<&str> = silent.iter().map(|s| short_zid(s.zid)).collect();
+    list.sort_unstable();
+    let shown = if list.len() > 12 {
+        format!("{} and {} more", list[..12].join(", "), list.len() - 12)
+    } else {
+        list.join(", ")
+    };
+    Some(Finding {
+        id: "T-012",
+        severity: Severity::Info,
+        subject,
+        headline: format!(
+            "{n} router{} in the picture send{} no report of {}own.",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "s" } else { "" },
+            if n == 1 { "its " } else { "their " }
+        ),
+        what: format!(
+            "Another router's routing map lists {n} router{} that publish{} no snapshot: {shown}. \
+             They are drawn with a dashed outline and marked \"not reporting\".",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "es" } else { "" },
+        ),
+        why: "A router appears on this page in full only when a publisher on its own host reports \
+              it. A router with no publisher — a partner's, or one of ours the publisher was never \
+              deployed to — is still in every neighbor's routing map, so it is drawn from there: \
+              its links are real, its settings and load are unknown."
+            .into(),
+        impact: "The picture stays complete, but for these routers nothing below the graph is \
+                 checked: no setting, no route-table or version finding can fire for them."
+            .into(),
+        steps: steps(&[
+            "If one of these is a router you run, deploy the publisher to its host (the goat-topology role, publish mode); it then appears by name.",
+            "If it belongs to a partner, there is nothing to do: it is drawn so the picture is complete, and it cannot be deployed to.",
+            "Do not identify a router by its ZID alone. A ZID is announced by the router itself and verifies nothing; match it to a host by the address its session arrives from.",
+        ]),
+    })
 }
 
 // --- T-006 -----------------------------------------------------------------
@@ -192,6 +270,33 @@ fn gateway_config(r: &Known<'_>, out: &mut Vec<Finding>) {
                 "Check the path given to the publisher (--config-path) points at this router's real config file.",
                 "Check the publisher can read that file; it runs as a non-root user.",
                 "Until then, treat this router's routing configuration as unverified.",
+            ]),
+        });
+    }
+
+    if s.mode() == GatewayMode::Custom && s.admission() == ClientAdmission::Refused {
+        out.push(Finding {
+            id: "T-013",
+            severity: Severity::Critical,
+            subject: name.into(),
+            headline: "This router refuses every application that connects with default settings."
+                .into(),
+            what: format!(
+                "{name}'s custom routing groups have no group that an application can fall into. \
+                 {} applications are connected to it now.",
+                s.sessions.iter().filter(|x| x.whatami == "client").count()
+            ),
+            why: "With custom groups, anything that matches none of them is treated as an equal \
+                  of the router. An application is never allowed to be a router's equal, so it \
+                  drops the connection. Its log says only \"Unable to connect\"."
+                .into(),
+            impact: "New and reconnecting applications cannot use this router. This report arrived \
+                     through a neighboring router for the same reason."
+                .into(),
+            steps: steps(&[
+                "Add a group for applications to the end of this router's gateway list: { filters: [ { modes: [\"client\"] } ] }.",
+                "Restart the router and confirm applications reconnect to it.",
+                "Until then, point this router's publisher at a neighbor router after its own (a comma-separated --endpoint), so this page keeps hearing from it.",
             ]),
         });
     }
@@ -454,10 +559,22 @@ fn asymmetry(routers: &[Known<'_>], out: &mut Vec<Finding>) {
             let Some(b) = by_zid.get(member.as_str()) else {
                 continue;
             };
-            let Some(b_north) = b.snap.region("north") else {
+            // B "knows" A if A is in ANY of B's router regions, not only its
+            // north: a pod lists its gateway in its own north, and the gateway
+            // lists the pod in `south:<id>:router`. That pair agrees.
+            let b_router_regions: Vec<_> = b
+                .snap
+                .regions
+                .iter()
+                .filter(|r| crate::wire::is_router_region(&r.name))
+                .collect();
+            if b_router_regions.is_empty() {
                 continue;
-            };
-            if b_north.member_zids.contains(&a.snap.zid) {
+            }
+            if b_router_regions
+                .iter()
+                .any(|r| r.member_zids.contains(&a.snap.zid))
+            {
                 continue;
             }
             out.push(Finding {
@@ -598,6 +715,7 @@ mod tests {
             link_state_e: v.saturating_sub(1),
             member_zids: members.iter().map(|s| s.to_string()).collect(),
             session_count: v.saturating_sub(1),
+            ..Default::default()
         }
     }
     fn fresh(s: &RouterTopologyV1) -> Known<'_> {
@@ -640,8 +758,10 @@ mod tests {
                 link_state_e: 2,
                 member_zids: vec!["aaaa".into(), "cccc".into(), "dddd".into()],
                 session_count: 2,
+                ..Default::default()
             },
         ];
+        carved.client_admission = ClientAdmission::Refused as i32;
         carved.route_successor_count = 99; // forces T-005
         carved.zenoh_version = "v1.9.0-other".into();
 
@@ -663,6 +783,10 @@ mod tests {
                 age_secs: 9000,
             },
         ]));
+        all.extend(not_reporting(&[Silent {
+            zid: "eeeeeeeeeeee",
+            known_from: vec!["gw"],
+        }]));
         all
     }
 
@@ -878,6 +1002,7 @@ mod tests {
                 link_state_e: 2,
                 member_zids: vec!["aaaa".into(), "dddd".into(), "eeee".into()],
                 session_count: 2,
+                ..Default::default()
             },
         ];
         s.route_successor_count = 8;
@@ -904,6 +1029,7 @@ mod tests {
                 link_state_e: 0,
                 member_zids: vec!["aaaa".into(), "dddd".into(), "eeee".into()],
                 session_count: 2,
+                ..Default::default()
             },
         ];
         s.route_successor_count = 2; // north only; the edgeless region adds none
@@ -933,5 +1059,81 @@ mod tests {
             "a projection must state the measurement that bounds it: {:?}",
             t9.steps
         );
+    }
+
+    #[test]
+    fn a_custom_list_that_refuses_clients_is_critical_and_auto_never_is() {
+        let mut gw = router("gw", "aaaa");
+        gw.gateway_mode = GatewayMode::Custom as i32;
+        gw.client_admission = ClientAdmission::Refused as i32;
+        let f = evaluate(&[fresh(&gw)]);
+        let t = f.iter().find(|x| x.id == "T-013").expect("T-013");
+        assert_eq!(t.severity, Severity::Critical);
+        assert!(t.steps[0].contains("modes"), "the fix is a client group");
+
+        // A publisher older than the field sends Unspecified: no claim, no finding.
+        gw.client_admission = ClientAdmission::Unspecified as i32;
+        assert!(!has(&evaluate(&[fresh(&gw)]), "T-013"));
+        let auto = router("a", "bbbb");
+        assert!(!has(&evaluate(&[fresh(&auto)]), "T-013"));
+    }
+
+    #[test]
+    fn silent_routers_raise_one_info_finding_naming_who_sees_them() {
+        assert!(not_reporting(&[]).is_none());
+        let f = not_reporting(&[
+            Silent {
+                zid: "e1e1e1e1e1e1e1e1",
+                known_from: vec!["core-1"],
+            },
+            Silent {
+                zid: "e2e2e2e2e2e2e2e2",
+                known_from: vec!["core-1", "gw"],
+            },
+        ])
+        .expect("T-012");
+        assert_eq!(f.id, "T-012");
+        assert_eq!(
+            f.severity,
+            Severity::Info,
+            "silence from a partner is expected"
+        );
+        assert_eq!(f.subject, "core-1");
+        assert!(
+            f.what.contains("e1e1e1e1, e2e2e2e2"),
+            "short ZIDs, sorted: {}",
+            f.what
+        );
+        assert!(
+            !f.what.contains("e2e2e2e2e2e2e2e2"),
+            "never the full ZID list"
+        );
+    }
+
+    #[test]
+    fn a_pod_and_its_gateway_agree_even_though_they_file_the_link_differently() {
+        let mut gw = router("gw", "g1");
+        gw.regions = vec![
+            north(2, &["g1", "core"]),
+            RegionV1 {
+                name: "south:0:router".into(),
+                link_state_v: 2,
+                link_state_e: 1,
+                member_zids: vec!["g1".into(), "pod".into()],
+                ..Default::default()
+            },
+        ];
+        let mut pod = router("pod-1", "pod");
+        pod.regions = vec![north(2, &["pod", "g1"])];
+        let f = evaluate(&[fresh(&gw), fresh(&pod)]);
+        assert!(
+            !has(&f, "T-004"),
+            "measured on the eleven-router rig: {:?}",
+            f.iter().map(|x| &x.subject).collect::<Vec<_>>()
+        );
+
+        // A real one-way view still fires.
+        gw.regions.truncate(1);
+        assert!(has(&evaluate(&[fresh(&gw), fresh(&pod)]), "T-004"));
     }
 }

@@ -23,7 +23,7 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::wire::{RegionV1, RouterTopologyV1, SessionV1};
+use crate::wire::{LinkV1, RegionV1, RouterTopologyV1, SessionV1, MAX_LINKS_PER_REGION};
 
 /// One `{key, value}` pair as the REST plugin renders the adminspace.
 #[derive(Debug, Deserialize)]
@@ -180,13 +180,16 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
             continue;
         };
         let dot = e.value.as_str().unwrap_or_default();
-        let (members, edges) = parse_dot(dot);
+        let g = parse_dot(dot);
+        let links_truncated = g.links.len() > MAX_LINKS_PER_REGION;
         regions.push(RegionV1 {
             name: region.to_string(),
-            link_state_v: members.len() as u32,
-            link_state_e: edges,
-            member_zids: members,
+            link_state_v: g.nodes.len() as u32,
+            link_state_e: g.edges,
+            member_zids: g.nodes,
             session_count: per_region.get(region).copied().unwrap_or(0),
+            links: g.links.into_iter().take(MAX_LINKS_PER_REGION).collect(),
+            links_truncated,
         });
     }
     regions.sort_by(|a, b| a.name.cmp(&b.name));
@@ -205,24 +208,68 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
     })
 }
 
-/// Pull node labels and edge count out of the DOT graph the adminspace
-/// publishes for a region. Deliberately tolerant: an unparseable line is
-/// skipped rather than failing the whole snapshot, because a partial graph is
-/// still useful and a lost snapshot is not.
-fn parse_dot(dot: &str) -> (Vec<String>, u32) {
+/// One region's link-state graph, as the adminspace's DOT renders it.
+struct Dot {
+    /// Node labels — each a router's ZID.
+    nodes: Vec<String>,
+    /// Every `--` line, resolvable or not. This is the `E` the route-table
+    /// invariant (T-005) is checked against, so it must not shrink when a line
+    /// names an index we could not resolve.
+    edges: u32,
+    /// The edges whose two ends resolve to labels, as ZID pairs.
+    links: Vec<LinkV1>,
+}
+
+/// Pull node labels, the edge count and the edge list out of the DOT graph the
+/// adminspace publishes for a region:
+///
+/// ```text
+/// graph {
+///     0 [ label = "8b9a…" ]
+///     1 [ label = "4b54…" ]
+///     1 -- 0 [ label = "100.5" ]
+/// }
+/// ```
+///
+/// Deliberately tolerant: an unparseable line is skipped rather than failing
+/// the whole snapshot, because a partial graph is still useful and a lost
+/// snapshot is not.
+fn parse_dot(dot: &str) -> Dot {
+    let mut index: BTreeMap<&str, String> = BTreeMap::new();
     let mut nodes = Vec::new();
+    let mut pairs: Vec<(&str, &str)> = Vec::new();
     let mut edges = 0u32;
     for line in dot.lines() {
         let t = line.trim();
-        if t.contains("--") {
+        if let Some((l, r)) = t.split_once("--") {
             edges += 1;
-        } else if let Some(rest) = t.split_once("label = \"") {
-            if let Some(end) = rest.1.find('"') {
-                nodes.push(rest.1[..end].to_string());
+            let a = l.trim();
+            let b = r.split_whitespace().next().unwrap_or_default();
+            pairs.push((a, b));
+        } else if let Some((head, rest)) = t.split_once("label = \"") {
+            if let Some(end) = rest.find('"') {
+                let label = rest[..end].to_string();
+                let idx = head.trim().trim_end_matches('[').trim();
+                index.insert(idx, label.clone());
+                nodes.push(label);
             }
         }
     }
-    (nodes, edges)
+    let links = pairs
+        .into_iter()
+        .filter_map(|(a, b)| {
+            let (a, b) = (index.get(a)?, index.get(b)?);
+            Some(LinkV1 {
+                a: a.clone(),
+                b: b.clone(),
+            })
+        })
+        .collect();
+    Dot {
+        nodes,
+        edges,
+        links,
+    }
 }
 
 /// Join the observed state onto a snapshot that already carries identity,
@@ -323,10 +370,45 @@ mod tests {
     fn dot_with_no_edges_reports_zero() {
         // A south:0:peer graph with three nodes and no edges. The
         // parser must not invent an edge from the node count.
-        let (nodes, edges) = parse_dot(
+        let g = parse_dot(
             "graph {\n    0 [ label = \"aa\" ]\n    1 [ label = \"bb\" ]\n    2 [ label = \"cc\" ]\n}\n",
         );
-        assert_eq!(nodes.len(), 3);
-        assert_eq!(edges, 0);
+        assert_eq!(g.nodes.len(), 3);
+        assert_eq!(g.edges, 0);
+        assert!(g.links.is_empty());
+    }
+
+    #[test]
+    fn dot_edges_resolve_to_zid_pairs_including_routers_two_hops_away() {
+        // A chain a -- b -- c seen from a: c is NOT a session of a, and is known
+        // only from this edge list. That is the whole reason links are carried.
+        let g = parse_dot(
+            "graph {\n    0 [ label = \"aa\" ]\n    1 [ label = \"bb\" ]\n    2 [ label = \"cc\" ]\n    1 -- 0 [ label = \"100\" ]\n    2 -- 1 [ label = \"100\" ]\n}\n",
+        );
+        assert_eq!(g.edges, 2);
+        let pairs: Vec<(&str, &str)> = g
+            .links
+            .iter()
+            .map(|l| (l.a.as_str(), l.b.as_str()))
+            .collect();
+        assert_eq!(pairs, vec![("bb", "aa"), ("cc", "bb")]);
+    }
+
+    #[test]
+    fn an_unresolvable_edge_still_counts_toward_e() {
+        // E feeds the route-table invariant; dropping an edge we could not name
+        // would manufacture a false T-005.
+        let g = parse_dot("graph {\n    0 [ label = \"aa\" ]\n    0 -- 7 [ label = \"1\" ]\n}\n");
+        assert_eq!(g.edges, 1);
+        assert!(g.links.is_empty());
+    }
+
+    #[test]
+    fn the_zagros_fixture_carries_its_links() {
+        let obs = parse(zagros_prod_body().as_bytes()).expect("parse");
+        let north = obs.regions.iter().find(|r| r.name == "north").unwrap();
+        assert_eq!(north.links.len(), 2);
+        assert!(!north.links_truncated);
+        assert!(north.links.iter().all(|l| l.b == "8b9a"), "a star on 8b9a");
     }
 }
