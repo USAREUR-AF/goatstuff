@@ -33,6 +33,15 @@ message HostClockHealthV1 {
   bool   divergence_detected  = 9;
   int64  attestation_age_ms   = 10;  // age of the verdict's last_updated (grounding/staleness)
   bool   attested             = 11;  // false = unattested-publisher → idle, never green
+  // A row taken by a neighbor, not reported by the machine itself (ADR 1232):
+  // our router refused this machine's timestamps as ahead of its own clock, and
+  // the peer fault reader graded the machine at fault. host_id is the machine's
+  // attributed name, else the Zenoh ID that stamped the samples. Such a row has
+  // attested=false and does not enter overall_color or sample_count, which
+  // grade the site's own clocks; the `peer` domain grades the neighbor's fault.
+  bool   observed_by_neighbor = 12;
+  double neighbor_offset_ms   = 13;  // the machine's clock minus our router's, latest
+  string observed_by          = 14;  // our router's Zenoh ID; "" when not known
 }
 
 message TimeDetailV1 { repeated HostClockHealthV1 hosts = 1; }
