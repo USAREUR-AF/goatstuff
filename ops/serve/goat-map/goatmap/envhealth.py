@@ -33,9 +33,19 @@ _ENV_DETAIL_MESH = 12
 _ENV_DETAIL_PEER = 17
 
 _PEERD_PEERS, _PEERD_VERDICT, _PEERD_PEERING = 1, 2, 9
+_PEERD_TLS_ALERTS, _PEERD_TRUST_VERDICT, _PEERD_DECLARED_ABSENT = 12, 13, 14
 
-_PEER_ZID, _PEER_OFFSET, _PEER_RATE = 1, 3, 6
+_PEER_ZID, _PEER_KIND, _PEER_OFFSET, _PEER_RATE = 1, 2, 3, 6
 _PEER_NAME, _PEER_GRADE, _PEER_COLOR, _PEER_DIRECT = 11, 13, 14, 16
+_PEER_SOURCE_ADDRESS, _PEER_ABSENT_SINCE = 17, 18
+
+_ALERT_NAME, _ALERT_COUNT, _ALERT_PER_MINUTE, _ALERT_TRUST_REFUSAL = 1, 2, 3, 4
+
+# PeerFaultKindV1
+PEER_FAULT_CLOCK_AHEAD = 1
+# Clients refuse the router's certificate and this declared peer holds no
+# session: a candidate, never a confirmed cause.
+PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE = 2
 
 _MESH_LINKS, _MESH_VANTAGE = 1, 2
 _MESH_ALWAYS_UP_ABSENT, _MESH_CONNECTING_STUCK = 5, 6
@@ -130,6 +140,7 @@ class MeshHealth:
 @dataclass
 class PeerFault:
     zid: str = ""
+    kind: int = 0
     name: str = ""
     offset_seconds: float = 0.0
     rejections_per_minute: float = 0.0
@@ -137,11 +148,29 @@ class PeerFault:
     color: str = ""
     # None = unknown: the reader had no sessions file.
     direct_session: bool | None = None
+    # A candidate declared by address has zid "" and this set.
+    source_address: str = ""
+    # Candidates: first reading the peer was seen absent (since reader start).
+    absent_since_unix_ms: int | None = None
+
+    @property
+    def candidate(self) -> bool:
+        """A trust-refusal candidate: not confirmed, not a machine at fault."""
+        return self.kind == PEER_FAULT_TRUST_ROOT_REFUSED_CANDIDATE
 
     @property
     def label(self) -> str:
-        """The attributed name when there is one, else the Zenoh ID."""
-        return self.name or self.zid
+        """The attributed name, else the Zenoh ID, else the source address."""
+        return self.name or self.zid or self.source_address
+
+
+@dataclass
+class TlsAlert:
+    """One TLS alert name the router received in the window (identity-free)."""
+    name: str = ""
+    count_in_window: int = 0
+    per_minute: float = 0.0
+    trust_refusal: bool = False
 
 
 @dataclass
@@ -153,6 +182,12 @@ class PeerHealth:
     verdict: str = ""
     peering: str = ""
     peers: list[PeerFault] = field(default_factory=list)
+    # The trust detector: clean|unattributed|candidates|unmeasured; "" from a
+    # reader that predates it.
+    trust_verdict: str = ""
+    tls_alerts: list[TlsAlert] = field(default_factory=list)
+    # None = cannot be judged.
+    declared_peers_absent: int | None = None
 
 
 def _decode_peer_fault(buf: bytes) -> PeerFault:
@@ -172,7 +207,27 @@ def _decode_peer_fault(buf: bytes) -> PeerFault:
             p.color = val.decode("utf-8", "replace")
         elif fnum == _PEER_DIRECT and wtype == _VARINT:
             p.direct_session = bool(val)
+        elif fnum == _PEER_KIND and wtype == _VARINT:
+            p.kind = _as_i64(val)
+        elif fnum == _PEER_SOURCE_ADDRESS and wtype == _LEN:
+            p.source_address = val.decode("utf-8", "replace")
+        elif fnum == _PEER_ABSENT_SINCE and wtype == _VARINT:
+            p.absent_since_unix_ms = _as_i64(val)
     return p
+
+
+def _decode_tls_alert(buf: bytes) -> TlsAlert:
+    a = TlsAlert()
+    for fnum, wtype, val in _fields(buf):
+        if fnum == _ALERT_NAME and wtype == _LEN:
+            a.name = val.decode("utf-8", "replace")
+        elif fnum == _ALERT_COUNT and wtype == _VARINT:
+            a.count_in_window = val
+        elif fnum == _ALERT_PER_MINUTE and wtype == _I64:
+            a.per_minute = val
+        elif fnum == _ALERT_TRUST_REFUSAL and wtype == _VARINT:
+            a.trust_refusal = bool(val)
+    return a
 
 
 def _decode_peer(buf: bytes, out: PeerHealth) -> None:
@@ -183,6 +238,12 @@ def _decode_peer(buf: bytes, out: PeerHealth) -> None:
             out.verdict = val.decode("utf-8", "replace")
         elif fnum == _PEERD_PEERING and wtype == _LEN:
             out.peering = val.decode("utf-8", "replace")
+        elif fnum == _PEERD_TLS_ALERTS and wtype == _LEN:
+            out.tls_alerts.append(_decode_tls_alert(val))
+        elif fnum == _PEERD_TRUST_VERDICT and wtype == _LEN:
+            out.trust_verdict = val.decode("utf-8", "replace")
+        elif fnum == _PEERD_DECLARED_ABSENT and wtype == _VARINT:
+            out.declared_peers_absent = val
 
 
 def _decode_link(buf: bytes) -> MeshLink:
