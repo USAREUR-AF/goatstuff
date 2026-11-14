@@ -10,6 +10,24 @@
 // ("Error treating timestamp for received Data (incoming timestamp from ...").
 // That is the same rejection said twice; only the line whose tracing target is
 // `uhlc` counts, so each rejected sample is counted once.
+//
+// The second line is the TLS alert a client sends when it ends the handshake,
+// logged once per ended handshake. Two shapes are measured:
+//
+//   (A) stock Zenoh 1.9.0, WARN at the default info level:
+//   <ts>  WARN acc-0 ThreadId(05) zenoh_link_tls::unicast: received fatal
+//         alert: UnknownCA. Hint: increase the system open file limit.
+//
+//   (B) a router build with a patched accept loop, DEBUG only (nothing at info):
+//   <ts> DEBUG acc-0 ThreadId(05) zenoh_link_tls::unicast: TLS handshake
+//         failed on accept: received fatal alert: UnknownCA
+//
+// So any line from the `zenoh_link_tls::unicast` module that carries
+// "received fatal alert: " counts, whatever the level word and whatever text
+// sits between the module and that phrase. Neither shape carries a client
+// address or a Zenoh ID, so only the alert name and the line's time are read.
+// Other lines from the module (at debug, one "Accepted TLS connection on ..."
+// per accepted connection) are ordinary lines, not unparsed ones.
 
 use std::time::UNIX_EPOCH;
 
@@ -18,6 +36,22 @@ use std::time::UNIX_EPOCH;
 const UHLC_MARKER: &str = "uhlc: incoming timestamp from ";
 /// Logged by the Zenoh runtime at start-up; names the router's own Zenoh ID.
 const ZID_MARKER: &str = "Using ZID: ";
+/// The TLS alert line: the `zenoh_link_tls::unicast` tracing target, then,
+/// anywhere after it, the alert phrase.
+const TLS_MODULE_MARKER: &str = "zenoh_link_tls::unicast:";
+const TLS_ALERT_PHRASE: &str = "received fatal alert: ";
+
+/// Alert names in the trust-refusal set: the client does not accept the
+/// certificate chain the router presents. rustls sends UnknownCA for an issuer
+/// it does not trust and BadCertificate or CertificateUnknown for other chain
+/// failures; OpenSSL clients send the same three. CertificateExpired,
+/// CertificateRevoked, DecryptError and the rest are counted but are not this
+/// fault: an expired certificate can be the client's clock or our renewal.
+pub const TRUST_REFUSAL_ALERTS: [&str; 3] = ["UnknownCA", "BadCertificate", "CertificateUnknown"];
+
+pub fn is_trust_refusal(alert: &str) -> bool {
+    TRUST_REFUSAL_ALERTS.contains(&alert)
+}
 
 /// One rejected timestamp, as the router reported it.
 #[derive(Debug, Clone, PartialEq)]
@@ -45,7 +79,10 @@ pub enum LineKind {
     Rejection(Rejection),
     /// The router announcing its own Zenoh ID.
     RouterZid(String),
-    /// A uhlc rejection line whose shape did not parse: the log format may
+    /// A client ended a TLS handshake with this fatal alert. `at_ms` is the
+    /// line's own leading timestamp (Unix ms), when it has one.
+    TlsAlert { name: String, at_ms: Option<i64> },
+    /// A uhlc rejection or TLS alert line whose shape did not parse: the log format may
     /// have moved, so the reading must not grade clean.
     Unparsed,
     /// Any other line. It still proves the log stream is alive.
@@ -167,6 +204,15 @@ pub fn classify(raw: &str) -> LineKind {
             None => LineKind::Unparsed,
         };
     }
+    if let Some(at) = tls_alert_at(&line) {
+        return match parse_alert_name(&line[at..]) {
+            Some(name) => LineKind::TlsAlert {
+                name,
+                at_ms: leading_time_ms(&line),
+            },
+            None => LineKind::Unparsed,
+        };
+    }
     if let Some(at) = line.find(ZID_MARKER) {
         let zid = line[at + ZID_MARKER.len()..]
             .split(|c: char| !c.is_ascii_alphanumeric())
@@ -177,6 +223,48 @@ pub fn classify(raw: &str) -> LineKind {
         }
     }
     LineKind::Other
+}
+
+/// Where the alert name starts, when the line is from the TLS module and
+/// carries the alert phrase after the module name.
+fn tls_alert_at(line: &str) -> Option<usize> {
+    let module = line.find(TLS_MODULE_MARKER)? + TLS_MODULE_MARKER.len();
+    let phrase = line[module..].find(TLS_ALERT_PHRASE)?;
+    Some(module + phrase + TLS_ALERT_PHRASE.len())
+}
+
+/// The alert name after the phrase: rustls prints the alert description's
+/// Debug form, CamelCase (`UnknownCA`, `BadCertificate`), or `Unknown(<n>)`
+/// for a code it does not name. What follows (`. Hint: ...`) is ignored.
+fn parse_alert_name(rest: &str) -> Option<String> {
+    let end = rest
+        .find(|c: char| !c.is_ascii_alphanumeric())
+        .unwrap_or(rest.len());
+    let mut name = &rest[..end];
+    if !name.starts_with(|c: char| c.is_ascii_uppercase()) {
+        return None;
+    }
+    // Unknown(46): keep the code, it is the only thing that tells it apart.
+    let tail = &rest[end..];
+    if let Some(inner) = tail.strip_prefix('(') {
+        let close = inner.find(')')?;
+        let code = &inner[..close];
+        if code.is_empty() || !code.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        name = &rest[..end + close + 2];
+    }
+    Some(name.to_string())
+}
+
+/// The line's leading timestamp in Unix ms: the first word, or the second when
+/// `docker logs --timestamps` put its own in front. None when neither parses.
+fn leading_time_ms(line: &str) -> Option<i64> {
+    line.split_whitespace()
+        .take(2)
+        .find_map(|w| humantime::parse_rfc3339(w).ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
 }
 
 /// Parse the text after the marker:
@@ -297,6 +385,108 @@ mod tests {
             classify("uhlc: incoming timestamp from 3c9a51e0d2b7f4a6c18e05d9b3a7f2e1a exceeding delta 500ms is rejected: 2026-11-13T13:00:03Z vs. now: 2026-11-13T13:00:00Z"),
             LineKind::Unparsed
         );
+    }
+
+    // The line measured on 14 Nov with Zenoh 1.9.0 (a client trusting another root).
+    const ALERT: &str = "2026-11-14T16:45:52.337979Z  WARN acc-0 ThreadId(05) zenoh_link_tls::unicast: received fatal alert: UnknownCA. Hint: increase the system open file limit.";
+    const ALERT_AT_MS: i64 = 1_794_674_752_337;
+
+    fn alert(line: &str) -> (String, Option<i64>) {
+        match classify(line) {
+            LineKind::TlsAlert { name, at_ms } => (name, at_ms),
+            other => panic!("expected a TLS alert, got {other:?}"),
+        }
+    }
+
+    // Shape B: a patched accept loop, DEBUG only.
+    const ALERT_DEBUG: &str = "2026-11-14T16:45:52.337979Z DEBUG acc-0 ThreadId(05) zenoh_link_tls::unicast: TLS handshake failed on accept: received fatal alert: UnknownCA";
+    const ACCEPTED: &str = "2026-11-14T16:45:52.100000Z DEBUG acc-0 ThreadId(05) zenoh_link_tls::unicast: Accepted TLS connection on 10.0.0.2:7447: 10.0.0.3:41234. Common Name: some-client.";
+
+    #[test]
+    fn the_measured_alert_line() {
+        assert_eq!(alert(ALERT), ("UnknownCA".to_string(), Some(ALERT_AT_MS)));
+        assert!(is_trust_refusal("UnknownCA"));
+    }
+
+    #[test]
+    fn the_debug_shape_from_a_patched_accept_loop() {
+        assert_eq!(
+            alert(ALERT_DEBUG),
+            ("UnknownCA".to_string(), Some(ALERT_AT_MS))
+        );
+        let colored = "\x1b[2m2026-11-14T16:45:52.337979Z\x1b[0m \x1b[34mDEBUG\x1b[0m \x1b[2macc-0\x1b[0m ThreadId(05) \x1b[2mzenoh_link_tls::unicast\x1b[0m\x1b[2m:\x1b[0m TLS handshake failed on accept: received fatal alert: BadCertificate";
+        assert_eq!(alert(colored).0, "BadCertificate");
+    }
+
+    #[test]
+    fn an_accepted_connection_line_is_an_ordinary_line() {
+        assert_eq!(classify(ACCEPTED), LineKind::Other);
+        assert_eq!(
+            classify("DEBUG zenoh_link_tls::unicast: TLS handshake failed on accept: timed out"),
+            LineKind::Other
+        );
+    }
+
+    #[test]
+    fn an_ansi_colored_alert_parses_the_same() {
+        let colored = "\x1b[2m2026-11-14T16:45:52.337979Z\x1b[0m \x1b[33m WARN\x1b[0m \x1b[2macc-0\x1b[0m ThreadId(05) \x1b[2mzenoh_link_tls::unicast\x1b[0m\x1b[2m:\x1b[0m received fatal alert: UnknownCA. Hint: increase the system open file limit.";
+        assert_eq!(alert(colored), alert(ALERT));
+    }
+
+    #[test]
+    fn other_alert_names_thread_tags_and_no_hint() {
+        for (line, want) in [
+            ("2026-11-14T16:45:53Z  WARN acc-3 ThreadId(17) zenoh_link_tls::unicast: received fatal alert: BadCertificate", "BadCertificate"),
+            ("2026-11-14T16:45:53Z  WARN rx-12 ThreadId(2) zenoh_link_tls::unicast: received fatal alert: CertificateExpired.", "CertificateExpired"),
+            ("2026-11-14T16:45:53Z  WARN acc-0 ThreadId(05) zenoh_link_tls::unicast: received fatal alert: CertificateUnknown. Hint: increase the system open file limit.", "CertificateUnknown"),
+            ("2026-11-14T16:45:53Z  WARN acc-0 ThreadId(05) zenoh_link_tls::unicast: received fatal alert: Unknown(250).", "Unknown(250)"),
+        ] {
+            assert_eq!(alert(line).0, want, "{line}");
+        }
+        assert!(is_trust_refusal("BadCertificate"));
+        assert!(is_trust_refusal("CertificateUnknown"));
+        assert!(!is_trust_refusal("CertificateExpired"));
+        assert!(!is_trust_refusal("unknownca"));
+    }
+
+    #[test]
+    fn an_alert_without_a_leading_time_uses_none() {
+        assert_eq!(
+            alert("WARN zenoh_link_tls::unicast: received fatal alert: UnknownCA"),
+            ("UnknownCA".to_string(), None)
+        );
+        // docker --timestamps puts its own time first.
+        let line = format!("2026-11-14T16:45:52.400000000Z {ALERT}");
+        assert_eq!(alert(&line).1, Some(1_794_674_752_400));
+    }
+
+    #[test]
+    fn broken_alert_lines_are_unparsed_and_lookalikes_are_other() {
+        for bad in [
+            "WARN zenoh_link_tls::unicast: received fatal alert: ",
+            "WARN zenoh_link_tls::unicast: received fatal alert: unknownCA",
+            "WARN zenoh_link_tls::unicast: received fatal alert: 42",
+            "WARN zenoh_link_tls::unicast: received fatal alert: Unknown(x)",
+            "WARN zenoh_link_tls::unicast: received fatal alert: Unknown(12",
+        ] {
+            assert_eq!(classify(bad), LineKind::Unparsed, "{bad}");
+        }
+        // Text between the module and the phrase, then a broken name.
+        assert_eq!(
+            classify("DEBUG zenoh_link_tls::unicast: TLS handshake failed on accept: received fatal alert: 7"),
+            LineKind::Unparsed
+        );
+        // The phrase before the module name is not this line.
+        assert_eq!(
+            classify("received fatal alert: UnknownCA zenoh_link_tls::unicast: x"),
+            LineKind::Other
+        );
+        // Another target, or the text without the target: not this line.
+        assert_eq!(
+            classify("WARN zenoh_link_quic::unicast: received fatal alert: UnknownCA"),
+            LineKind::Other
+        );
+        assert_eq!(classify("received fatal alert: UnknownCA"), LineKind::Other);
     }
 
     #[test]

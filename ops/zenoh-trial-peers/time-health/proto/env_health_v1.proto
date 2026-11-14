@@ -406,10 +406,24 @@ message PeeringDetailV1 {
 // the verdict is local_clock_suspect and no peer row is graded at fault. When
 // no router log line has arrived for the silence period, or the input ended,
 // the verdict is unmeasured and overall_color is unmetered, never green.
+//
+// The second detector is trust refusal: a client that trusts a root the router
+// no longer presents ends the TLS handshake with a fatal alert. The router logs
+// a "zenoh_link_tls::unicast: ... received fatal alert: <Name>" line (WARN
+// on stock Zenoh 1.9.0; DEBUG only on a build with a patched accept loop)
+// with no client address and no Zenoh ID, so the log proves that SOME client refuses our
+// certificate and how often, and cannot say which. The reading is site-level
+// (tls_alerts). When trust-refusal alerts arrive and declared peers hold no
+// session, each absent declared peer is a CANDIDATE row (grade candidate,
+// amber), never a verdict: no ops/peer/verdict/<zid> document is published.
 
 enum PeerFaultKindV1 {
   PEER_FAULT_KIND_UNSPECIFIED = 0;
   CLOCK_AHEAD                 = 1;  // the router rejected this peer's timestamps as ahead of its clock
+  // Clients are refusing the router's certificate (trust-refusal TLS alerts in
+  // the window) and this declared peer holds no session. A candidate, not a
+  // confirmed cause: the router's log cannot name the refusing client.
+  TRUST_ROOT_REFUSED_CANDIDATE = 2;
 }
 
 message PeerFaultV1 {
@@ -425,29 +439,70 @@ message PeerFaultV1 {
   string observed_by             = 10;  // our router's Zenoh ID; "" when not known
   optional string attribution_name  = 11; // from the peers file, or the peering name
   optional string attribution_owner = 12;
-  string grade                   = 13;  // peer_at_fault|local_clock_suspect|quiet|cleared|unmeasured
-  string color                   = 14;  // red|idle|amber|green|unmetered
+  string grade                   = 13;  // peer_at_fault|local_clock_suspect|quiet|cleared|unmeasured|candidate
+  string color                   = 14;  // red|idle|amber|green|unmetered (candidate rows are amber)
   double limit_seconds           = 15;  // the router's limit, parsed from the line
   // Whether this Zenoh ID holds a session with our router. Absent = unknown. A
   // rejected timestamp names the router that stamped the sample, which can be
   // a router behind one we hold a session with.
   optional bool direct_session   = 16;
+  // The peers-file key when it is a source address rather than a Zenoh ID. A
+  // TRUST_ROOT_REFUSED_CANDIDATE row for such an entry has zid = "".
+  optional string source_address = 17;
+  // TRUST_ROOT_REFUSED_CANDIDATE only: the first reading at which this reader
+  // saw the declared peer hold no session. Measured since the reader started,
+  // or since the reader could last judge it (the sessions file was readable);
+  // not persisted, so a restart resets it. The peer may have been absent longer.
+  optional int64 absent_since_unix_ms = 18;
+}
+
+// One TLS alert name the router received in the window: a fact about the
+// router (some client ended a handshake), not about a named peer.
+message TlsAlertV1 {
+  string name             = 1;  // as logged, e.g. UnknownCA, BadCertificate, CertificateExpired
+  uint64 count_in_window  = 2;
+  double per_minute       = 3;
+  // In the trust-refusal set (UnknownCA, BadCertificate, CertificateUnknown):
+  // the client does not accept the certificate chain the router presents.
+  bool   trust_refusal    = 4;
+  int64  last_seen_unix_ms = 5;
 }
 
 message PeerFaultDetailV1 {
   repeated PeerFaultV1 peers     = 1;   // a cleared peer appears once with grade=cleared
-  string verdict                 = 2;   // peer_at_fault|local_clock_suspect|recovering|clean|unmeasured
+  // Combined over both detectors, worst grounded wins (red > amber > green;
+  // unmeasured overrides all); on a tie the clock verdict word is kept and the
+  // reason names both: peer_at_fault|local_clock_suspect|recovering|
+  // trust_refused_candidates|trust_refused_unattributed|trust_unmeasured|
+  // clean|unmeasured. trust_unmeasured replaces a clean clock verdict while
+  // the router is not known to log refused handshakes; never green.
+  string verdict                 = 2;
   string verdict_reason          = 3;
   string local_clock             = 4;   // synced|unsynced|unknown
   string observed_by             = 5;
   uint32 peers_known             = 6;   // denominator of the majority rule
   int64  last_line_age_ms        = 7;   // -1 = no line read yet
-  uint64 unparsed_lines_window   = 8;   // uhlc lines that did not parse; > 0 never grades green
+  uint64 unparsed_lines_window   = 8;   // uhlc or TLS-alert lines that did not parse; > 0 never grades green
   // Set when the reader sits beside one per-partner edge router: every
   // rejection is attributed to this peering and `peers` is detail under it.
   string peering                 = 9;
   double peering_rejections_per_minute = 10;
   double peering_max_offset_seconds    = 11;
+  // Trust-refusal detector, site level: every TLS alert name received in the
+  // window, sorted by name. Empty = none.
+  repeated TlsAlertV1 tls_alerts = 12;
+  // The trust detector alone: clean|unattributed|candidates|unmeasured.
+  // unattributed = trust-refusal alerts arrive and no declared peer can be
+  // shown absent (no peers file, no sessions file, or every declared peer
+  // holds a session); candidates = alerts arrive and declared peers are absent;
+  // unmeasured = the reading is unmeasured, or the router is not declared to
+  // log refused handshakes (PEER_HEALTH_TLS_ALERTS_LOGGED) and no alert line
+  // has been read since the reader started. A router build that logs the alert
+  // only at debug logs nothing at info, so silence is not proof of clean.
+  string trust_verdict           = 13;
+  // Declared peers (peers file) holding no session per the sessions file,
+  // whether or not alerts arrive. Absent = cannot be judged.
+  optional uint32 declared_peers_absent = 14;
 }
 
 message EnvHealthV1 {

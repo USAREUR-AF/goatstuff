@@ -19,7 +19,7 @@ use zenoh::qos::{CongestionControl, Priority};
 #[derive(Parser, Debug)]
 #[command(
     name = "goat-peer-health",
-    about = "Peer domain of the environment-health surface — per-peer clock faults read from a Zenoh router's log (ADR 1232)"
+    about = "Peer domain of the environment-health surface — per-peer clock faults and TLS trust refusals read from a Zenoh router's log (ADR 1232)"
 )]
 #[command(group(clap::ArgGroup::new("input").required(true).args(["stdin", "log_file"])))]
 struct Args {
@@ -80,7 +80,8 @@ struct Args {
     peers_file: Option<PathBuf>,
 
     /// JSON list of the Zenoh IDs holding a session with our router, re-read
-    /// every tick. Fills direct_session per peer; absent = unknown.
+    /// every tick. Fills direct_session per peer; absent = unknown. Entries
+    /// that are not Zenoh IDs are read as session source addresses.
     #[arg(long, env = "PEER_HEALTH_SESSIONS_FILE")]
     sessions_file: Option<PathBuf>,
 
@@ -92,6 +93,13 @@ struct Args {
     /// Our router's Zenoh ID, when the log does not carry its start-up line.
     #[arg(long, env = "PEER_HEALTH_OBSERVED_BY")]
     observed_by: Option<String>,
+
+    /// The router logs refused TLS handshakes at its log level ("received fatal
+    /// alert"). Stock Zenoh 1.9.0 does at WARN; a build with a patched accept
+    /// loop only at debug for zenoh_link_tls::unicast. Without this, the trust
+    /// reading is not measured until the first alert line is read.
+    #[arg(long, env = "PEER_HEALTH_TLS_ALERTS_LOGGED")]
+    tls_alerts_logged: bool,
 
     /// Local clock check: auto (the kernel, adjtimex), synced or unsynced.
     #[arg(long, env = "PEER_HEALTH_LOCAL_CLOCK", default_value = "auto")]
@@ -186,6 +194,8 @@ fn envelope_summary(key: &str, payload: &[u8]) -> serde_json::Value {
                 "first_seen_unix_ms": p.first_seen_unix_ms, "last_seen_unix_ms": p.last_seen_unix_ms,
                 "observed_by": p.observed_by, "direct_session": p.direct_session,
                 "attribution_name": p.attribution_name, "attribution_owner": p.attribution_owner,
+                "kind": p.kind, "source_address": p.source_address,
+                "absent_since_unix_ms": p.absent_since_unix_ms,
             })
         })
         .collect();
@@ -196,6 +206,11 @@ fn envelope_summary(key: &str, payload: &[u8]) -> serde_json::Value {
         "last_line_age_ms": d.last_line_age_ms, "unparsed_lines_window": d.unparsed_lines_window,
         "peering": d.peering, "peering_rejections_per_minute": d.peering_rejections_per_minute,
         "peering_max_offset_seconds": d.peering_max_offset_seconds, "peers": peers,
+        "trust_verdict": d.trust_verdict, "declared_peers_absent": d.declared_peers_absent,
+        "tls_alerts": d.tls_alerts.iter().map(|a| serde_json::json!({
+            "name": a.name, "count_in_window": a.count_in_window, "per_minute": a.per_minute,
+            "trust_refusal": a.trust_refusal, "last_seen_unix_ms": a.last_seen_unix_ms,
+        })).collect::<Vec<_>>(),
     })
 }
 
@@ -250,11 +265,13 @@ async fn run<P: Publisher>(args: &Args, mut publisher: P) -> Result<()> {
         peer_population: args.peer_population,
         observed_by: args.observed_by.clone(),
         peering,
+        tls_alerts_logged: args.tls_alerts_logged,
     };
     info!(
         site = args.site.as_str(),
         peers_file_entries = attribution.len(),
         local_clock = %clock_check.check(),
+        tls_alerts_logged = args.tls_alerts_logged,
         "reading the router log; publishing ops/peer/health/<site> and ops/peer/verdict/<zid>"
     );
     let mut det = Detector::new(cfg, attribution);

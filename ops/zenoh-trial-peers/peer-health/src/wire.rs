@@ -9,6 +9,9 @@
 pub enum PeerFaultKindV1 {
     PeerFaultKindUnspecified = 0,
     ClockAhead = 1,
+    /// Clients refuse the router's certificate and this declared peer holds no
+    /// session. A candidate, never a verdict.
+    TrustRootRefusedCandidate = 2,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -48,6 +51,30 @@ pub struct PeerFaultV1 {
     /// the sample, which can sit behind another router we do hold a session with.
     #[prost(bool, optional, tag = "16")]
     pub direct_session: Option<bool>,
+    /// The peers-file key when it is a source address, not a Zenoh ID (a
+    /// candidate row for such an entry has `zid` = "").
+    #[prost(string, optional, tag = "17")]
+    pub source_address: Option<String>,
+    /// Candidate rows: the first reading at which this reader saw the declared
+    /// peer hold no session. Since the reader started; not persisted.
+    #[prost(int64, optional, tag = "18")]
+    pub absent_since_unix_ms: Option<i64>,
+}
+
+/// One TLS alert name received in the window: a fact about the router.
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct TlsAlertV1 {
+    #[prost(string, tag = "1")]
+    pub name: String,
+    #[prost(uint64, tag = "2")]
+    pub count_in_window: u64,
+    #[prost(double, tag = "3")]
+    pub per_minute: f64,
+    /// In the trust-refusal set (UnknownCA, BadCertificate, CertificateUnknown).
+    #[prost(bool, tag = "4")]
+    pub trust_refusal: bool,
+    #[prost(int64, tag = "5")]
+    pub last_seen_unix_ms: i64,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -78,6 +105,15 @@ pub struct PeerFaultDetailV1 {
     /// Peering roll-up: the largest offset seen in the window, seconds.
     #[prost(double, tag = "11")]
     pub peering_max_offset_seconds: f64,
+    /// Trust detector, site level: every TLS alert name in the window, by name.
+    #[prost(message, repeated, tag = "12")]
+    pub tls_alerts: Vec<TlsAlertV1>,
+    /// The trust detector alone: clean|unattributed|candidates|unmeasured.
+    #[prost(string, tag = "13")]
+    pub trust_verdict: String,
+    /// Declared peers holding no session; absent = cannot be judged.
+    #[prost(uint32, optional, tag = "14")]
+    pub declared_peers_absent: Option<u32>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]

@@ -11,6 +11,11 @@
 //   ops/peer/health/<site>   <- EnvHealthV1{domain:"peer"}, PeerFaultDetailV1 (arm 17)
 //   ops/peer/verdict/<zid>   <- one JSON verdict per peer at fault (and once when cleared)
 //
+// Second detector: trust refusal. Each TLS fatal alert the router logs
+// ("received fatal alert: <Name>", no client address) is counted per name; when
+// trust-refusal alerts arrive, declared peers that hold no session are reported
+// as candidates, never as verdicts.
+//
 // It enforces nothing and persists nothing. If it stops, the fabric behaves
 // exactly as before.
 
@@ -93,6 +98,14 @@ impl Attribution {
         self.entries.keys().filter(|k| parse::is_zid(k)).cloned()
     }
 
+    /// Every declared entry, keyed by normalized Zenoh ID or by address as
+    /// written, in key order.
+    pub fn entries(&self) -> Vec<(&String, &Owner)> {
+        let mut v: Vec<_> = self.entries.iter().collect();
+        v.sort_by(|a, b| a.0.cmp(b.0));
+        v
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -102,8 +115,25 @@ impl Attribution {
     }
 }
 
+/// The host part of a source address, for comparing a peers-file address key
+/// with a sessions-file address entry: `tls/10.0.0.7:7447`, `10.0.0.7:7447`
+/// and `10.0.0.7` are the same host; `[fe80::1]:7447` is `fe80::1`.
+pub fn address_host(s: &str) -> String {
+    let s = s.trim();
+    let s = s.split_once('/').map_or(s, |(_, rest)| rest);
+    if let Some(inner) = s.strip_prefix('[') {
+        return inner.split(']').next().unwrap_or("").to_ascii_lowercase();
+    }
+    match s.matches(':').count() {
+        1 => s.split(':').next().unwrap_or("").to_string(),
+        _ => s.to_ascii_lowercase(),
+    }
+}
+
 /// Read the sessions file: a JSON list of the Zenoh IDs that currently hold a
-/// session with our router. Re-read every tick; whoever writes it (an
+/// session with our router. An entry that is not a Zenoh ID is read as the
+/// source address of a session (`10.0.0.7` or `10.0.0.7:7447`); a writer that
+/// adds those lets the trust detector judge peers-file entries keyed by address. Re-read every tick; whoever writes it (an
 /// admin-space poll, a later increment) should replace it atomically.
 pub fn load_sessions(path: &std::path::Path) -> anyhow::Result<Vec<String>> {
     let text = std::fs::read_to_string(path)
@@ -288,5 +318,16 @@ mod tests {
         assert_eq!(a.zids().collect::<Vec<_>>(), vec!["ab".to_string()]);
         assert_eq!(a.len(), 2);
         assert!(Attribution::from_json("[1]").is_err());
+        let keys: Vec<_> = a.entries().into_iter().map(|(k, _)| k.clone()).collect();
+        assert_eq!(keys, vec!["10.0.0.5".to_string(), "ab".to_string()]);
+    }
+
+    #[test]
+    fn address_hosts_compare_without_port_or_scheme() {
+        assert_eq!(address_host("10.0.0.7"), "10.0.0.7");
+        assert_eq!(address_host("10.0.0.7:7447"), "10.0.0.7");
+        assert_eq!(address_host("tls/10.0.0.7:7447"), "10.0.0.7");
+        assert_eq!(address_host("[FE80::1]:7447"), "fe80::1");
+        assert_eq!(address_host("fe80::1"), "fe80::1");
     }
 }

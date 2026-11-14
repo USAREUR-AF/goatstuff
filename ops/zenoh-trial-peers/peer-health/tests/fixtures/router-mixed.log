@@ -1,0 +1,14 @@
+[2m2026-11-14T16:45:30.000000Z[0m [32m INFO[0m main ThreadId(1) zenoh::net::runtime: Using ZID: 5be08d2f41a97c36e0d1f8b2a4c6e9d7
+2026-11-14T16:45:31.000000Z  INFO peer-health-feed: alive. Using ZID: 5be08d2f41a97c36e0d1f8b2a4c6e9d7
+2026-11-14T16:45:35.152060Z  WARN  rx-1366 ThreadId(5912) uhlc: incoming timestamp from 3c9a51e0d2b7f4a6c18e05d9b3a7f2e1 exceeding delta 500ms is rejected: 2026-11-14T16:45:52.852060973Z vs. now: 2026-11-14T16:45:35.152060252Z
+2026-11-14T16:45:39.152060Z  WARN  rx-1366 ThreadId(5912) uhlc: incoming timestamp from 3c9a51e0d2b7f4a6c18e05d9b3a7f2e1 exceeding delta 500ms is rejected: 2026-11-14T16:45:56.853060973Z vs. now: 2026-11-14T16:45:39.152060252Z
+2026-11-14T16:45:43.152060Z  WARN  rx-1366 ThreadId(5912) uhlc: incoming timestamp from 3c9a51e0d2b7f4a6c18e05d9b3a7f2e1 exceeding delta 500ms is rejected: 2026-11-14T16:46:00.854060973Z vs. now: 2026-11-14T16:45:43.152060252Z
+2026-11-14T16:45:36.100000Z  WARN acc-0 ThreadId(05) zenoh_link_tls::unicast: received fatal alert: UnknownCA. Hint: increase the system open file limit.
+[2m2026-11-14T16:45:41.100000Z[0m [33m WARN[0m [2macc-0[0m ThreadId(05) [2mzenoh_link_tls::unicast[0m[2m:[0m received fatal alert: UnknownCA. Hint: increase the system open file limit.
+2026-11-14T16:45:46.100000Z  WARN acc-2 ThreadId(11) zenoh_link_tls::unicast: received fatal alert: UnknownCA
+2026-11-14T16:45:47.500000Z  WARN acc-2 ThreadId(11) zenoh_link_tls::unicast: received fatal alert: BadCertificate.
+2026-11-14T16:45:48.500000Z DEBUG acc-0 ThreadId(05) zenoh_link_tls::unicast: Accepted TLS connection on 10.0.0.2:7447: 10.0.0.3:41234. Common Name: some-client.
+2026-11-14T16:45:49.000000Z DEBUG acc-0 ThreadId(05) zenoh_link_tls::unicast: TLS handshake failed on accept: received fatal alert: UnknownCA
+2026-11-14T16:45:48.000000Z  WARN acc-1 ThreadId(07) zenoh_link_tls::unicast: received fatal alert: CertificateExpired. Hint: increase the system open file limit.
+2026-11-14T16:45:51.100000Z  WARN acc-0 ThreadId(05) zenoh_link_tls::unicast: received fatal alert: UnknownCA. Hint: increase the system open file limit.
+2026-11-14T16:45:55.000000Z  INFO peer-health-feed: alive. Using ZID: 5be08d2f41a97c36e0d1f8b2a4c6e9d7
