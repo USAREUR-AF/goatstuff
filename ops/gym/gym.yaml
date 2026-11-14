@@ -3646,12 +3646,23 @@ modules:
       your goatnet's certificate authority root.
     evidence: docs/design/goat-moon-pod.md
     so: Add the root only after its fingerprint matches the one the goat side gave you.
+  - claim: The verify part's round trip stops the pod's router, publishes directly to
+      `<your slot>/test/ping`, reads it back from the audit tail with `goat flow`, and starts the
+      router again. It proves your identity and your slot, not delivery through the running router.
+    evidence: moon_pod_setup.sh step 3.4, in the reference implementation
+    so: Treat a PASS on check 4 as the join proven. Before you call your own application connected,
+      publish a unique key through the running router and see both the pod's local audit count and
+      the portal's catalog count rise, as the summary's last lines say.
   drill:
-    do: Bring a pod up from a welcome package with the reference setup script, and run its verify
-      part.
+    do: Bring a pod up from a welcome package with the reference setup script. In Part 2, accept your
+      goatnet's root only when its fingerprint matches the one the goat side gave you through another
+      channel. Then run Part 3, verify.
     run: sudo bash moon_pod_setup.sh
-    pass: Part 3 ends "ALL DONE - POD VERIFIED", with mesh, health, containers, a round-trip publish
-      within your slot and the doctor timer all PASS.
+    pass: >-
+      On a first run, step 2.5 prints "fingerprint matches EXPECTED_CA_FINGERPRINT", or shows the
+      fingerprint and you typed yes after comparing it, and then "CA root trusted". Part 3 then prints
+      "ALL DONE - POD VERIFIED", and its summary lists PASS for all five checks, including "4. Round-trip publish +
+      audit tail", a publish to `<your slot>/test/ping` that `goat flow` reads back.
     safety: writes
   deeper:
   - doc: docs/design/goat-moon-pod.md
@@ -3674,12 +3685,17 @@ modules:
   - do: Run Part 1, bring-up.
     run: sudo bash moon_pod_setup.sh
     note: The host checklist ends with the mesh joined and goat on the path.
-  - do: Run Part 2, stand-up.
-    note: It adds your goatnet's root after you confirm its fingerprint, and first boot reads the
-      signed bundle.
+  - do: Run Part 2, stand-up, and confirm the root by its fingerprint.
+    note: >-
+      Set EXPECTED_CA_FINGERPRINT to the SHA256 fingerprint the goat side gave you through a channel
+      other than the one the bundle came in, and step 2.5 compares it for you. Leave it blank and step
+      2.5 shows the fingerprint and waits for you to type yes. A mismatch adds nothing to the trust
+      store; ask the goat side before anything else. First boot then reads the signed bundle.
   - do: Run Part 3, verify, and read every line.
-    note: Five checks. The round trip publishes within your slot and reads it back from the audit tail.
-      A publish outside your slot is silently denied, so only a publish within it can pass.
+    note: Five checks, in order, mesh, health, containers, round trip and the doctor timer, all run
+      even when one fails. The round trip publishes to `<your slot>/test/ping` and reads it back from
+      the audit tail. A publish outside your slot is silently denied, so only a publish within it can
+      pass. If check 4 fails, never retry under another namespace; the slot is the contract.
 - id: moon-or-pod
   title: MOON or POD — which peer class a partner box is
   level: mastery
