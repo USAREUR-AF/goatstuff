@@ -4383,9 +4383,10 @@ modules:
     A site of a goatnet that loses its link to the others is meant to keep doing everything,
     admitting people, enrolling machines and changing access, and to merge cleanly when the link
     returns. Today a cut-off joined site keeps its mesh, enrolls machines and signs people in. The
-    admin surfaces and their data are at the first site only, and the design that places them at
-    every site is decided and not built. This module opens when the cut-apart drill has passed on
-    a standing two-site goatnet.
+    admin surfaces are declared at every site and not yet built at a joined one: their stores
+    must first take the schema that lets two sites write, and each kind of write is then switched
+    on at every site. This module opens when the cut-apart drill has passed on a standing
+    two-site goatnet.
   deeper:
   - doc: docs/adr/1165-island-mode-multi-writer-every-site-admits.md
     why: The decision, the five classes of write, and the rule each follows while sites are apart.
@@ -4437,21 +4438,24 @@ modules:
   - doc: docs/design/phoenix-architecture.md
     why: Why a rebuild is treated as routine, and the four inputs every piece of state must be regenerated from.
 - id: phoenix-rebuild-an-environment
-  title: Burn a whole environment down and rebuild it, hub first
+  title: Burn a whole environment down and rebuild it, site by site
   level: mastery
   minutes: 240
   status: planned
   frontier: true
   summary: >-
-    Every site of a goatnet is rebuilt from nothing, the hub first, and each other site rejoins
-    only when the hub authorizes it. Nobody has done this yet, the project's own team included.
-    This module opens when one environment of several sites has been rebuilt end to end and the
-    record of every recheck is kept.
+    Every site of a goatnet is rebuilt from nothing, and no site rejoins until the hub has
+    authorized it. The usual way is one site at a time while the goatnet keeps running. The hub
+    stays up and re-admits each rebuilt site, and it is rebuilt last, after its authority has
+    moved to a site that was already rebuilt and checked. When every site is down at once, the
+    hub is the first to be rebuilt, because nothing can rejoin without it. Nobody has done either
+    yet, the project's own team included. This module opens when one environment of several
+    sites has been rebuilt end to end and the record of every recheck is kept.
   deeper:
   - doc: docs/design/phoenix-architecture.md
     why: Why a rebuild is treated as routine, and the four inputs every piece of state must be regenerated from.
   - doc: docs/adr/1205-the-highest-echelon-site-overrides-and-can-sever-every-other-site.md
-    why: Why the hub is rebuilt first and authorizes every rejoin.
+    why: Why a rebuilt site rejoins only on the hub's authorization, and why the hub's authority moves before the hub is rebuilt.
 - id: publish-events-from-a-model-at-the-edge
   title: Publish what a model at the edge sees, as it happens
   level: working
