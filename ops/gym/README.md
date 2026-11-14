@@ -16,6 +16,13 @@ site/         render output — gitignored, produced at deploy time
 python3 ops/gym/generate.py     # renders into ops/gym/site/
 ```
 
+## The learning program's decision record
+
+The shape of the learner ladder and the lane beyond it, what each mark means, and how anyone
+changes the program are decided in [ADR 1238](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1238-the-learning-program-is-a-ten-rung-ladder-and-a-lane-beyond-it-in-use-while-proposed.md).
+It is Proposed and in use: the program is the maintainers' best guess, and the reports of the
+people who learn with it decide what it becomes.
+
 ## Planned and frontier modules
 
 A module with `status: planned` has no page. Its lane lists it as a named gap. Add
