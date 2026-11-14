@@ -4518,7 +4518,7 @@ modules:
       puts each event on a key of its own grows that table without bound, and the fabric slows for
       everyone, not only for that publisher.
     evidence: docs/design/pubsub-best-practices.md
-    so: Give each source one stable key, `<slot>/edge/<source>/detections/v1`, and put what varies per
+    so: Give each source one stable key, `<slot>/edge/<site>/<source>/detections/v1`, and put what varies per
       event, its kind, value, sequence number and time, in the payload.
   - claim: A publish outside your slot is denied silently. `goat pub` returns 0 and no subscriber
       sees anything.
@@ -4541,7 +4541,7 @@ modules:
   drill:
     do: From a peer at another site, subscribe to the example's key, then run the worked example
       under your own slot and watch each event arrive.
-    run: goat sub '<your-slot>/edge/line-3-camera/detections/v1' --take 6 --for 5m
+    run: goat sub '<your-slot>/edge/site-a/line-3-camera/detections/v1' --take 6 --for 5m
     pass: The subscriber, started first, exits 0 after printing six events whose `seq` runs 1 to 6 and
       matches the lines the publisher printed. An exit at the deadline with fewer than six is a fail.
     safety: writes
@@ -4571,13 +4571,14 @@ modules:
   - do: Get the worked example and choose your key.
     note: The example is edge-model-events in the goatstuff repository, one script, a fixture of
       synthetic detections and its tests; its page is linked below. Run the commands here from its
-      folder. One key per source, under your slot. The source is a short name of lower-case letters,
-      digits and hyphens, because `*`, `$`, `?`, `#` and `/` change what a key means.
+      folder. One key per source, under your slot, naming the site and the source. Each is a short
+      name of lower-case letters, digits and hyphens, because `*`, `$`, `?`, `#` and `/` change what
+      a key means.
   - do: See what it would publish, without publishing.
     run: python3 edge-model-events.py --slot <your-slot> --source line-3-camera --site site-a --dry-run
     note: Every line uses the same key, and only the payload changes.
   - do: At another site, start the subscriber first.
-    run: goat sub '<your-slot>/edge/line-3-camera/detections/v1' --take 6 --for 5m
+    run: goat sub '<your-slot>/edge/site-a/line-3-camera/detections/v1' --take 6 --for 5m
     note: Leave it running. Anything published before it is listening is not delivered to it.
   - do: Run the model under your slot.
     run: python3 edge-model-events.py --slot <your-slot> --source line-3-camera --site site-a

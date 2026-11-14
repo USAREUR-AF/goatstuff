@@ -8,7 +8,7 @@ This is a worked example for the goat gym module *Publish what a model at the ed
 
 | Choice | What the example does | Why |
 |---|---|---|
-| Key | One key per source: `<slot>/edge/<source>/detections/v1` | Every distinct key is a routing entry. A key per event grows the router's table without bound and slows the fabric for everyone (goatcore `pubsub-best-practices.md`, "The stable-key contract"). |
+| Key | One key per source: `<slot>/edge/<site>/<source>/detections/v1` | The site and the source are small, bounded sets a subscriber may want on their own, so they are key segments: `<slot>/edge/site-a/**` follows one site. Every distinct key is a routing entry. A key per event grows the router's table without bound and slows the fabric for everyone (goatcore `pubsub-best-practices.md`, "The stable-key contract"). |
 | Payload | JSON with `source`, `site`, `seq`, `seen_at` (UTC), `kind`, `value` and `confidence` | Everything that varies per event goes here, never in the key. |
 | Slot | The key starts with your slot id or its alias | Your certificate may write only under your slot. A publish outside it is denied silently. |
 | Class | A normal prefix, not `volatile/` | A sighting is a record someone may need to replay. A `volatile/` key is routed but never stored or audited (goatcore `zenoh-volatile-class.md`). |
@@ -27,7 +27,7 @@ python3 ops/zenoh-trial-peers/edge-model-events/edge-model-events.py \
 On a goatnet, first start the subscriber at another site and leave it running. Live pub/sub keeps no backlog, so a subscriber that starts late misses the events.
 
 ```bash
-goat sub '<your-slot>/edge/line-3-camera/detections/v1' --take 6 --for 5m
+goat sub '<your-slot>/edge/site-a/line-3-camera/detections/v1' --take 6 --for 5m
 ```
 
 Then, from the machine the model runs on, enrolled with the goat CLI under your slot:

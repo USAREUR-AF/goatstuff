@@ -11,9 +11,10 @@ The "model" here is a replay of a fixture of synthetic detections; nothing is
 recognised. `detections()` is the one function a real detector replaces. The
 rest is the part this example teaches:
 
-- One stable key per source, `<slot>/edge/<source>/detections/v1`. What varies
-  per event (kind, value, sequence number, time) rides in the payload, never in
-  the key: a key minted per event grows the router's routing table without
+- One stable key per source, `<slot>/edge/<site>/<source>/detections/v1`. The
+  site and the source are small, bounded sets a subscriber may want separately,
+  so they are key segments. What varies per event (kind, value, sequence
+  number, time) rides in the payload, never in the key: a key minted per event grows the router's routing table without
   bound (pubsub-best-practices.md, "The stable-key contract").
 - The key starts with the publisher's own slot (or that slot's alias). A
   publish outside the slot is denied silently, so `goat pub` returning 0 is not
@@ -27,7 +28,7 @@ rest is the part this example teaches:
 
 Run (prints what it would publish, touches nothing):
     python3 ops/zenoh-trial-peers/edge-model-events/edge-model-events.py \
-        --slot <your-slot> --source line-3-camera --dry-run
+        --slot <your-slot> --site site-a --source line-3-camera --dry-run
 
 Design context: goatcore docs/design/pubsub-best-practices.md,
 docs/design/zenoh-volatile-class.md, docs/design/qos-throughput-envelopes.md.
@@ -63,19 +64,20 @@ class ExampleError(Exception):
     """A refusal with the instruction that fixes it."""
 
 
-def event_key(slot, source):
+def event_key(slot, site, source):
     """The one key every event from this source is published on."""
     if not SLOT.match(slot or ""):
         raise ExampleError(
             f"--slot {slot!r} is not a slot: give the slot id or alias from your welcome "
             "package (letters, digits, '-' or '_'), never a placeholder or a path"
         )
-    if not SEGMENT.match(source or ""):
-        raise ExampleError(
-            f"--source {source!r} is not a key segment: use lower-case letters, digits and "
-            "hyphens, for example line-3-camera"
-        )
-    return f"{slot}/edge/{source}/detections/v1"
+    for flag, value, example in (("--site", site, "site-a"), ("--source", source, "line-3-camera")):
+        if not SEGMENT.match(value or ""):
+            raise ExampleError(
+                f"{flag} {value!r} is not a key segment: use lower-case letters, digits and "
+                f"hyphens, for example {example}"
+            )
+    return f"{slot}/edge/{site}/{source}/detections/v1"
 
 
 def detections(fixture):
@@ -125,9 +127,7 @@ def pub_command(goat, key, payload):
 
 def run(args, runner=subprocess.run, sleep=time.sleep, clock=None, out=sys.stdout):
     clock = clock or (lambda: datetime.datetime.now(datetime.timezone.utc))
-    key = event_key(args.slot, args.source)
-    if args.site is not None and not SEGMENT.match(args.site):
-        raise ExampleError(f"--site {args.site!r}: use lower-case letters, digits and hyphens")
+    key = event_key(args.slot, args.site, args.source)
     goat = args.goat
     if not args.dry_run and shutil.which(goat) is None:
         raise ExampleError(f"{goat} is not on PATH: install the goat CLI, or pass --goat <path>")
@@ -160,7 +160,7 @@ def parse_args(argv):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--slot", required=True, help="your slot id or alias, from your welcome package")
     p.add_argument("--source", required=True, help="this camera or model, as a key segment")
-    p.add_argument("--site", help="the site the source sits at, carried in the payload")
+    p.add_argument("--site", required=True, help="the site the source sits at, as a key segment")
     p.add_argument("--fixture", type=pathlib.Path, default=DEFAULT_FIXTURE,
                    help="detections to replay (default: the synthetic line camera)")
     p.add_argument("--limit", type=int, default=0, help="stop after this many events (0: all)")

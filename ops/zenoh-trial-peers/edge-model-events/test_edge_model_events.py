@@ -50,21 +50,23 @@ def run_live(a, runner):
 
 class KeyTest(unittest.TestCase):
     def test_one_stable_key_under_the_slot(self):
-        self.assertEqual(eme.event_key(SLOT, "line-3-camera"),
-                         f"{SLOT}/edge/line-3-camera/detections/v1")
+        self.assertEqual(eme.event_key(SLOT, "site-a", "line-3-camera"),
+                         f"{SLOT}/edge/site-a/line-3-camera/detections/v1")
 
     def test_an_alias_is_accepted_as_the_slot(self):
-        self.assertTrue(eme.event_key("tarsier", "cam").startswith("tarsier/"))
+        self.assertTrue(eme.event_key("tarsier", "site-a", "cam").startswith("tarsier/"))
 
     def test_placeholder_or_path_slot_is_refused(self):
         for bad in ("<your-slot>", "a/b", "", "*", "acme/**"):
             with self.subTest(bad=bad), self.assertRaises(eme.ExampleError):
-                eme.event_key(bad, "cam")
+                eme.event_key(bad, "site-a", "cam")
 
-    def test_source_that_would_change_the_key_is_refused(self):
-        for bad in ("Line 3", "cam/1", "cam*", "cam$", "", "-cam"):
+    def test_site_or_source_that_would_change_the_key_is_refused(self):
+        for bad in ("Line 3", "cam/1", "cam*", "cam$", "", "-cam", None):
             with self.subTest(bad=bad), self.assertRaises(eme.ExampleError):
-                eme.event_key(SLOT, bad)
+                eme.event_key(SLOT, "site-a", bad)
+            with self.subTest(site=bad), self.assertRaises(eme.ExampleError):
+                eme.event_key(SLOT, bad, "cam")
 
 
 class PublishTest(unittest.TestCase):
@@ -73,7 +75,7 @@ class PublishTest(unittest.TestCase):
         sent = run_live(args(), rec)
         self.assertEqual(sent, 6)
         keys = {c[2] for c in rec.calls}
-        self.assertEqual(keys, {f"{SLOT}/edge/line-3-camera/detections/v1"})
+        self.assertEqual(keys, {f"{SLOT}/edge/site-a/line-3-camera/detections/v1"})
         payloads = [json.loads(c[c.index("--payload") + 1]) for c in rec.calls]
         self.assertEqual([p["seq"] for p in payloads], [1, 2, 3, 4, 5, 6])
         self.assertEqual({p["kind"] for p in payloads}, {"barcode", "qr", "object"})
@@ -143,7 +145,8 @@ class FixtureTest(unittest.TestCase):
 
 class MainTest(unittest.TestCase):
     def test_refusal_exits_2(self):
-        self.assertEqual(eme.main(["--slot", "<your-slot>", "--source", "cam", "--dry-run"]), 2)
+        self.assertEqual(eme.main(["--slot", "<your-slot>", "--site", "site-a", "--source", "cam",
+                                   "--dry-run"]), 2)
 
 
 if __name__ == "__main__":
