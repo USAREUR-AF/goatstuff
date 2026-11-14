@@ -188,6 +188,12 @@ def check_registry(reg: dict, errors: list[str]) -> dict:
         for key in ("id", "title", "audience", "outcome", "modules"):
             if not lane.get(key):
                 errors.append(f"lane {lane.get('id', '?')}: missing {key}")
+        # headings: a heading shown before a module of this lane; next: the lane to go on to.
+        for mid in (lane.get("headings") or {}):
+            if mid not in lane.get("modules", []):
+                errors.append(f"lane {lane.get('id')}: heading placed before {mid!r}, which is not in the lane")
+        if lane.get("next") and lane["next"] not in {x.get("id") for x in lanes}:
+            errors.append(f"lane {lane.get('id')}: next names no lane — {lane['next']!r}")
         for mid in lane.get("modules", []):
             if mid not in modules:
                 errors.append(f"lane {lane.get('id')}: unknown module {mid!r}")
@@ -204,6 +210,13 @@ def check_registry(reg: dict, errors: list[str]) -> dict:
         status = mod.get("status")
         if status not in STATUS:
             errors.append(f"{w}: status must be one of {sorted(STATUS)}")
+        # frontier: the tooling the module teaches is not built yet. Only a planned
+        # module can be frontier territory; a written one teaches something that runs.
+        if "frontier" in mod:
+            if not isinstance(mod["frontier"], bool):
+                errors.append(f"{w}: frontier must be true or false")
+            elif mod["frontier"] and status != "planned":
+                errors.append(f"{w}: frontier is for a planned module; a written module teaches something that runs")
 
         for item in mod.get("deeper") or []:
             doc = item.get("doc")

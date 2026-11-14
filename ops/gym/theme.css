@@ -120,6 +120,7 @@ th { font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; color: 
 .chip.safety-admin, .chip.safety-writes { border-color: var(--warn); color: var(--warn); }
 .chip.open { border-color: var(--good); color: var(--good); }
 .chip.gated { border-color: var(--warn); color: var(--warn); }
+.chip.frontier { border-color: var(--warn); color: var(--warn); border-style: dashed; }
 /* A machine door — no web page behind the name, so the name is not a link. */
 .chip.machine { border-style: dashed; }
 
@@ -188,6 +189,7 @@ a.card:hover { transform: translateY(-2px); border-color: var(--accent); }
 .rowlist { list-style: none; padding: 0; margin: 0; }
 .rowlist li { display: flex; gap: .8rem; align-items: baseline; padding: .6rem 0; border-bottom: 1px solid var(--rule); }
 .rowlist li.planned { color: var(--fg-faint); }
+.rowlist li.heading { font-weight: 600; padding-top: 1.4rem; border-bottom: 2px solid var(--rule); }
 .rowlist .n { color: var(--fg-faint); font-variant-numeric: tabular-nums; font-size: .85rem; min-width: 1.4rem; }
 .rowlist a { text-decoration: none; font-weight: 600; }
 .rowlist li > span:nth-child(2) { flex: 1; min-width: 0; }

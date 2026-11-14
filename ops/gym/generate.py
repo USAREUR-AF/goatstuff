@@ -537,8 +537,11 @@ def build(reg: dict, out_dir: str, services: dict, rev: str) -> dict:
     for lane in lanes:
         rows = []
         n = 0
+        headings = lane.get("headings") or {}
         for mid in lane["modules"]:
             mod = modules[mid]
+            if mid in headings:
+                rows.append(f'<li class="heading">{R.esc(headings[mid])}</li>')
             if mod.get("status") == "written":
                 n += 1
                 rows.append(
@@ -546,6 +549,12 @@ def build(reg: dict, out_dir: str, services: dict, rev: str) -> dict:
                     f'<span><a href="../modules/{mid}.html">{R.esc(mod["title"])}</a>'
                     f'<span class="why">{R.inline(teaser(mod.get("summary", "")))}</span></span>'
                     f'<span class="chip">{mod["minutes"]} min</span></li>')
+            elif mod.get("frontier"):
+                rows.append(
+                    f'<li class="planned"><span class="n">··</span>'
+                    f'<span>{R.esc(mod["title"])}'
+                    f'<span class="why">Frontier territory: the tooling for this is not built yet.</span></span>'
+                    f'<span class="chip frontier">frontier</span></li>')
             else:
                 rows.append(
                     f'<li class="planned"><span class="n">··</span>'
@@ -562,6 +571,10 @@ def build(reg: dict, out_dir: str, services: dict, rev: str) -> dict:
             f'<p class="meta chips"><span class="chip">{n} modules ready</span>'
             f'<span class="chip">about {mins} min</span></p>'
             f'<ul class="rowlist">{"".join(rows)}</ul>')
+        nxt = next((x for x in lanes if x["id"] == lane.get("next")), None)
+        if nxt:
+            body += (f'<p class="meta">Finished this lane? Next: '
+                     f'<a href="{nxt["id"]}.html">{R.esc(nxt["title"])}</a>.</p>')
         write_page(os.path.join(out_dir, "lanes", f'{lane["id"]}.html'),
                    page(f'{lane["title"]} — goat gym', body, 1, footer))
 
