@@ -1,0 +1,8 @@
+# Synthetic detections from a camera on a factory line. Nothing here was seen by a real camera.
+# after_s: replay delay before the detection. kind: barcode | qr | object.
+{"after_s": 0, "kind": "barcode", "value": "EAN13 2000000000015", "confidence": 0.99}
+{"after_s": 1.5, "kind": "object", "value": "pallet", "confidence": 0.91}
+{"after_s": 0.8, "kind": "qr", "value": "https://example.org/lot/2026-11-0042", "confidence": 0.97}
+{"after_s": 2.0, "kind": "object", "value": "forklift", "confidence": 0.86}
+{"after_s": 1.2, "kind": "barcode", "value": "CODE128 LOT-0042-B", "confidence": 0.95}
+{"after_s": 3.0, "kind": "object", "value": "person", "confidence": 0.78}
