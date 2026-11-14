@@ -4,11 +4,17 @@
 // colour on some lines, the WARN/ERROR pair per rejection, a short ID, a
 // garbage line) goes through the file follower, the detector and the publisher
 // trait; the test decodes what would have been put on the fabric.
+//
+// A second recorded log (`router-mixed.log`) mixes both detectors: clock
+// rejections from one peer and TLS fatal alerts (the measured UnknownCA line,
+// ANSI-colored, without the Hint tail, BadCertificate, CertificateExpired,
+// which is counted but is not a trust refusal, and the DEBUG shape of a patched
+// accept loop next to its "Accepted TLS connection" line, which is ignored).
 
 use goat_peer_health::clock::LocalClock;
 use goat_peer_health::detector::{Config, Detector};
 use goat_peer_health::follow::FileFollower;
-use goat_peer_health::wire::{EnvDetail, EnvHealthV1};
+use goat_peer_health::wire::{EnvDetail, EnvHealthV1, PeerFaultKindV1};
 use goat_peer_health::{publish_reading, Attribution, Publisher, VerdictDoc};
 use prost::Message as _;
 use std::future::Future;
@@ -155,5 +161,130 @@ async fn a_recorded_log_produces_the_documents() {
     assert_eq!(verdict(&cap, FAST).unwrap().state, "cleared");
     let reading = det.tick(T0 + 720_000, &LocalClock::Synced);
     assert!(reading.verdicts.is_empty());
-    assert_eq!(reading.detail().verdict, "clean");
+    // The clock is clean, but this log never showed a TLS alert line and the
+    // router is not declared to log one: the trust part is not measured.
+    assert_eq!(reading.detail().verdict, "trust_unmeasured");
+    assert_eq!(reading.envelope.overall_color, "unmetered");
+    assert_eq!(reading.detail().trust_verdict, "unmeasured");
+}
+
+/// 2026-11-14T16:45:30Z, the first line of the mixed fixture.
+const T1: i64 = 1_794_674_730_000;
+const ABSENT: &str = "7e41c0d9a2b4";
+
+#[tokio::test]
+async fn a_recorded_log_with_both_detectors() {
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/router-mixed.log"
+    );
+    let mut follower = FileFollower::new(fixture, true);
+    let lines = follower.poll();
+    assert_eq!(lines.len(), 14, "every fixture line is delivered");
+
+    let attribution = Attribution::from_json(&format!(
+        r#"{{"{FAST}":{{"name":"lab-router-b","owner":"example partner"}},
+            "{ABSENT}":{{"name":"lab-router-d","owner":"example partner"}},
+            "10.0.0.7":{{"name":"lab-router-c"}}}}"#
+    ))
+    .unwrap();
+    let cfg = Config {
+        site: "example-site".to_string(),
+        peer_population: 5,
+        ..Config::default()
+    };
+    let mut det = Detector::new(cfg, attribution);
+    // FAST holds a session; the writer lists source addresses, 10.0.0.7 is absent.
+    det.set_sessions(Some(vec![FAST.to_string(), "10.0.0.9:7447".to_string()]));
+    for l in &lines {
+        det.ingest(l, T1 + 25_000);
+    }
+
+    let reading = det.tick(T1 + 30_000, &LocalClock::Synced);
+    let mut cap = Capture::default();
+    publish_reading(&mut cap, "example-site", &reading)
+        .await
+        .unwrap();
+    let env = envelope(&cap);
+    assert_eq!(env.overall_color, "red", "the clock fault is the worst");
+    let Some(EnvDetail::Peer(d)) = env.detail else {
+        panic!("peer detail")
+    };
+    assert_eq!(d.verdict, "peer_at_fault");
+    assert_eq!(d.trust_verdict, "candidates");
+    assert_eq!(d.observed_by, ROUTER);
+    assert_eq!(
+        d.unparsed_lines_window, 0,
+        "the accepted-connection line is not unparsed"
+    );
+    assert_eq!(d.declared_peers_absent, Some(2));
+    assert!(
+        d.verdict_reason.contains("; also: 6 TLS handshake(s)"),
+        "{}",
+        d.verdict_reason
+    );
+
+    // Site-level alert counts, by name.
+    let alerts: Vec<(&str, u64, bool)> = d
+        .tls_alerts
+        .iter()
+        .map(|a| (a.name.as_str(), a.count_in_window, a.trust_refusal))
+        .collect();
+    assert_eq!(
+        alerts,
+        [
+            ("BadCertificate", 1, true),
+            ("CertificateExpired", 1, false),
+            ("UnknownCA", 5, true),
+        ]
+    );
+    let unknown_ca = &d.tls_alerts[2];
+    assert_eq!(unknown_ca.per_minute, 5.0);
+    assert_eq!(unknown_ca.last_seen_unix_ms, T1 + 21_100);
+
+    // The clock row, and one candidate row per absent declared peer.
+    let clock: Vec<_> = d
+        .peers
+        .iter()
+        .filter(|p| p.kind == PeerFaultKindV1::ClockAhead as i32)
+        .collect();
+    assert_eq!(clock.len(), 1);
+    assert_eq!(clock[0].zid, FAST);
+    assert_eq!(clock[0].rejections_in_window, 3);
+    assert_eq!(clock[0].direct_session, Some(true));
+    let candidates: Vec<_> = d
+        .peers
+        .iter()
+        .filter(|p| p.kind == PeerFaultKindV1::TrustRootRefusedCandidate as i32)
+        .collect();
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates
+        .iter()
+        .all(|p| p.grade == "candidate" && p.color == "amber"));
+    assert!(candidates
+        .iter()
+        .all(|p| p.absent_since_unix_ms == Some(T1 + 30_000)));
+    let addr = candidates.iter().find(|p| p.zid.is_empty()).unwrap();
+    assert_eq!(addr.source_address.as_deref(), Some("10.0.0.7"));
+    assert_eq!(addr.attribution_name.as_deref(), Some("lab-router-c"));
+    let by_zid = candidates.iter().find(|p| p.zid == ABSENT).unwrap();
+    assert_eq!(by_zid.attribution_name.as_deref(), Some("lab-router-d"));
+
+    // One verdict document: the clock fault. None for a candidate.
+    assert!(verdict(&cap, FAST).is_some());
+    assert!(verdict(&cap, ABSENT).is_none());
+    assert_eq!(cap.0.len(), 2, "one envelope and one verdict");
+
+    // Ten minutes on, the clock peer cleared and the alerts gone: the absent
+    // peers are no longer candidates; absence alone is not this fault.
+    det.ingest("INFO keepalive", T1 + 640_000);
+    let reading = det.tick(T1 + 640_000, &LocalClock::Synced);
+    let d = reading.detail();
+    assert_eq!(d.trust_verdict, "clean");
+    assert!(d.tls_alerts.is_empty());
+    assert!(d
+        .peers
+        .iter()
+        .all(|p| p.kind == PeerFaultKindV1::ClockAhead as i32 && p.grade == "cleared"));
+    assert_eq!(d.declared_peers_absent, Some(2));
 }

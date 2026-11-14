@@ -24,12 +24,43 @@
 //                        window and the clean period has not passed. Amber.
 //   clean                nothing tracked. Green, or amber when the window held
 //                        uhlc lines this parser could not read.
+//
+// The trust detector. A client that trusts a root the router no longer presents
+// ends the TLS handshake; the router logs one fatal-alert line per ended
+// handshake, with no client address and no Zenoh ID. Alerts are counted per
+// name in the same window. Its own verdict (`trust_verdict`):
+//
+//   unmeasured           the clock reading is unmeasured (same rule), or the
+//                        router may not log refused handshakes at all: the
+//                        deployer did not declare `tls_alerts_logged` and no
+//                        alert line has been seen since the reader started. A
+//                        router build that logs the alert only at debug logs
+//                        nothing at info, so silence is not proof of clean.
+//   clean                no trust-refusal alert in the window.
+//   candidates           trust-refusal alerts in the window AND declared peers
+//                        (peers file) hold no session (sessions file). One
+//                        amber row per absent declared peer, grade `candidate`,
+//                        and no per-peer verdict document: a candidate is not
+//                        a verdict.
+//   unattributed         trust-refusal alerts in the window and no declared peer
+//                        can be shown absent. Site-level counts only.
+//
+// Absence alone (no alerts) is not this fault and produces no row.
+//
+// Combining the two: unmeasured overrides all; otherwise the worse color wins
+// (red > amber > green). When the trust reading is not clean and the clock
+// verdict is `clean`, the trust verdict word replaces it; on any other clock
+// verdict the clock word is kept, and the reason names both. A trust reading
+// that is not measured turns a clean green into `trust_unmeasured`, unmetered:
+// never green while half the reading cannot see.
 
 use crate::clock::LocalClock;
-use crate::parse::{classify, normalize_zid, LineKind, Rejection};
-use crate::wire::{EnvDetail, EnvHealthV1, PeerFaultDetailV1, PeerFaultKindV1, PeerFaultV1};
-use crate::{Attribution, VerdictDoc};
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use crate::parse::{classify, is_trust_refusal, is_zid, normalize_zid, LineKind, Rejection};
+use crate::wire::{
+    EnvDetail, EnvHealthV1, PeerFaultDetailV1, PeerFaultKindV1, PeerFaultV1, TlsAlertV1,
+};
+use crate::{address_host, Attribution, VerdictDoc};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -49,6 +80,10 @@ pub struct Config {
     /// not apply (it would read one fast partner network as our slow clock);
     /// the local sync check is the guard.
     pub peering: Option<String>,
+    /// The deployer declares that this router logs refused TLS handshakes at
+    /// its log level (`received fatal alert`). When false, the trust reading is
+    /// not measured until the first alert line is seen.
+    pub tls_alerts_logged: bool,
 }
 
 impl Default for Config {
@@ -61,6 +96,7 @@ impl Default for Config {
             peer_population: 0,
             observed_by: None,
             peering: None,
+            tls_alerts_logged: false,
         }
     }
 }
@@ -106,7 +142,26 @@ pub struct Detector {
     unparsed: VecDeque<i64>,
     /// Normalized Zenoh IDs holding a session with our router; None = unknown.
     sessions: Option<HashSet<String>>,
+    /// Source-address hosts from the sessions file (entries that are not
+    /// Zenoh IDs). Empty = the writer gives no addresses, so a peers-file
+    /// entry keyed by address cannot be judged present or absent.
+    session_hosts: HashSet<String>,
     peering_told: bool,
+    /// TLS alert name -> event times (ms), oldest first.
+    alerts: BTreeMap<String, VecDeque<i64>>,
+    /// Peers-file key -> the first tick at which it was judged absent.
+    absent_since: HashMap<String, i64>,
+    /// A TLS alert line has been read since the reader started: the router
+    /// logs refused handshakes at its level.
+    tls_alert_seen: bool,
+}
+
+/// One declared peer judged absent at this tick.
+struct Absent {
+    key: String,
+    name: Option<String>,
+    owner: Option<String>,
+    since_ms: i64,
 }
 
 impl Detector {
@@ -120,7 +175,11 @@ impl Detector {
             input_closed: false,
             unparsed: VecDeque::new(),
             sessions: None,
+            session_hosts: HashSet::new(),
             peering_told: false,
+            alerts: BTreeMap::new(),
+            absent_since: HashMap::new(),
+            tls_alert_seen: false,
         }
     }
 
@@ -130,6 +189,13 @@ impl Detector {
         match classify(line) {
             LineKind::Rejection(r) => self.record(r),
             LineKind::RouterZid(z) => self.router_zid = Some(z),
+            LineKind::TlsAlert { name, at_ms } => {
+                self.tls_alert_seen = true;
+                let at = at_ms.unwrap_or(arrival_ms);
+                let q = self.alerts.entry(name).or_default();
+                let idx = q.partition_point(|&ts| ts <= at);
+                q.insert(idx, at);
+            }
             LineKind::Unparsed => self.unparsed.push_back(arrival_ms),
             LineKind::Other => {}
         }
@@ -137,8 +203,60 @@ impl Detector {
 
     /// The Zenoh IDs that currently hold a session with our router (from the
     /// sessions file), or None when that is not known.
+    /// Entries that are not Zenoh IDs are read as session source addresses.
     pub fn set_sessions(&mut self, zids: Option<Vec<String>>) {
-        self.sessions = zids.map(|v| v.iter().map(|z| normalize_zid(z)).collect());
+        self.session_hosts.clear();
+        self.sessions = zids.map(|v| {
+            let mut set = HashSet::new();
+            for e in v {
+                if is_zid(&e.trim().to_ascii_lowercase()) {
+                    set.insert(normalize_zid(&e));
+                } else {
+                    self.session_hosts.insert(address_host(&e));
+                }
+            }
+            set
+        });
+    }
+
+    /// Judge each declared peer present, absent or unknown at `now_ms`, keep
+    /// the absent-since times, and return the absent ones and how many were
+    /// judged at all.
+    fn judge_absence(&mut self, now_ms: i64) -> (Vec<Absent>, usize) {
+        let Some(sessions) = &self.sessions else {
+            self.absent_since.clear();
+            return (Vec::new(), 0);
+        };
+        let mut judged = 0;
+        let mut keep: HashMap<String, i64> = HashMap::new();
+        let mut absent = Vec::new();
+        for (key, owner) in self.attribution.entries() {
+            let present = if is_zid(key) {
+                Some(sessions.contains(key))
+            } else if self.session_hosts.is_empty() {
+                None
+            } else {
+                Some(self.session_hosts.contains(&address_host(key)))
+            };
+            match present {
+                None | Some(true) => {
+                    judged += usize::from(present.is_some());
+                }
+                Some(false) => {
+                    judged += 1;
+                    let since = *self.absent_since.get(key).unwrap_or(&now_ms);
+                    keep.insert(key.clone(), since);
+                    absent.push(Absent {
+                        key: key.clone(),
+                        name: owner.name.clone(),
+                        owner: owner.owner.clone(),
+                        since_ms: since,
+                    });
+                }
+            }
+        }
+        self.absent_since = keep;
+        (absent, judged)
     }
 
     /// The input ended; from now on the reading is unmeasured.
@@ -190,6 +308,12 @@ impl Detector {
         while self.unparsed.front().is_some_and(|&ts| ts < window_start) {
             self.unparsed.pop_front();
         }
+        for q in self.alerts.values_mut() {
+            while q.front().is_some_and(|&ts| ts < window_start) {
+                q.pop_front();
+            }
+        }
+        self.alerts.retain(|_, q| !q.is_empty());
 
         let last_line_age_ms = self.last_line_ms.map_or(-1, |l| (now_ms - l).max(0));
         let unmeasured_reason = if self.input_closed {
@@ -235,6 +359,7 @@ impl Detector {
         if let Some(sessions) = &self.sessions {
             known.extend(sessions.iter().cloned());
         }
+        let has_sessions = self.sessions.is_some();
         let peers_known = (known.len() as u32).max(self.cfg.peer_population);
         let ahead = active.iter().filter(|t| t.latest_offset > 0.0).count() as u32;
         let behind = active.iter().filter(|t| t.latest_offset < 0.0).count() as u32;
@@ -252,7 +377,7 @@ impl Detector {
             None
         };
 
-        let (verdict, color, reason) = if let Some(why) = &unmeasured_reason {
+        let (clock_verdict, clock_color, clock_reason) = if let Some(why) = &unmeasured_reason {
             ("unmeasured", "unmetered", why.clone())
         } else if let Some(why) = suspect_reason {
             ("local_clock_suspect", "amber", why)
@@ -281,7 +406,7 @@ impl Detector {
                 "clean",
                 "amber",
                 format!(
-                    "{} uhlc line(s) in the window did not parse; the log shape may have changed",
+                    "{} uhlc or TLS alert line(s) in the window did not parse; the log shape may have changed",
                     self.unparsed.len()
                 ),
             )
@@ -289,8 +414,102 @@ impl Detector {
             ("clean", "green", "no timestamp rejected".to_string())
         };
 
-        let observed_by = self.observed_by();
+        // The trust detector.
         let window_ms = self.cfg.window_ms.max(1);
+        let tls_alerts: Vec<TlsAlertV1> = self
+            .alerts
+            .iter()
+            .map(|(name, q)| TlsAlertV1 {
+                name: name.clone(),
+                count_in_window: q.len() as u64,
+                per_minute: q.len() as f64 * 60_000.0 / window_ms as f64,
+                trust_refusal: is_trust_refusal(name),
+                last_seen_unix_ms: q.back().copied().unwrap_or_default(),
+            })
+            .collect();
+        let refusals: Vec<&TlsAlertV1> = tls_alerts.iter().filter(|a| a.trust_refusal).collect();
+        let refusal_count: u64 = refusals.iter().map(|a| a.count_in_window).sum();
+        let peers_file_empty = self.attribution.is_empty();
+        let window_s = self.cfg.window_ms / 1000;
+        let (absent, judged) = self.judge_absence(now_ms);
+        let declared_peers_absent = (judged > 0).then_some(absent.len() as u32);
+        let trust_blind = !self.cfg.tls_alerts_logged && !self.tls_alert_seen;
+        let trust_verdict = if unmeasured_reason.is_some() || trust_blind {
+            "unmeasured"
+        } else if refusal_count == 0 {
+            "clean"
+        } else if !absent.is_empty() {
+            "candidates"
+        } else {
+            "unattributed"
+        };
+        let alert_summary = || {
+            let names: Vec<String> = refusals
+                .iter()
+                .map(|a| format!("{} x{}", a.name, a.count_in_window))
+                .collect();
+            format!(
+                "{refusal_count} TLS handshake(s) ended in the last {window_s} s with a trust-refusal alert ({})",
+                names.join(", ")
+            )
+        };
+        let trust_reason = match trust_verdict {
+            "candidates" => Some(format!(
+                "{}; {} declared peer(s) hold no session and are candidates, not confirmed: the router's log cannot name the refusing client",
+                alert_summary(),
+                absent.len()
+            )),
+            "unattributed" => {
+                let why = if peers_file_empty {
+                    "no peers file declares the expected peers"
+                } else if !has_sessions {
+                    "no sessions file says who holds a session"
+                } else if judged == 0 {
+                    "no declared peer can be judged (address entries need source addresses in the sessions file)"
+                } else {
+                    "every declared peer holds a session"
+                };
+                Some(format!(
+                    "{}: a client is refusing the router's certificate and cannot be named from the router's log; {why}",
+                    alert_summary()
+                ))
+            }
+            "unmeasured" if unmeasured_reason.is_none() => Some(
+                "trust refusal is not measured: no TLS fatal-alert line has been read and the router is not declared to log one (PEER_HEALTH_TLS_ALERTS_LOGGED); a router that logs refused handshakes only at debug logs nothing at info".to_string(),
+            ),
+            _ => None,
+        };
+
+        // Combine: unmeasured overrides; the worse color wins; a clean clock
+        // verdict gives way to the trust verdict word; the reason names both.
+        let (verdict, color, reason) = match &trust_reason {
+            Some(tr) if clock_verdict != "unmeasured" => {
+                let (trust_word, color) = match trust_verdict {
+                    "candidates" => ("trust_refused_candidates", "amber"),
+                    "unattributed" => ("trust_refused_unattributed", "amber"),
+                    // Not measured: no worse than what the clock says, never green.
+                    _ => ("trust_unmeasured", "unmetered"),
+                };
+                let color = match (clock_color, color) {
+                    ("red", _) => "red",
+                    ("amber", _) => "amber",
+                    (_, c) => c,
+                };
+                if clock_verdict == "clean" {
+                    let reason = if clock_color == "green" {
+                        tr.clone()
+                    } else {
+                        format!("{tr}; also: {clock_reason}")
+                    };
+                    (trust_word, color, reason)
+                } else {
+                    (clock_verdict, color, format!("{clock_reason}; also: {tr}"))
+                }
+            }
+            _ => (clock_verdict, clock_color, clock_reason),
+        };
+
+        let observed_by = self.observed_by();
         let mut rows: Vec<PeerFaultV1> = Vec::new();
         let mut verdicts: Vec<(String, VerdictDoc)> = Vec::new();
         let observed_at = crate::rfc3339_ms(now_ms);
@@ -299,7 +518,7 @@ impl Detector {
         for t in self.peers.values_mut() {
             let n = t.events.len() as u64;
             let rate = n as f64 * 60_000.0 / window_ms as f64;
-            let (grade, row_color) = match verdict {
+            let (grade, row_color) = match clock_verdict {
                 "unmeasured" => ("unmeasured", "unmetered"),
                 "local_clock_suspect" if n > 0 => ("local_clock_suspect", "idle"),
                 "peer_at_fault" if n > 0 => ("peer_at_fault", "red"),
@@ -338,6 +557,8 @@ impl Detector {
                 color: row_color.to_string(),
                 limit_seconds: t.limit_seconds,
                 direct_session,
+                source_address: None,
+                absent_since_unix_ms: None,
             });
             if grade == "peer_at_fault" {
                 t.told = true;
@@ -379,6 +600,8 @@ impl Detector {
                 color: "green".to_string(),
                 limit_seconds: t.limit_seconds,
                 direct_session,
+                source_address: None,
+                absent_since_unix_ms: None,
             });
             if t.told {
                 verdicts.push((
@@ -392,7 +615,35 @@ impl Detector {
                 ));
             }
         }
-        rows.sort_by(|a, b| a.zid.cmp(&b.zid));
+        // Candidate rows: one per absent declared peer while trust-refusal
+        // alerts arrive. No verdict document: a candidate is not a verdict.
+        if trust_verdict == "candidates" {
+            for a in &absent {
+                let (zid, source_address) = if is_zid(&a.key) {
+                    (a.key.clone(), None)
+                } else {
+                    (String::new(), Some(a.key.clone()))
+                };
+                rows.push(PeerFaultV1 {
+                    zid,
+                    kind: PeerFaultKindV1::TrustRootRefusedCandidate as i32,
+                    first_seen_unix_ms: a.since_ms,
+                    last_seen_unix_ms: now_ms,
+                    observed_by: observed_by.clone(),
+                    attribution_name: a.name.clone().or_else(|| self.cfg.peering.clone()),
+                    attribution_owner: a.owner.clone(),
+                    grade: "candidate".to_string(),
+                    color: "amber".to_string(),
+                    direct_session: Some(false),
+                    source_address,
+                    absent_since_unix_ms: Some(a.since_ms),
+                    ..PeerFaultV1::default()
+                });
+            }
+        }
+        rows.sort_by(|a, b| {
+            (&a.zid, &a.source_address, a.kind).cmp(&(&b.zid, &b.source_address, b.kind))
+        });
 
         // Peering roll-up and its one verdict.
         let peering = self.cfg.peering.clone().unwrap_or_default();
@@ -455,6 +706,9 @@ impl Detector {
                 peering,
                 peering_rejections_per_minute: peering_rate,
                 peering_max_offset_seconds: peering_max,
+                tls_alerts,
+                trust_verdict: trust_verdict.to_string(),
+                declared_peers_absent,
             })),
         };
         Reading { envelope, verdicts }
@@ -619,9 +873,18 @@ mod tests {
         assert_eq!(r.detail().verdict, "peer_at_fault");
     }
 
+    /// The router is declared to log refused handshakes: the trust reading is
+    /// measured from the first line, so a quiet log can grade green.
+    fn logged() -> Config {
+        Config {
+            tls_alerts_logged: true,
+            ..Config::default()
+        }
+    }
+
     #[test]
     fn quiet_then_cleared_once() {
-        let mut d = det(Config::default());
+        let mut d = det(logged());
         feed(&mut d, PEER_A, T0, 17_700);
         let r = d.tick(T0 + 1_000, &LocalClock::Synced);
         assert_eq!(r.verdicts.len(), 1);
@@ -701,7 +964,7 @@ mod tests {
 
     #[test]
     fn clean_is_green_unless_lines_did_not_parse() {
-        let mut d = det(Config::default());
+        let mut d = det(logged());
         d.ingest("INFO hello", T0);
         let r = d.tick(T0 + 1, &LocalClock::Synced);
         assert_eq!(r.detail().verdict, "clean");
@@ -824,5 +1087,389 @@ mod tests {
         d.ingest("INFO zenoh::net::runtime: Using ZID: 5be08d2f", T0);
         let r = d.tick(T0 + 1, &LocalClock::Synced);
         assert_eq!(r.detail().observed_by, "77");
+    }
+
+    // ---- trust detector -------------------------------------------------
+
+    const ABSENT_ZID: &str = "7e41c0d9";
+
+    fn alert_line(name: &str, at_ms: i64) -> String {
+        format!(
+            "{}  WARN acc-0 ThreadId(05) zenoh_link_tls::unicast: received fatal alert: {name}. Hint: increase the system open file limit.",
+            crate::rfc3339_ms(at_ms)
+        )
+    }
+
+    fn alert(d: &mut Detector, name: &str, at: i64) {
+        d.ingest(&alert_line(name, at), at);
+    }
+
+    fn declared() -> Attribution {
+        Attribution::from_json(&format!(
+            r#"{{"{ABSENT_ZID}":{{"name":"lab-router-d","owner":"example partner"}},"b2":{{"name":"lab-router-e"}},"10.0.0.7":{{"name":"lab-router-c"}}}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn alerts_are_counted_per_name_in_the_window() {
+        let mut d = det(Config::default());
+        for i in 0..4 {
+            alert(&mut d, "UnknownCA", T0 + i * 10_000);
+        }
+        alert(&mut d, "CertificateExpired", T0);
+        let r = d.tick(T0 + 60_001, &LocalClock::Synced);
+        let a = &r.detail().tls_alerts;
+        assert_eq!(a.len(), 1, "CertificateExpired left the window: {a:?}");
+        assert_eq!(a[0].name, "UnknownCA");
+        assert_eq!(a[0].count_in_window, 3);
+        assert_eq!(a[0].per_minute, 3.0);
+        assert!(a[0].trust_refusal);
+        assert_eq!(a[0].last_seen_unix_ms, T0 + 30_000);
+
+        // A two-minute window halves the rate; names sort.
+        let mut d = det(Config {
+            window_ms: 120_000,
+            ..Config::default()
+        });
+        for i in 0..4 {
+            alert(&mut d, "UnknownCA", T0 + i * 1000);
+        }
+        alert(&mut d, "BadCertificate", T0);
+        alert(&mut d, "CertificateExpired", T0);
+        let r = d.tick(T0 + 5_000, &LocalClock::Synced);
+        let a = &r.detail().tls_alerts;
+        let names: Vec<_> = a.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["BadCertificate", "CertificateExpired", "UnknownCA"]);
+        assert_eq!(a[2].per_minute, 2.0);
+        assert!(!a[1].trust_refusal);
+    }
+
+    #[test]
+    fn an_alert_line_without_a_time_lands_at_arrival() {
+        let mut d = det(Config::default());
+        d.ingest(
+            "WARN zenoh_link_tls::unicast: received fatal alert: UnknownCA",
+            T0 + 5,
+        );
+        let r = d.tick(T0 + 10, &LocalClock::Synced);
+        assert_eq!(r.detail().tls_alerts[0].last_seen_unix_ms, T0 + 5);
+        // A broken alert line is unparsed: never green.
+        d.ingest(
+            "WARN zenoh_link_tls::unicast: received fatal alert: ???",
+            T0 + 20,
+        );
+        let r = d.tick(T0 + 30, &LocalClock::Synced);
+        assert_eq!(r.detail().unparsed_lines_window, 1);
+        assert_eq!(r.envelope.overall_color, "amber");
+    }
+
+    #[test]
+    fn alerts_and_absent_declared_peers_give_candidates_not_verdicts() {
+        let mut d = Detector::new(Config::default(), declared());
+        // b2 holds a session; the writer gives addresses, and 10.0.0.7 is not among them.
+        d.set_sessions(Some(vec!["b2".into(), "10.0.0.9:7447".into()]));
+        alert(&mut d, "UnknownCA", T0);
+        alert(&mut d, "UnknownCA", T0 + 1_000);
+        let r = d.tick(T0 + 2_000, &LocalClock::Synced);
+        let det_ = r.detail();
+        assert_eq!(det_.verdict, "trust_refused_candidates");
+        assert_eq!(det_.trust_verdict, "candidates");
+        assert_eq!(r.envelope.overall_color, "amber");
+        assert_eq!(det_.declared_peers_absent, Some(2));
+        assert!(
+            det_.verdict_reason.contains("candidates, not confirmed"),
+            "{}",
+            det_.verdict_reason
+        );
+        assert!(r.verdicts.is_empty(), "a candidate is not a verdict");
+        assert_eq!(det_.peers.len(), 2);
+        for p in &det_.peers {
+            assert_eq!(p.kind, PeerFaultKindV1::TrustRootRefusedCandidate as i32);
+            assert_eq!(p.grade, "candidate");
+            assert_eq!(p.color, "amber");
+            assert_eq!(p.direct_session, Some(false));
+            assert_eq!(p.absent_since_unix_ms, Some(T0 + 2_000));
+        }
+        // Sorted: the address entry (zid "") first.
+        let by_addr = &det_.peers[0];
+        assert_eq!(by_addr.zid, "");
+        assert_eq!(by_addr.source_address.as_deref(), Some("10.0.0.7"));
+        assert_eq!(by_addr.attribution_name.as_deref(), Some("lab-router-c"));
+        let by_zid = &det_.peers[1];
+        assert_eq!(by_zid.zid, ABSENT_ZID);
+        assert_eq!(by_zid.source_address, None);
+        assert_eq!(by_zid.attribution_owner.as_deref(), Some("example partner"));
+
+        // Absent-since holds across ticks.
+        alert(&mut d, "BadCertificate", T0 + 30_000);
+        let r = d.tick(T0 + 31_000, &LocalClock::Synced);
+        assert!(r
+            .detail()
+            .peers
+            .iter()
+            .all(|p| p.absent_since_unix_ms == Some(T0 + 2_000)));
+    }
+
+    #[test]
+    fn an_address_entry_is_not_judged_without_addresses_in_the_sessions_file() {
+        let mut d = Detector::new(Config::default(), declared());
+        d.set_sessions(Some(vec!["b2".into()]));
+        alert(&mut d, "UnknownCA", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().declared_peers_absent, Some(1));
+        assert_eq!(r.detail().peers.len(), 1);
+        assert_eq!(r.detail().peers[0].zid, ABSENT_ZID);
+    }
+
+    #[test]
+    fn alerts_with_no_peers_file_are_unattributed() {
+        let mut d = det(Config::default());
+        d.set_sessions(Some(vec!["b2".into()]));
+        alert(&mut d, "UnknownCA", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        let det_ = r.detail();
+        assert_eq!(det_.verdict, "trust_refused_unattributed");
+        assert_eq!(det_.trust_verdict, "unattributed");
+        assert_eq!(r.envelope.overall_color, "amber");
+        assert!(det_.peers.is_empty());
+        assert!(r.verdicts.is_empty());
+        assert_eq!(det_.declared_peers_absent, None);
+        assert_eq!(det_.tls_alerts.len(), 1);
+        assert!(
+            det_.verdict_reason.contains(
+                "a client is refusing the router's certificate and cannot be named from the router's log"
+            ),
+            "{}",
+            det_.verdict_reason
+        );
+        assert!(det_.verdict_reason.contains("no peers file"));
+    }
+
+    #[test]
+    fn alerts_with_every_declared_peer_present_are_unattributed() {
+        let attr = Attribution::from_json(r#"{"b2":{},"c3":{}}"#).unwrap();
+        let mut d = Detector::new(Config::default(), attr);
+        d.set_sessions(Some(vec!["b2".into(), "c3".into(), "d4".into()]));
+        alert(&mut d, "CertificateUnknown", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "unattributed");
+        assert_eq!(r.detail().declared_peers_absent, Some(0));
+        assert!(r.detail().peers.is_empty());
+        assert!(r
+            .detail()
+            .verdict_reason
+            .contains("every declared peer holds a session"));
+
+        // A peers file but no sessions file: absence cannot be judged.
+        let mut d = Detector::new(Config::default(), declared());
+        alert(&mut d, "UnknownCA", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "unattributed");
+        assert_eq!(r.detail().declared_peers_absent, None);
+        assert!(r.detail().peers.is_empty());
+        assert!(r.detail().verdict_reason.contains("no sessions file"));
+    }
+
+    #[test]
+    fn absence_alone_is_not_this_fault() {
+        let mut d = Detector::new(logged(), declared());
+        d.set_sessions(Some(vec!["b2".into()]));
+        d.ingest("INFO keepalive", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().verdict, "clean");
+        assert_eq!(r.detail().trust_verdict, "clean");
+        assert_eq!(r.envelope.overall_color, "green");
+        assert!(r.detail().peers.is_empty());
+        assert_eq!(r.detail().declared_peers_absent, Some(1));
+
+        // An alert outside the trust-refusal set is counted and grades nothing.
+        alert(&mut d, "CertificateExpired", T0 + 2_000);
+        let r = d.tick(T0 + 3_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "clean");
+        assert_eq!(r.envelope.overall_color, "green");
+        assert!(r.detail().peers.is_empty());
+        assert_eq!(r.detail().tls_alerts.len(), 1);
+        assert!(!r.detail().tls_alerts[0].trust_refusal);
+
+        // Refusals that left the window: back to clean, no rows.
+        alert(&mut d, "UnknownCA", T0 + 4_000);
+        assert_eq!(
+            d.tick(T0 + 5_000, &LocalClock::Synced)
+                .detail()
+                .trust_verdict,
+            "candidates"
+        );
+        d.ingest("INFO keepalive", T0 + 70_000);
+        let r = d.tick(T0 + 70_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "clean");
+        assert!(r.detail().peers.is_empty());
+    }
+
+    #[test]
+    fn absent_since_resets_when_the_peer_returns_or_sessions_are_unknown() {
+        let mut d = Detector::new(Config::default(), declared());
+        d.set_sessions(Some(vec!["b2".into()]));
+        alert(&mut d, "UnknownCA", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().peers[0].absent_since_unix_ms, Some(T0 + 1_000));
+        // It holds a session for one tick.
+        d.set_sessions(Some(vec!["b2".into(), ABSENT_ZID.into()]));
+        let r = d.tick(T0 + 2_000, &LocalClock::Synced);
+        assert!(r.detail().peers.is_empty());
+        d.set_sessions(Some(vec!["b2".into()]));
+        let r = d.tick(T0 + 3_000, &LocalClock::Synced);
+        assert_eq!(r.detail().peers[0].absent_since_unix_ms, Some(T0 + 3_000));
+        // The sessions file went unreadable: cannot judge, then starts over.
+        d.set_sessions(None);
+        let r = d.tick(T0 + 4_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "unattributed");
+        d.set_sessions(Some(vec!["b2".into()]));
+        let r = d.tick(T0 + 5_000, &LocalClock::Synced);
+        assert_eq!(r.detail().peers[0].absent_since_unix_ms, Some(T0 + 5_000));
+    }
+
+    #[test]
+    fn a_clock_fault_and_candidates_read_red_with_both_reasons() {
+        let mut d = Detector::new(
+            Config {
+                peer_population: 4,
+                ..Config::default()
+            },
+            declared(),
+        );
+        d.set_sessions(Some(vec!["b2".into(), PEER_A.into()]));
+        feed(&mut d, PEER_A, T0, 17_700);
+        alert(&mut d, "UnknownCA", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        let det_ = r.detail();
+        assert_eq!(det_.verdict, "peer_at_fault");
+        assert_eq!(r.envelope.overall_color, "red");
+        assert_eq!(det_.trust_verdict, "candidates");
+        assert!(det_.verdict_reason.contains("timestamps rejected"));
+        assert!(det_.verdict_reason.contains("; also: 1 TLS handshake(s)"));
+        let kinds: BTreeSet<i32> = det_.peers.iter().map(|p| p.kind).collect();
+        assert_eq!(kinds.len(), 2);
+        // Only the clock fault gets a verdict document.
+        assert_eq!(r.verdicts.len(), 1);
+        assert_eq!(r.verdicts[0].0, PEER_A);
+    }
+
+    #[test]
+    fn the_clock_verdict_word_is_kept_on_a_tie() {
+        // Our clock suspect (amber) and unattributed refusals (amber).
+        let mut d = det(Config::default());
+        alert(&mut d, "UnknownCA", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Unsynced("test".into()));
+        assert_eq!(r.detail().verdict, "local_clock_suspect");
+        assert_eq!(r.envelope.overall_color, "amber");
+        assert_eq!(r.detail().trust_verdict, "unattributed");
+        assert!(r.detail().verdict_reason.contains("; also:"));
+
+        // Recovering (amber) and refusals: still recovering.
+        let mut d = det(Config::default());
+        feed(&mut d, PEER_A, T0, 17_700);
+        let _ = d.tick(T0 + 1_000, &LocalClock::Synced);
+        alert(&mut d, "UnknownCA", T0 + 120_000);
+        let r = d.tick(T0 + 120_000, &LocalClock::Synced);
+        assert_eq!(r.detail().verdict, "recovering");
+        assert_eq!(r.envelope.overall_color, "amber");
+        assert_eq!(r.detail().trust_verdict, "unattributed");
+    }
+
+    #[test]
+    fn a_clean_clock_gives_way_to_the_trust_verdict() {
+        // Clean but amber from an unparsed uhlc line: the trust word, both reasons.
+        let mut d = det(Config::default());
+        d.ingest("uhlc: incoming timestamp from ZZZ garbage", T0);
+        alert(&mut d, "UnknownCA", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().verdict, "trust_refused_unattributed");
+        assert_eq!(r.envelope.overall_color, "amber");
+        assert!(r.detail().verdict_reason.contains("did not parse"));
+    }
+
+    #[test]
+    fn unmeasured_overrides_the_trust_reading() {
+        let mut d = Detector::new(Config::default(), declared());
+        d.set_sessions(Some(vec!["b2".into()]));
+        alert(&mut d, "UnknownCA", T0);
+        d.mark_input_closed();
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().verdict, "unmeasured");
+        assert_eq!(r.envelope.overall_color, "unmetered");
+        assert_eq!(r.detail().trust_verdict, "unmeasured");
+        assert!(r.detail().peers.is_empty(), "no candidates while blind");
+        // The counts that were read are still reported.
+        assert_eq!(r.detail().tls_alerts.len(), 1);
+    }
+
+    #[test]
+    fn a_router_not_known_to_log_alerts_is_not_measured_for_trust() {
+        // Not declared, no alert line yet: never clean, never green.
+        let mut d = Detector::new(Config::default(), declared());
+        d.set_sessions(Some(vec!["b2".into()]));
+        d.ingest("INFO keepalive", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "unmeasured");
+        assert_eq!(r.detail().verdict, "trust_unmeasured");
+        assert_eq!(r.envelope.overall_color, "unmetered");
+        assert!(r
+            .detail()
+            .verdict_reason
+            .contains("PEER_HEALTH_TLS_ALERTS_LOGGED"));
+        assert!(r.detail().peers.is_empty());
+
+        // A clock fault still reads red, the trust part named in the reason.
+        feed(&mut d, PEER_A, T0 + 2_000, 17_700);
+        let r = d.tick(T0 + 3_000, &LocalClock::Synced);
+        assert_eq!(r.detail().verdict, "peer_at_fault");
+        assert_eq!(r.envelope.overall_color, "red");
+        assert!(r
+            .detail()
+            .verdict_reason
+            .contains("; also: trust refusal is not measured"));
+
+        // One alert line proves the router logs them, from then on.
+        let mut d = det(Config::default());
+        alert(&mut d, "CertificateExpired", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "clean");
+        assert_eq!(r.envelope.overall_color, "green");
+        d.ingest("INFO keepalive", T0 + 120_000);
+        let r = d.tick(T0 + 120_000, &LocalClock::Synced);
+        assert!(r.detail().tls_alerts.is_empty());
+        assert_eq!(r.detail().trust_verdict, "clean", "seen once is enough");
+
+        // Declared by the deployer: measured with no line at all.
+        let mut d = det(logged());
+        d.ingest("INFO keepalive", T0);
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().trust_verdict, "clean");
+        assert_eq!(r.envelope.overall_color, "green");
+    }
+
+    #[test]
+    fn the_debug_shape_counts_and_accepted_lines_do_not() {
+        let mut d = det(Config::default());
+        d.ingest(
+            "2026-11-13T13:18:41.000000Z DEBUG acc-0 ThreadId(05) zenoh_link_tls::unicast: Accepted TLS connection on 10.0.0.2:7447: 10.0.0.3:41234. Common Name: some-client.",
+            T0,
+        );
+        let r = d.tick(T0 + 1, &LocalClock::Synced);
+        assert_eq!(r.detail().unparsed_lines_window, 0);
+        assert_eq!(
+            r.detail().trust_verdict,
+            "unmeasured",
+            "an accept is not an alert"
+        );
+        d.ingest(
+            "2026-11-13T13:18:41.500000Z DEBUG acc-0 ThreadId(05) zenoh_link_tls::unicast: TLS handshake failed on accept: received fatal alert: UnknownCA",
+            T0 + 500,
+        );
+        let r = d.tick(T0 + 1_000, &LocalClock::Synced);
+        assert_eq!(r.detail().tls_alerts[0].name, "UnknownCA");
+        assert_eq!(r.detail().tls_alerts[0].last_seen_unix_ms, T0 + 500);
+        assert_eq!(r.detail().trust_verdict, "unattributed");
     }
 }

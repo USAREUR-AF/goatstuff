@@ -27,7 +27,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "Apache-2.0"
-description = "Peer domain of the environment-health surface — per-peer clock faults read from a router's log (ADR 1232)."
+description = "Peer domain of the environment-health surface — per-peer clock faults and TLS trust refusals read from a router's log (ADR 1232)."
 repository = "https://github.com/usareur-af/goatstuff"
 
 [dependencies]
