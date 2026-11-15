@@ -301,11 +301,15 @@
 # depends on PyYAML, which goat_consistency imports, so a deploy needs no
 # separate `pip install pyyaml` on the control node.
 - name: rollback-ledger | compute the applied-intent stamp on the deploying checkout
+  # argv: the checkout path (playbook_dir) and the interpreter's may hold a space.
   ansible.builtin.command:
-    cmd: >-
-      {{ ansible_playbook_python }} {{ playbook_dir }}/../consistency/stamp.py
-      --goatnet {{ consistency_goatnet | quote }}
-      --member-group {{ consistency_member_group | quote }}
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ playbook_dir }}/../consistency/stamp.py"
+      - --goatnet
+      - "{{ consistency_goatnet }}"
+      - --member-group
+      - "{{ consistency_member_group }}"
   delegate_to: localhost
   become: false
   changed_when: false
