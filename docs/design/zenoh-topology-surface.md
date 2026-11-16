@@ -832,3 +832,92 @@ retired.
   not in a web surface.
 - **Not evidence about scale.** It shows what is running. The scaling claims it
   can make are bounded by M-111 and M-112 and nothing more.
+
+## 9. Reuse outside goat: who runs a router, neutral wording, facts and policy
+
+**Designed, not built** (2026-11-16). The surface is meant to run on any Zenoh
+fabric, inside goat and outside it, as one public build. Three parts of it
+still assume goat. This section is the design for each; the build lands on top
+of the owner-from-record change (§2.5), which edits the same code.
+
+### 9.1 One neutral, optional router directory
+
+Today the names and owners of routers come from goat's own files: the
+relay-health peer-names file, a goat roster, and goat's peer-name grammar
+(`peer-<handle>-…`, `machine-<handle>-…`) with a `TOPOLOGY_GOATNET` token. No
+one outside goat has those files or that grammar.
+
+**Design.** One optional file, given by `--directory <path>`
+(`TOPOLOGY_DIRECTORY`), JSON, that anyone can write by hand or generate:
+
+```json
+{
+  "version": 1,
+  "routers": [
+    { "match": { "zid": "a1a1a1a1a1a1a1a1" },
+      "name": "core-1", "operator": "Network operations",
+      "organization": "Example Org", "labels": { "rack": "r2" } },
+    { "match": { "address": "192.0.2.10" }, "name": "edge-3" },
+    { "match": { "address": "198.51.100.0/24" }, "operator": "Partner B" }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `match.zid` | The router's ZID, in full. A ZID is chosen by the router itself and proves nothing; the detail says so when a match was by ZID. |
+| `match.address` | An IP address or CIDR block. Matched against the address a reporting router sees the router's session come from (the `link_dst` already in each snapshot), which is observed by our own router, not claimed by the other. |
+| `name` | Shown in place of the derived name. A reporting router keeps its `--node` name; `name` is then shown beside it. |
+| `operator`, `organization` | Free text, shown in the detail and, when any entry sets them, in one table column. |
+| `labels` | Free-form key/value pairs, shown verbatim in the detail. |
+
+Precedence: a `zid` match, then an exact address, then the longest CIDR. The
+file is re-read when its modification time changes; an unreadable file or a
+bad entry is listed on the page and in the log, and the rest of the file still
+applies.
+
+**With no directory configured, the page shows no owner column, no owner
+fields in the detail, no owner state and no owner finding.** Routers are named
+by their `--node` name, or by the name derived from their ZID for one that
+sends no report. Today the page shows an empty "organization · nation" column
+and "not known" in that case; that is the defect this removes.
+
+**goat becomes an adapter.** The goat inputs (`--peer-directory`, `--roster`,
+`TOPOLOGY_GOATNET`, and the owner block written from the record) are read by
+one module that produces the same in-memory entries as the neutral file. Their
+flag and variable names stay accepted unchanged, so a goatnet's role keeps
+working with no edit. The owner findings that encode goat's rule that every
+router has a recorded owner (T-014, T-015, T-016) run only when
+`--require-owner` is set; the goat role sets it, so a goatnet sees the same
+findings as before.
+
+### 9.2 Words a reader outside goat can follow
+
+Page and finding texts cite records only goat can open (ADR numbers,
+`docs/design/zenoh-version-pinning.md`, `ops/pins/fleet-pins.yaml`, "the
+goat-topology role") and say "goatnet". **Design:** every such text states its
+reason in the text itself and says "fabric"; a link, where one helps, goes to a
+public page. The texts to change: T-006 (steps name the publisher's default
+REST address as if fixed), T-007 (steps name goat's pin file and pinning
+procedure), T-008 ("a goatnet with one router"), T-012 (step names the goat
+role), the page header comment, the CLI `about` line, and the planner caveat
+("every goatnet today").
+
+Where the page's words differ from upstream Zenoh's (region, subregion,
+gateway, client), the README's "Words on the page" table states the mapping
+today. Whether the page itself should switch to upstream's words is waiting on
+the Zenoh team's answer in the public discussion.
+
+### 9.3 Findings that are Zenoh facts, and findings that are a policy
+
+| Finding | Kind | Design |
+|---|---|---|
+| T-001, T-002, T-010, T-011, T-013 | Fact about a router's `gateway` configuration | Always on. |
+| T-004, T-006, T-008, T-012 | Fact about what the reports show | Always on. |
+| T-005, T-009 | Our measured model of the route table, not an upstream statement | Always on; the text says the model is ours and measured. |
+| T-007 | Fact: routers report different Zenoh versions | Always on, with neutral steps. **New, optional:** `--expect-zenoh-version <v>`; when set, a router on another version is also named, even when every router agrees. Unset by default and in the goat role. |
+| T-003 | **Policy:** "every router uses the same gateway mode". A gateway with a custom `gateway.south` above routers on `auto` is a normal layout, and the generic-name rig raises T-003 for exactly that. | Runs only with `--expect-uniform-gateway-mode`; the goat role sets it, so a goatnet sees the same findings. |
+| T-014, T-015, T-016 | **Policy:** every router has a recorded owner | Runs only with `--require-owner` (§9.1); the goat role sets it. |
+
+No finding today compares a router against a pinned version; the exact pin
+appears only in T-007's steps, which §9.2 rewrites.
