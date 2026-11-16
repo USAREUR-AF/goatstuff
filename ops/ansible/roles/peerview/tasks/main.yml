@@ -186,6 +186,38 @@
     mode: "0644"
   notify: peerview restart poll
 
+# The owner resolver (who answers for each peer) is a peerview source. A key
+# the portal refuses leaves that source dark while the census still answers,
+# so the deploy succeeded on a goatnet whose peerview key had drifted from the
+# portal's root key (HTTP 401). Prove the key before reporting success, as
+# panoscope, flashlight, stethoscope and relay-peer-names do.
+- name: peerview | find the portal app address
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - -f
+      - "{{ '{{' }}(index .NetworkSettings.Networks \"{{ peerview_portal_network }}\").IPAddress{{ '}}' }}"
+      - "{{ peerview_portal_container }}"
+  register: peerview_portal_ip
+  changed_when: false
+  failed_when: false
+  when:
+    - peerview_portal_key | default('') | length > 0
+    - peerview_portal_url | default('') | length == 0
+    - peerview_portal_container | default('') | length > 0
+
+- name: peerview | portal key — prove the portal accepts it
+  ansible.builtin.include_tasks: tasks/assert-portal-key-accepted.yml
+  vars:
+    portal_key_assert_service: peerview
+    portal_key_assert_url: >-
+      {{ peerview_portal_url if (peerview_portal_url | default('') | length > 0)
+         else ('http://' ~ (peerview_portal_ip.stdout | default('') | trim) ~ ':' ~ peerview_portal_port
+               if (peerview_portal_ip.stdout | default('') | trim | length > 0) else '') }}
+    portal_key_assert_key: "{{ peerview_portal_key }}"
+  when: peerview_portal_key | default('') | length > 0
+
 - name: peerview | write the credential env file
   ansible.builtin.template:
     src: peerview.env.j2
