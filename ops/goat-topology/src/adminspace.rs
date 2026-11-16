@@ -249,6 +249,21 @@ pub struct Observed {
     pub sessions: Vec<SessionV1>,
     pub route_successor_count: u32,
     pub next_hops: Vec<NextHopV1>,
+    /// What this reader expected and did not find. Empty on the shape it was
+    /// built against (zenoh 1.9.0). See [`TESTED_VERSION`].
+    pub shape_notes: Vec<String>,
+}
+
+/// The zenoh version whose adminspace layout this reader was built and tested
+/// against. The layout is not a stable interface; on any other version the
+/// publisher still publishes what it can read and lists what it could not.
+pub const TESTED_VERSION: &str = "1.9.0";
+
+/// Whether a version string (`v1.9.0`, `1.9.0`, `v1.9.0-modified`) is the
+/// tested release.
+fn is_tested_version(v: &str) -> bool {
+    let v = v.trim().trim_start_matches('v');
+    v == TESTED_VERSION || v.starts_with(&format!("{TESTED_VERSION}-"))
 }
 
 /// Parse an `@/local/**` body.
@@ -290,6 +305,36 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
         .and_then(|e| e.value.as_str())
         .unwrap_or_default()
         .to_string();
+
+    // What this reader expected and did not find. Each note says what is
+    // missing and what the page therefore cannot show, so an unknown layout
+    // reads as "not read", never as an empty router.
+    let mut shape_notes = Vec::new();
+    if zenoh_version.is_empty() {
+        shape_notes.push(format!(
+            "the router reported no version (`@/local/router/status/plugins/rest/version`); \
+             this reader is tested with zenoh {TESTED_VERSION} only"
+        ));
+    } else if !is_tested_version(&zenoh_version) {
+        shape_notes.push(format!(
+            "zenoh {zenoh_version} is not the version this reader is tested with \
+             ({TESTED_VERSION}); what it could read is shown, and anything it could not is \
+             listed here"
+        ));
+    }
+    match router.value.get("sessions") {
+        Some(v) if v.is_array() => {}
+        Some(_) => shape_notes.push(
+            "the router entry's `sessions` is not a list, so its sessions, clients and the \
+             addresses they come from are not shown"
+                .into(),
+        ),
+        None => shape_notes.push(
+            "the router entry has no `sessions` list, so its sessions, clients and the \
+             addresses they come from are not shown"
+                .into(),
+        ),
+    }
 
     // --- sessions, and the per-region session tally --------------------------
     let mut sessions = Vec::new();
@@ -344,6 +389,34 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
         });
     }
     regions.sort_by(|a, b| a.name.cmp(&b.name));
+    if regions.is_empty() {
+        shape_notes.push(
+            "no link-state graph was returned (`@/local/router/linkstate/*`), so this \
+             router's regions and the routers it links to are not drawn from its report"
+                .into(),
+        );
+    }
+    let unparsed: Vec<&str> = entries
+        .iter()
+        .filter_map(|e| {
+            let (_, region) = e.key.split_once("/linkstate/")?;
+            let dot = e.value.as_str().unwrap_or_default();
+            (!dot.trim_start().starts_with("graph")).then_some(region)
+        })
+        .collect();
+    if !unparsed.is_empty() {
+        shape_notes.push(format!(
+            "the link-state value for {} is not a DOT `graph {{ ... }}`, so it is counted as \
+             empty",
+            unparsed.join(", ")
+        ));
+    }
+    let unnamed = sessions.iter().filter(|s| s.region.is_empty()).count();
+    if unnamed > 0 {
+        shape_notes.push(format!(
+            "{unnamed} session(s) carry no `region`, so they are not assigned to a region"
+        ));
+    }
 
     let successors: Vec<&AdminEntry> = entries
         .iter()
@@ -370,6 +443,7 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
         sessions,
         route_successor_count,
         next_hops,
+        shape_notes,
     })
 }
 
@@ -446,6 +520,7 @@ pub fn apply(snap: &mut RouterTopologyV1, obs: Observed) {
     snap.sessions = obs.sessions;
     snap.route_successor_count = obs.route_successor_count;
     snap.next_hops = obs.next_hops;
+    snap.shape_notes = obs.shape_notes;
     snap.observe_error.clear();
 }
 
@@ -505,6 +580,39 @@ mod tests {
             .map(|h| (h.zid.as_str(), h.routes))
             .collect();
         assert_eq!(hops, vec![("4b54", 3), ("fd12", 3)]);
+    }
+
+    #[test]
+    fn the_tested_shape_raises_no_note() {
+        let obs = parse(zagros_prod_body().as_bytes()).expect("parse");
+        assert!(obs.shape_notes.is_empty(), "{:?}", obs.shape_notes);
+    }
+
+    #[test]
+    fn an_unknown_shape_is_reported_not_zeroed() {
+        // A router of another version whose router entry has no sessions list
+        // and that returns no link-state graph: the parse still succeeds, and
+        // the notes say what is missing and why the page cannot show it.
+        let body = serde_json::json!([
+            {"key": "@/aaaa/router", "value": {"locators": [], "peers": []}},
+            {"key": "@/aaaa/router/status/plugins/rest/version", "value": "v2.0.0"}
+        ])
+        .to_string();
+        let obs = parse(body.as_bytes()).expect("an unknown shape is not an error");
+        let n = obs.shape_notes.join(" | ");
+        assert!(n.contains("zenoh v2.0.0 is not the version"), "{n}");
+        assert!(n.contains("no `sessions` list"), "{n}");
+        assert!(n.contains("no link-state graph"), "{n}");
+    }
+
+    #[test]
+    fn version_strings_of_the_tested_release_are_recognized() {
+        for v in ["v1.9.0", "1.9.0", "v1.9.0-modified"] {
+            assert!(is_tested_version(v), "{v}");
+        }
+        for v in ["v1.9.1", "v1.10.0", "v1.9.00", "", "v1.8.0"] {
+            assert!(!is_tested_version(v), "{v}");
+        }
     }
 
     #[test]

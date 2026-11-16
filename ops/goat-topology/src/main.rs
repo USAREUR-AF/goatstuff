@@ -423,6 +423,8 @@ async fn run_publish(a: PublishArgs) -> Result<()> {
     // last one, with the time it was read.
     let mut decl: Option<wire::DeclarationsV1> = None;
     let mut next_census = tokio::time::Instant::now();
+    // Shape notes are logged when they change, not every cycle.
+    let mut last_notes: Vec<String> = Vec::new();
     loop {
         tokio::select! {
             _ = ticker.tick() => {
@@ -441,6 +443,12 @@ async fn run_publish(a: PublishArgs) -> Result<()> {
                 snap.declarations = decl.clone();
                 if !snap.observe_error.is_empty() {
                     tracing::warn!(err = %snap.observe_error, "adminspace read failed; publishing the failure");
+                }
+                if snap.shape_notes != last_notes {
+                    for n in &snap.shape_notes {
+                        tracing::warn!(note = %n, "adminspace shape not as expected; publishing what was read");
+                    }
+                    last_notes = snap.shape_notes.clone();
                 }
                 if let Err(e) = session.put(&key, snap.encode_vec()).await {
                     tracing::warn!("publish {key}: {e}");

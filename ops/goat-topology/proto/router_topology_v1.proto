@@ -199,4 +199,10 @@ message RouterTopologyV1 {
   // route_successor_count and next_hops are then unknown, not zero. Empty from
   // a publisher older than this field, which always read it.
   string route_table_note = 17;
+
+  // What the publisher expected in the adminspace and did not find: a zenoh
+  // version other than the tested one (1.9.0), a missing sessions list, no
+  // link-state graph, an unparseable graph. Empty on the tested shape and from
+  // an older publisher. The surface shows them; what they name is unknown.
+  repeated string shape_notes = 18;
 }
