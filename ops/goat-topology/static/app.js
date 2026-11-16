@@ -70,7 +70,7 @@ onFilterChange(() => { renderFindingFilters(latest); renderFindings(latest); });
 
 async function poll() {
   try {
-    const res = await fetch("/api/topology", {
+    const res = await fetch("api/topology", {
       cache: "no-store",
       headers: etag ? { "If-None-Match": etag } : {},
     });

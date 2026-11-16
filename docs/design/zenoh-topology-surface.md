@@ -809,6 +809,14 @@ which knows about any other). A test walks the import graph and fails if a
 module is imported but not served, because that is a 404 at runtime and nothing
 at build time.
 
+**Built:** every URL the page requests is relative (`assets/app.js`,
+`api/topology`), so the page works at the root of a host name and behind a
+reverse proxy that serves it under a sub-path. Under a sub-path it must be
+opened with the trailing slash (`/topology/`), which the proxy redirects to.
+The test `the_page_requests_only_relative_urls` holds it. **Measured**
+2026-11-16 behind nginx at `/topology/`: the page loaded, and its routers
+table showed the reporting router.
+
 ### 6b.1 A request does no work
 
 This is the property to protect in review, and it is stronger than the ADR 1123
