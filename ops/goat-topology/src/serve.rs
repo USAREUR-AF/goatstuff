@@ -231,9 +231,7 @@ pub async fn run(
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        .with_graceful_shutdown(crate::shutdown_signal())
         .await?;
     Ok(())
 }
