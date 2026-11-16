@@ -21,6 +21,7 @@ use serde::Serialize;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::directory::{Owner, Peer};
 use crate::findings::{self, Finding, Known, Silent};
 use crate::store::{Change, Store};
 use crate::wire::{is_router_region, RegionV1};
@@ -65,6 +66,25 @@ pub struct RouterView<'a> {
     /// Whether a default client can hold a session with this router: `refused`
     /// raises T-013. `unspecified` makes no claim.
     pub client_admission: &'static str,
+    /// The mesh address a reporting router sees this router's session come
+    /// from. `None` for a router no reporter holds a session with.
+    pub address: Option<&'a str>,
+    /// The mesh peer at that address, from the peer directory.
+    pub peer: Option<Peer>,
+    /// Who the identity registry records for that peer (see
+    /// [`crate::directory`]); `None` when the peer name leads to no roster
+    /// handle.
+    pub owner: Option<Owner>,
+    /// Why there is no peer name, when there is none. Empty when there is.
+    pub name_note: &'static str,
+}
+
+/// What the page needs to say about the two identity inputs, once.
+#[derive(Serialize)]
+pub struct DirectoryView<'a> {
+    pub peers_configured: bool,
+    pub roster_configured: bool,
+    pub errors: &'a [String],
 }
 
 /// A router-to-router link, deduplicated so A→B and B→A draw one line.
@@ -101,6 +121,7 @@ pub struct Snapshot<'a> {
     pub changes: &'a [Change],
     pub edges: Vec<Edge>,
     pub counts: Counts,
+    pub directory: DirectoryView<'a>,
 }
 
 fn display_name<'a>(node: &'a str, zid: &'a str) -> &'a str {
@@ -162,6 +183,58 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
         .map(|k| (k.snap.zid.as_str(), display_name(&k.snap.node, &k.snap.zid)))
         .collect();
     let name_of = |z: &'a str| -> &'a str { names.get(z).copied().unwrap_or(z) };
+
+    // zid -> the mesh address a reporter sees its session come from. A fresh
+    // reporter's view wins over a stale one's; otherwise the first reporter in
+    // key order, so the choice is the same on every rebuild.
+    let mut addr: BTreeMap<&'a str, (&'a str, bool)> = BTreeMap::new();
+    for k in &known {
+        let fresh = !k.is_stale();
+        for s in &k.snap.sessions {
+            let Some(dst) = s.link_dst.first() else {
+                continue;
+            };
+            match addr.get(s.peer_zid.as_str()) {
+                Some((_, true)) => {}
+                Some((_, false)) if !fresh => {}
+                _ => {
+                    addr.insert(&s.peer_zid, (dst.as_str(), fresh));
+                }
+            }
+        }
+    }
+    let dir = store.directory();
+    let who = |z: &'a str| -> (Option<&'a str>, Option<Peer>, Option<Owner>, &'static str) {
+        let Some((a, _)) = addr.get(z).copied() else {
+            return (
+                None,
+                None,
+                None,
+                "known only through link state: no reporting router holds a session with it, \
+                 so the address it connects from is not seen",
+            );
+        };
+        if !dir.peers_configured {
+            return (
+                Some(a),
+                None,
+                None,
+                "no peer directory is configured on this surface",
+            );
+        }
+        match dir.peer_at(a) {
+            Some(p) => {
+                let o = dir.owner_of(&p.name);
+                (Some(a), Some(p.clone()), o, "")
+            }
+            None => (
+                Some(a),
+                None,
+                None,
+                "the address it connects from is not in the peer directory",
+            ),
+        }
+    };
 
     // --- routers known from link-state that send no snapshot ---------------
     // zid -> (reporters that list it, whether any of those is fresh)
@@ -292,27 +365,46 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             reporting: true,
             known_from: vec![],
             client_admission: k.snap.admission().label(),
+            address: None,
+            peer: None,
+            owner: None,
+            name_note: "",
         })
         .collect();
-    routers.extend(silent.into_iter().map(|(z, (by, fresh))| RouterView {
-        site: "",
-        node: "",
-        zid: z,
-        zenoh_version: "",
-        gateway_mode: "unknown",
-        gateway_read_error: "",
-        observe_error: "",
-        received_ms: 0,
-        // Known only from reporters that have themselves gone quiet: the
-        // router may be long gone, and the page must not paint it as present.
-        stale: !fresh,
-        regions: vec![],
-        sessions_total: 0,
-        route_successor_count: 0,
-        route_successor_expected: 0,
-        reporting: false,
-        known_from: by.into_iter().collect(),
-        client_admission: "unspecified",
+    // A reporting router is named by its own node name; the peer it connects
+    // from, when another reporter sees it, still says who operates it.
+    for r in routers.iter_mut() {
+        let (a, p, o, _) = who(r.zid);
+        r.address = a;
+        r.peer = p;
+        r.owner = o;
+    }
+    routers.extend(silent.into_iter().map(|(z, (by, fresh))| {
+        let (address, peer, owner, name_note) = who(z);
+        RouterView {
+            site: "",
+            node: "",
+            zid: z,
+            zenoh_version: "",
+            gateway_mode: "unknown",
+            gateway_read_error: "",
+            observe_error: "",
+            received_ms: 0,
+            // Known only from reporters that have themselves gone quiet: the
+            // router may be long gone, and the page must not paint it as present.
+            stale: !fresh,
+            regions: vec![],
+            sessions_total: 0,
+            route_successor_count: 0,
+            route_successor_expected: 0,
+            reporting: false,
+            known_from: by.into_iter().collect(),
+            client_admission: "unspecified",
+            address,
+            peer,
+            owner,
+            name_note,
+        }
     }));
 
     Snapshot {
@@ -322,6 +414,11 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
         changes: store.changes(),
         edges,
         counts,
+        directory: DirectoryView {
+            peers_configured: dir.peers_configured,
+            roster_configured: dir.roster_configured,
+            errors: &dir.errors,
+        },
     }
 }
 
@@ -564,6 +661,62 @@ mod tests {
             "payload grew {} bytes for 499 more clients; it should be flat",
             b - s
         );
+    }
+
+    /// A router that sends no report is named from the mesh peer its session
+    /// comes from, and the roster says who operates it. One known only through
+    /// link state keeps its derived name, and the payload says why.
+    #[test]
+    fn a_silent_router_is_named_from_the_peer_it_connects_from() {
+        use crate::directory::testing::{directory, ROSTER};
+        let relay = r#"{"names": {
+            "sha-01": {"name": "machine-anvil-pod-7-rack2", "ip": "100.127.0.21", "host": "anvil-pod-7", "aff": "ZAGROS-PARTNER"},
+            "sha-02": {"name": "peer-okafor-n-zagros-2026-10-02-laptop", "ip": "100.127.0.22", "host": "nb-laptop", "aff": ""}
+        }}"#;
+        let mut st = Store::new(0);
+        st.set_directory(directory(relay, ROSTER, true));
+        let mut r = with_clients("hub", "aa00", 0);
+        r.regions = vec![region(
+            "north",
+            &["aa00", "bb11", "cc22", "dd33"],
+            &[("aa00", "bb11"), ("aa00", "cc22"), ("cc22", "dd33")],
+        )];
+        let mut s1 = router_session("bb11", "north");
+        s1.link_dst = vec!["tls/100.127.0.21:50508".into()];
+        let mut s2 = router_session("cc22", "north");
+        s2.link_dst = vec!["tls/100.127.0.22:41000".into()];
+        r.sessions = vec![s1, s2];
+        ingest(&mut st, "s/hub".into(), r, 1_000);
+        let v = json(&st);
+        let by = |z: &str| {
+            v["routers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["zid"] == z)
+                .unwrap()
+                .clone()
+        };
+        let b = by("bb11");
+        assert_eq!(b["peer"]["name"], "machine-anvil-pod-7-rack2");
+        assert_eq!(b["peer"]["groups"][0], "ZAGROS-PARTNER");
+        assert_eq!(b["owner"]["org"], "org-anvil");
+        assert_eq!(b["owner"]["org_nation"], "AAA");
+        assert_eq!(b["owner"]["individual"], "rivera-j");
+        assert_eq!(b["address"], "tls/100.127.0.21:50508");
+        let c = by("cc22");
+        assert_eq!(c["owner"]["kind"], "person");
+        assert!(
+            c["owner"]["individual_nationality"].is_null(),
+            "not recorded"
+        );
+        let d = by("dd33");
+        assert!(d["peer"].is_null());
+        assert!(d["name_note"]
+            .as_str()
+            .unwrap()
+            .contains("only through link state"));
+        assert_eq!(v["directory"]["peers_configured"], true);
     }
 }
 

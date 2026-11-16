@@ -57,6 +57,28 @@ goat_topology_container_port: 8087
 # subscription can see.
 goat_topology_serve_site: ""
 
+# Who each router belongs to (serve mode). Two files that already exist on a
+# management host, mounted read-only; no credential, no call to the mesh
+# controller. Empty = not used, and routers that send no report keep names
+# derived from their ZIDs. A path that does not exist on the host is not
+# mounted (docker would otherwise create a directory in its place).
+#   peer directory: mesh address -> peer name, hostname, groups. The
+#     relay-health peer-names file (relay_health_www_dir + /ingest/peer-names.json)
+#     or the mesh-health peer registry (/opt/mesh-health/state/peer-registry.json).
+#   roster: the identity registry's public-safe projection, installed by the
+#     peerview role (/opt/peerview/roster.json): organisation, its nation, and
+#     the individual's own nationality.
+goat_topology_peer_directory_path: ""
+goat_topology_roster_path: ""
+# This goatnet's token in person-device peer names
+# (peer-<handle>-<goatnet>-<date>-<host>), stripped so it is not read as part
+# of the handle.
+goat_topology_goatnet: "{{ goatnet | default('') }}"
+# Show the individual (the person whose device it is, or who enrolled a
+# machine) and that person's nationality in the router detail. Organisation and
+# its nation are shown either way.
+goat_topology_show_individual: true
+
 # --- zenoh transport -------------------------------------------------------
 # TWO endpoints, because the two halves sit in different network namespaces.
 #

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // The detail table: declared configuration beside what is actually running.
-import { $, esc, ageSecs, displayName, roleOf } from "../lib.js";
+import { $, esc, ageSecs, displayName, roleOf, labelOf, orgLine, NOT_RECORDED } from "../lib.js";
 
 let onPick = () => {};
 export function onRouterClick(fn) { onPick = fn; }
@@ -14,7 +14,10 @@ function modeChip(x) {
 }
 
 export function renderRouters(d, now = Date.now()) {
-  const head = `<thead><tr><th>Router</th><th>Mode</th>
+  // Organisation and the ORGANISATION's nation; the individual is only in the
+  // detail a click opens.
+  const org = x => orgLine(x) ? esc(orgLine(x)) : `<span class="sub">${x.reporting === false ? "not known" : NOT_RECORDED}</span>`;
+  const head = `<thead><tr><th>Router</th><th>Organisation <span class="sub">· nation</span></th><th>Mode</th>
     <th>Regions <span class="sub">V/E</span></th>
     <th class="num">Routes</th><th class="num">Age</th></tr></thead>`;
 
@@ -23,8 +26,9 @@ export function renderRouters(d, now = Date.now()) {
     // number blank rather than print a zero that would read as a measurement.
     if (x.reporting === false) {
       return `<tr class="enter rowlink" data-node="${esc(x.zid)}">
-        <td><div class="name">${esc(displayName(x.zid))}</div>
-            <div class="sub">listed by ${esc((x.known_from || []).map(displayName).join(", "))}; sends no report</div></td>
+        <td><div class="name">${esc(labelOf(x))}</div>
+            <div class="sub">${x.peer ? esc(x.zid.slice(0, 8)) + " · " : ""}listed by ${esc((x.known_from || []).map(displayName).join(", "))}; sends no report</div></td>
+        <td>${org(x)}</td>
         <td>${modeChip(x)}</td>
         <td><span class="sub">—</span></td>
         <td class="num"><span class="sub">—</span></td>
@@ -44,6 +48,7 @@ export function renderRouters(d, now = Date.now()) {
     return `<tr class="enter rowlink" data-node="${esc(x.node || x.zid)}">
       <td><div class="name">${esc(displayName(x.node || x.zid))}</div>
           <div class="sub">${esc(x.site)} · ${esc(roleOf(x))}</div>${errs}</td>
+      <td>${org(x)}</td>
       <td>${modeChip(x)}</td>
       <td>${regions}</td>
       <td class="num"${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${x.route_successor_count}${
@@ -51,7 +56,20 @@ export function renderRouters(d, now = Date.now()) {
       <td class="num"${x.stale ? ' style="color:var(--status-err-fg)"' : ""}>${age}s</td>
     </tr>`;
   }).join("") + "</tbody>";
+  $("#names-note").textContent = namesNote(d);
   for (const tr of $("#routers").querySelectorAll("tr[data-node]")) {
     tr.onclick = () => onPick(tr.dataset.node);
   }
+}
+
+/** Where names and owners come from, said once. Exported for a test. */
+export function namesNote(d) {
+  const dir = d.directory || {};
+  const parts = [];
+  if (!dir.peers_configured) parts.push("No peer directory is configured, so routers that send no report keep names derived from their ZIDs.");
+  else parts.push("Routers that send no report are named from the mesh peer their session comes from.");
+  if (!dir.roster_configured) parts.push("No roster is configured, so organisation and nation are not shown.");
+  else parts.push("Organisation, nation and the individual are read from the identity roster, found through the peer name.");
+  for (const e of dir.errors || []) parts.push(e + ".");
+  return parts.join(" ");
 }

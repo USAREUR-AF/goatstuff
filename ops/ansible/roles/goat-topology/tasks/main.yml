@@ -108,6 +108,39 @@
     - gt_cfg is not skipped
     - not (gt_cfg.stat.exists | default(false))
 
+# The identity files are optional and written by other roles. Mount only one
+# that exists: docker would create a directory at a missing bind source, and the
+# surface would then report the file unreadable for the life of the container.
+- name: goat-topology | stat the identity files (serve mode)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ goat_topology_peer_directory_path }}"
+    - "{{ goat_topology_roster_path }}"
+  register: gt_identity
+  when:
+    - "'serve' in goat_topology_modes"
+    - item | length > 0
+
+- name: goat-topology | decide which identity files to mount
+  ansible.builtin.set_fact:
+    goat_topology_peer_directory_mounted: >-
+      {{ ('serve' in goat_topology_modes) and (goat_topology_peer_directory_path | length > 0)
+         and (gt_identity.results[0].stat.isreg | default(false)) }}
+    goat_topology_roster_mounted: >-
+      {{ ('serve' in goat_topology_modes) and (goat_topology_roster_path | length > 0)
+         and (gt_identity.results[1].stat.isreg | default(false)) }}
+
+- name: goat-topology | say which configured identity file is absent
+  ansible.builtin.debug:
+    msg: >-
+      goat-topology: {{ item.item }} is configured but is not a file on this host,
+      so it is not mounted; the page will say so.
+  loop: "{{ gt_identity.results | default([]) }}"
+  when:
+    - item is not skipped
+    - not (item.stat.isreg | default(false))
+
 - name: goat-topology | compose dir
   ansible.builtin.file:
     path: "{{ goat_topology_compose_dir }}"
