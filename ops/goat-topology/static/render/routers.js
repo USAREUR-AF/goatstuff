@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // The detail table: declared configuration beside what is actually running.
-import { $, esc, ageSecs, displayName, roleOf, labelOf, orgLine, NOT_RECORDED } from "../lib.js";
+import { $, esc, ageSecs, displayName, roleOf, labelOf, orgLine, carriesLine, NOT_RECORDED } from "../lib.js";
 
 let onPick = () => {};
 export function onRouterClick(fn) { onPick = fn; }
@@ -17,8 +17,10 @@ export function renderRouters(d, now = Date.now()) {
   // Organisation and the ORGANISATION's nation; the individual is only in the
   // detail a click opens.
   const org = x => orgLine(x) ? esc(orgLine(x)) : `<span class="sub">${x.reporting === false ? "not known" : NOT_RECORDED}</span>`;
+  const carries = x => { const c = carriesLine(x);
+    return `<td><div${c.err ? ' style="color:var(--status-err-fg)"' : ""}>${esc(c.text)}</div><div class="sub">${esc(c.sub)}</div></td>`; };
   const head = `<thead><tr><th>Router</th><th>Organisation <span class="sub">· nation</span></th><th>Mode</th>
-    <th>Regions <span class="sub">V/E</span></th>
+    <th>Carries</th><th>Regions <span class="sub">V/E</span></th>
     <th class="num">Routes</th><th class="num">Age</th></tr></thead>`;
 
   $("#routers").innerHTML = head + "<tbody>" + d.routers.map(x => {
@@ -30,6 +32,7 @@ export function renderRouters(d, now = Date.now()) {
             <div class="sub">${x.peer ? esc(x.zid.slice(0, 8)) + " · " : ""}listed by ${esc((x.known_from || []).map(displayName).join(", "))}; sends no report</div></td>
         <td>${org(x)}</td>
         <td>${modeChip(x)}</td>
+        ${carries(x)}
         <td><span class="sub">—</span></td>
         <td class="num"><span class="sub">—</span></td>
         <td class="num"${x.stale ? ' style="color:var(--status-err-fg)"' : ""}>${x.stale ? "stale" : "—"}</td>
@@ -50,6 +53,7 @@ export function renderRouters(d, now = Date.now()) {
           <div class="sub">${esc(x.site)} · ${esc(roleOf(x))}</div>${errs}</td>
       <td>${org(x)}</td>
       <td>${modeChip(x)}</td>
+      ${carries(x)}
       <td>${regions}</td>
       <td class="num"${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${x.route_successor_count}${
         mism ? `<div class="sub">pred ${x.route_successor_expected}</div>` : ""}</td>
@@ -57,6 +61,7 @@ export function renderRouters(d, now = Date.now()) {
     </tr>`;
   }).join("") + "</tbody>";
   $("#names-note").textContent = namesNote(d, now);
+  $("#load-note").textContent = LOAD_NOTE;
   for (const tr of $("#routers").querySelectorAll("tr[data-node]")) {
     tr.onclick = () => onPick(tr.dataset.node);
   }
@@ -87,3 +92,8 @@ export function namesNote(d, now = Date.now()) {
   for (const e of dir.errors || []) parts.push(e + ".");
   return parts.join(" ");
 }
+
+/** Said once, because it is true of every router on the page. */
+export const LOAD_NOTE = "Counts are declarations, read from each reporting router's own tables every few minutes. "
+  + "Messages and bytes are not shown: the router build exposes no traffic counters. "
+  + "Traffic between two routers that both send no report is not knowable from here.";

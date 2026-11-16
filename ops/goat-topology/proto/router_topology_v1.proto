@@ -120,6 +120,44 @@ message RegionV1 {
   bool links_truncated = 7;     // the cap was hit
 }
 
+// One other router's share of this router's subscriber table: the key
+// expressions zenoh attributes to it (its own applications', and anything
+// declared below it if it is a gateway). Design doc §2.6.
+message RouterDeclarationsV1 {
+  string zid = 1;
+  uint32 subscribed_keys = 2;       // distinct subscribed key expressions
+  repeated string sample_keys = 3;  // at most --declarations-top-keys
+  bool sample_truncated = 4;
+}
+
+// A census of the declarations in this router's own tables, read on its own,
+// slower cycle. COUNTS and a capped sample, never the full list. read_unix_ms
+// 0 = never read; a non-empty read_error = the last read failed and every
+// count is absent, not zero. Publishers of OTHER routers are not knowable:
+// zenoh 1.9.0's router hat keeps none.
+message DeclarationsV1 {
+  uint64 read_unix_ms = 1;
+  uint32 interval_secs = 2;
+  string read_error = 3;
+  bool capped = 4;                  // the entry cap was hit; counts are lower bounds
+  uint32 read_ms = 5;
+  uint32 session_subscriptions = 6; // by this router's own sessions, per session
+  uint32 session_subscribed_keys = 7;
+  uint32 session_publishers = 8;
+  uint32 session_published_keys = 9;
+  uint32 own_process_subscribed_keys = 10;  // the router's own adminspace/plugins
+  uint32 topics = 11;               // distinct key expressions, both tables
+  repeated string sample_keys = 12;
+  bool sample_truncated = 13;
+  repeated RouterDeclarationsV1 routers = 14;
+}
+
+// Route-table entries naming `zid` as the next hop.
+message NextHopV1 {
+  string zid = 1;
+  uint32 routes = 2;
+}
+
 message RouterTopologyV1 {
   // --- identity -----------------------------------------------------------
   string zid = 1;
@@ -150,4 +188,9 @@ message RouterTopologyV1 {
 
   // From the declared gateway block; see ClientAdmission.
   ClientAdmission client_admission = 14;
+
+  // From the publisher's own declarations cycle (design doc §2.6). Absent from
+  // an older publisher or one run with the census off.
+  DeclarationsV1 declarations = 15;
+  repeated NextHopV1 next_hops = 16;
 }

@@ -181,6 +181,86 @@ impl RegionV1 {
     }
 }
 
+/// One other router's share of this router's subscriber table: the key
+/// expressions zenoh attributes to it (its own applications', and anything
+/// declared below it if it is a gateway). See `crate::declarations`.
+#[derive(Clone, PartialEq, ::prost::Message, Serialize)]
+pub struct RouterDeclarationsV1 {
+    #[prost(string, tag = "1")]
+    pub zid: String,
+    /// Distinct subscribed key expressions attributed to this router.
+    #[prost(uint32, tag = "2")]
+    pub subscribed_keys: u32,
+    /// At most `--declarations-top-keys` of them, most-declared first.
+    #[prost(string, repeated, tag = "3")]
+    pub sample_keys: Vec<String>,
+    #[prost(bool, tag = "4")]
+    pub sample_truncated: bool,
+}
+
+/// A census of the declarations in this router's own tables, read on its own,
+/// slower cycle. COUNTS, and at most a capped sample of key expressions; never
+/// the full list (cardinality budget).
+///
+/// `read_unix_ms == 0` means no census has been read (none yet, or a publisher
+/// configured not to); a non-empty `read_error` means the last read failed and
+/// every count is absent, not zero.
+#[derive(Clone, PartialEq, ::prost::Message, Serialize)]
+pub struct DeclarationsV1 {
+    #[prost(uint64, tag = "1")]
+    pub read_unix_ms: u64,
+    #[prost(uint32, tag = "2")]
+    pub interval_secs: u32,
+    #[prost(string, tag = "3")]
+    pub read_error: String,
+    /// The entry cap was hit; counts are lower bounds.
+    #[prost(bool, tag = "4")]
+    pub capped: bool,
+    /// How long the two table reads took, for the load budget.
+    #[prost(uint32, tag = "5")]
+    pub read_ms: u32,
+
+    /// Subscription declarations by this router's own sessions (clients and
+    /// peers), counted per session: two clients on one key count two.
+    #[prost(uint32, tag = "6")]
+    pub session_subscriptions: u32,
+    /// Distinct key expressions those subscriptions cover.
+    #[prost(uint32, tag = "7")]
+    pub session_subscribed_keys: u32,
+    /// Publisher declarations by this router's own sessions.
+    #[prost(uint32, tag = "8")]
+    pub session_publishers: u32,
+    #[prost(uint32, tag = "9")]
+    pub session_published_keys: u32,
+    /// Key expressions held only by the router's own process (its adminspace
+    /// and plugins). Reported apart so they do not read as application load.
+    #[prost(uint32, tag = "10")]
+    pub own_process_subscribed_keys: u32,
+    /// Distinct key expressions across both tables, excluding the router's own
+    /// process: the topics this router is carrying declarations for.
+    #[prost(uint32, tag = "11")]
+    pub topics: u32,
+    #[prost(string, repeated, tag = "12")]
+    pub sample_keys: Vec<String>,
+    #[prost(bool, tag = "13")]
+    pub sample_truncated: bool,
+
+    /// Every other router the subscriber table attributes a declaration to.
+    #[prost(message, repeated, tag = "14")]
+    pub routers: Vec<RouterDeclarationsV1>,
+}
+
+/// How many entries of this router's route table name `zid` as the next hop:
+/// the destinations it reaches through that neighbour. From the successor
+/// table already read on the snapshot cycle.
+#[derive(Clone, PartialEq, ::prost::Message, Serialize)]
+pub struct NextHopV1 {
+    #[prost(string, tag = "1")]
+    pub zid: String,
+    #[prost(uint32, tag = "2")]
+    pub routes: u32,
+}
+
 fn ser_gateway_mode<S: serde::Serializer>(v: &i32, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(
         GatewayMode::try_from(*v)
@@ -255,6 +335,14 @@ pub struct RouterTopologyV1 {
     #[prost(enumeration = "ClientAdmission", tag = "14")]
     #[serde(serialize_with = "ser_client_admission")]
     pub client_admission: i32,
+
+    /// The declarations census, from its own cycle. Absent from a publisher
+    /// older than this field, and from one run with the census off.
+    #[prost(message, optional, tag = "15")]
+    pub declarations: Option<DeclarationsV1>,
+    /// Route-table entries per next hop, from the successor table.
+    #[prost(message, repeated, tag = "16")]
+    pub next_hops: Vec<NextHopV1>,
 }
 
 impl RouterTopologyV1 {
@@ -336,6 +424,38 @@ mod tests {
             j.contains(r#""client_admission":"unspecified""#),
             "got: {j}"
         );
+    }
+
+    #[test]
+    fn the_census_round_trips_and_an_older_snapshot_carries_none() {
+        let r = RouterTopologyV1 {
+            zid: "a1".into(),
+            declarations: Some(DeclarationsV1 {
+                read_unix_ms: 5,
+                session_subscriptions: 3,
+                routers: vec![RouterDeclarationsV1 {
+                    zid: "b2".into(),
+                    subscribed_keys: 2,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            next_hops: vec![NextHopV1 {
+                zid: "b2".into(),
+                routes: 4,
+            }],
+            ..Default::default()
+        };
+        let d = RouterTopologyV1::decode(&*r.encode_vec()).expect("decode");
+        assert_eq!(
+            d.declarations.as_ref().unwrap().routers[0].subscribed_keys,
+            2
+        );
+        assert_eq!(d.next_hops[0].routes, 4);
+        // An older publisher sends neither field: no census, not an empty one.
+        let old = RouterTopologyV1::decode(&*RouterTopologyV1::default().encode_vec()).unwrap();
+        assert!(old.declarations.is_none());
+        assert!(old.next_hops.is_empty());
     }
 
     #[test]

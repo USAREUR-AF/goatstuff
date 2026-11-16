@@ -9,7 +9,7 @@
 #   ./rig.sh check                       # the page's names and counts against what the rig declared
 #   FIX=1 ./rig.sh restart-router bravo-gateway                        # give bravo a client subregion
 #   ./rig.sh down
-# Design doc zenoh-topology-surface.md §2.3-§2.5 records what it measured.
+# Design doc zenoh-topology-surface.md §2.3-§2.6 records what it measured.
 #
 # Each router listens on, and dials from, its own loopback address 127.0.0.<10+idx>,
 # so a session's address says which router it is, as a mesh address does on a
@@ -84,6 +84,7 @@ endpoints() { case "$1" in
 start_pub() { # name idx site
   nohup "$T" publish --endpoint "$(endpoints "$1" "$2")" --site "$3" --node "$1" \
     --admin-addr "127.0.0.1:$((8100+$2))" --config-path "$D/conf/$1.json5" --interval-secs 5 \
+    --declarations-interval-secs "${DECL_SECS:-20}" \
     > "$D/log/$1.publish.log" 2>&1 & echo $! > "$D/run/$1.publish.pid"; }
 start_client() { # name idx subs pubs
   [ -n "$C" ] || return 0

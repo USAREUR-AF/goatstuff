@@ -23,7 +23,7 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::wire::{LinkV1, RegionV1, RouterTopologyV1, SessionV1, MAX_LINKS_PER_REGION};
+use crate::wire::{LinkV1, NextHopV1, RegionV1, RouterTopologyV1, SessionV1, MAX_LINKS_PER_REGION};
 
 /// One `{key, value}` pair as the REST plugin renders the adminspace.
 #[derive(Debug, Deserialize)]
@@ -32,19 +32,36 @@ struct AdminEntry {
     value: serde_json::Value,
 }
 
-/// Fetch `@/local/**` over plaintext loopback HTTP.
+/// The keys one snapshot reads: this router's sessions, its link-state graphs,
+/// its route table and its version. Each is scoped below `router`, so the
+/// snapshot never pulls the subscriber, queryable, token or transport tables —
+/// on a busy router those are hundreds of entries the snapshot does not use.
+/// The declaration tables are read on their own, slower cycle
+/// ([`crate::declarations`]).
+pub const SNAPSHOT_KEYS: [&str; 4] = [
+    "@/local/router",
+    "@/local/router/linkstate/*",
+    "@/local/router/route/successor/**",
+    "@/local/router/status/plugins/rest/version",
+];
+
+/// The largest adminspace body read. A body past this is refused, not
+/// truncated: half a JSON array is not a smaller answer, it is no answer.
+pub const MAX_BODY_BYTES: u64 = 32 * 1024 * 1024;
+
+/// GET one adminspace key over plaintext loopback HTTP.
 ///
 /// Hand-rolled rather than pulling an HTTP client crate: the request is one
 /// fixed GET to 127.0.0.1 with no TLS, no redirects, no auth and no
 /// content-negotiation. A client dependency would add supply-chain surface to
 /// the image for thirty lines of work.
-pub async fn fetch(addr: &str, timeout_secs: u64) -> Result<Vec<u8>> {
+pub async fn fetch_key(addr: &str, key: &str, timeout_secs: u64) -> Result<Vec<u8>> {
     let fut = async {
         let mut stream = TcpStream::connect(addr)
             .await
             .with_context(|| format!("connect adminspace {addr}"))?;
         let req = format!(
-            "GET /@/local/** HTTP/1.1\r\nHost: {addr}\r\nAccept: application/json\r\n\
+            "GET /{key} HTTP/1.1\r\nHost: {addr}\r\nAccept: application/json\r\n\
              User-Agent: goat-topology\r\nConnection: close\r\n\r\n"
         );
         stream
@@ -52,13 +69,45 @@ pub async fn fetch(addr: &str, timeout_secs: u64) -> Result<Vec<u8>> {
             .await
             .context("write request")?;
         let mut buf = Vec::new();
-        stream
+        (&mut stream)
+            .take(MAX_BODY_BYTES + 1)
             .read_to_end(&mut buf)
             .await
             .context("read response")?;
+        if buf.len() as u64 > MAX_BODY_BYTES {
+            anyhow::bail!("{key}: response over {MAX_BODY_BYTES} bytes");
+        }
         Ok::<_, anyhow::Error>(buf)
     };
     tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), fut)
+        .await
+        .map_err(|_| anyhow::anyhow!("adminspace read of {key} timed out after {timeout_secs}s"))?
+}
+
+/// GET one key and return its body, refusing anything but a 200.
+pub async fn get_body(addr: &str, key: &str, timeout_secs: u64) -> Result<Vec<u8>> {
+    let raw = fetch_key(addr, key, timeout_secs).await?;
+    let (status, body) = split_response(&raw)?;
+    if status != 200 {
+        anyhow::bail!("adminspace returned HTTP {status} for {key}");
+    }
+    Ok(body.to_vec())
+}
+
+/// Read every [`SNAPSHOT_KEYS`] entry within one shared time budget and
+/// concatenate the entries into one JSON array body.
+pub async fn fetch_snapshot(addr: &str, timeout_secs: u64) -> Result<Vec<u8>> {
+    let all = async {
+        let mut out: Vec<serde_json::Value> = Vec::new();
+        for key in SNAPSHOT_KEYS {
+            let body = get_body(addr, key, timeout_secs).await?;
+            let v: Vec<serde_json::Value> = serde_json::from_slice(&body)
+                .with_context(|| format!("{key}: body is not a JSON array of entries"))?;
+            out.extend(v);
+        }
+        Ok::<_, anyhow::Error>(serde_json::to_vec(&out)?)
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), all)
         .await
         .map_err(|_| anyhow::anyhow!("adminspace read timed out after {timeout_secs}s"))?
 }
@@ -98,6 +147,7 @@ pub struct Observed {
     pub regions: Vec<RegionV1>,
     pub sessions: Vec<SessionV1>,
     pub route_successor_count: u32,
+    pub next_hops: Vec<NextHopV1>,
 }
 
 /// Parse an `@/local/**` body.
@@ -194,10 +244,23 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
     }
     regions.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let route_successor_count = entries
+    let successors: Vec<&AdminEntry> = entries
         .iter()
         .filter(|e| e.key.contains("/route/successor/"))
-        .count() as u32;
+        .collect();
+    let route_successor_count = successors.len() as u32;
+    // Route entries per next hop: the value of `src/<a>/dst/<b>` is the
+    // neighbour this router forwards a-to-b traffic to.
+    let mut hops: BTreeMap<String, u32> = BTreeMap::new();
+    for e in &successors {
+        if let Some(z) = e.value.as_str().filter(|z| !z.is_empty() && *z != zid) {
+            *hops.entry(z.to_string()).or_default() += 1;
+        }
+    }
+    let next_hops = hops
+        .into_iter()
+        .map(|(zid, routes)| NextHopV1 { zid, routes })
+        .collect();
 
     Ok(Observed {
         zid,
@@ -205,6 +268,7 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
         regions,
         sessions,
         route_successor_count,
+        next_hops,
     })
 }
 
@@ -280,6 +344,7 @@ pub fn apply(snap: &mut RouterTopologyV1, obs: Observed) {
     snap.regions = obs.regions;
     snap.sessions = obs.sessions;
     snap.route_successor_count = obs.route_successor_count;
+    snap.next_hops = obs.next_hops;
     snap.observe_error.clear();
 }
 
@@ -331,6 +396,14 @@ mod tests {
         // The next-hop invariant, on this fixture's numbers.
         assert_eq!(obs.route_successor_count, 6);
         assert_eq!(north.successor_terms(), 6);
+        // Route entries per next hop: three destinations' worth each, through
+        // the two neighbours; none names this router itself.
+        let hops: Vec<(&str, u32)> = obs
+            .next_hops
+            .iter()
+            .map(|h| (h.zid.as_str(), h.routes))
+            .collect();
+        assert_eq!(hops, vec![("4b54", 3), ("fd12", 3)]);
     }
 
     #[test]
