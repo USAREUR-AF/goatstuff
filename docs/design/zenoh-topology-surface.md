@@ -508,9 +508,20 @@ reporter's own subscriptions and publishers.
 
 ## 3. The envelope — `RouterTopologyV1`
 
-Published to `ops/fabric/topology/<site>/<node>`, protobuf, canonical schema at
+Published to `<prefix>/<site>/<node>`, protobuf, canonical schema at
 `ops/goat-topology/proto/router_topology_v1.proto`. One message per router per
-interval. Shape:
+interval.
+
+**Built:** the prefix is a setting on both modes, `--key-prefix` /
+`TOPOLOGY_KEY_PREFIX`, default `ops/fabric/topology` (the key every
+deployment used before the setting existed, so a goatnet is unchanged).
+Publishers and the surface must use the same value. The prefix, `--site` and
+`--node` are checked at start: each chunk must be non-empty and free of `/`,
+`*`, `$`, `#` and `?`, and a bad value stops the process with the reason
+rather than publishing on a key the surface never subscribes to
+(`src/keys.rs`).
+
+Shape:
 
 | Field | Meaning |
 |---|---|
