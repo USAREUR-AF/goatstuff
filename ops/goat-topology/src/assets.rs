@@ -200,7 +200,7 @@ mod tests {
         // and a copy would go stale against docs/design-system/.
         let html = get("/").unwrap().body;
         assert!(
-            html.contains("/assets/design-system.css"),
+            html.contains("href=\"assets/design-system.css\""),
             "index.html must link the design system"
         );
         assert!(
@@ -280,13 +280,38 @@ mod tests {
             "exactly one script tag; behaviour lives in app.js"
         );
         assert!(
-            raw.contains("<script type=\"module\" src=\"/assets/app.js\""),
+            raw.contains("<script type=\"module\" src=\"assets/app.js\""),
             "the page must load behaviour as a module, not inline it"
         );
         assert!(
             !raw.contains("function "),
             "no inline behaviour belongs in the markup"
         );
+    }
+
+    /// The page must work behind a reverse proxy that serves it under a
+    /// sub-path (`https://example.org/topology/`). An absolute same-origin URL
+    /// such as `/assets/app.js` or `/api/topology` would skip that sub-path
+    /// and reach a different application, so every URL the page itself
+    /// requests is relative. Modules already import each other relatively.
+    #[test]
+    fn the_page_requests_only_relative_urls() {
+        for p in ["/", "/assets/app.js", "/assets/lib.js"] {
+            let body = get(p).unwrap().body;
+            for probe in [
+                "\"/assets",
+                "\"/api",
+                "'/assets",
+                "'/api",
+                "`/api",
+                "`/assets",
+            ] {
+                assert!(
+                    !body.contains(probe),
+                    "{p} requests an absolute same-origin URL ({probe}...)"
+                );
+            }
+        }
     }
 
     #[test]
