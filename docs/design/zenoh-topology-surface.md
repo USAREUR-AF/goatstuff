@@ -207,7 +207,19 @@ page shows route entries as `not read` with that reason, and `T-005` does not
 run: an unread table is unknown, not zero. The goat role passes `always`, so a
 goatnet's behaviour is unchanged.
 
-**Measured:** see the run table below (filled from the compose example).
+**Measured** 2026-11-16, the crate's compose example (three stock
+`eclipse/zenoh:1.9.0` routers, one publisher each, 10 s interval), 10 clean
+starts per mode, counting `index out of bounds` panics in the router logs:
+
+| `--route-table` | Starts with a router panic | Panics |
+|---|---|---|
+| `always` | 4 of 10 | 4 |
+| `settled` | 0 of 10 | 0 |
+
+Ten clean starts do not show the risk is gone; they are consistent with a
+rate of up to about one start in four (95 %). Under `settled` the route
+tables were still read once the routers settled (6 entries each in the
+three-router example, no note).
 
 **Also seen on stock 1.9.0, not fixed here:** in a 22-router rig, 2 routers
 stopped answering at start (no CPU, the REST plugin never replies, nothing
