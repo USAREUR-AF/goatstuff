@@ -33,7 +33,9 @@ function neighbours(d, id, self) {
 /** Who operates a router: the mesh peer it connects from and what the
  *  identity registry records for that peer. A person's nationality and an
  *  organisation's nation are two facts and are shown as two rows. */
-export function ownerFacts(x) {
+export function ownerFacts(x, d = {}, now = Date.now()) {
+  const rm = (d.directory || {}).roster_modified_ms;
+  const rosterAge = rm ? ` in the roster written ${new Date(rm).toISOString().slice(0, 10)}` : "";
   const nr = `<span class="sub">${NOT_RECORDED}</span>`;
   const v = s => (s ? esc(s) : nr);
   const derived = `<dt>Display name</dt><dd>${esc(displayName(x.zid))} <span class="sub">derived from the ZID</span></dd>`;
@@ -43,7 +45,7 @@ export function ownerFacts(x) {
       <dt>Operated by</dt><dd><span class="sub">not known — ${esc(x.name_note || "no reporting router sees its session")}</span></dd>`;
   }
   const p = x.peer, o = x.owner;
-  const who = !o ? `<dt>Organisation</dt><dd>${nr} <span class="sub">— the peer name leads to no roster handle</span></dd>`
+  const who = !o ? `<dt>Organisation</dt><dd>${nr} <span class="sub">— the peer name leads to no roster handle${rosterAge}</span></dd>`
     : `<dt>Organisation</dt><dd>${v(o.org_display_name || o.org)}${o.org_display_name ? ` <span class="sub">${esc(o.org)}</span>` : ""}</dd>
        <dt>Organisation nation</dt><dd>${v(o.org_nation)}</dd>
        <dt>${o.kind === "machine" ? "Enrolled by" : "Individual"}</dt><dd>${v(o.individual)}</dd>
@@ -82,7 +84,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
         ? `It is known only because the routing map of ${esc(from.join(", "))} lists it.`
         : `It is known only because ${ns.length} reporting router${ns.length === 1 ? "" : "s"} list${ns.length === 1 ? "s" : ""} a link to it.`}</p>
       <dl class="d-facts"><dt>ZID</dt><dd>${esc(selected)}</dd>
-        ${x ? ownerFacts(x) : ""}
+        ${x ? ownerFacts(x, d, now) : ""}
         ${x?.stale ? `<dt>State</dt><dd style="color:var(--status-err-fg)">every router that lists it has gone quiet</dd>` : ""}</dl>
       ${linkList(ns)}`;
     wire(box);
@@ -124,7 +126,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
           <dt>Route entries</dt><dd${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${x.route_successor_count}${
             mism ? ` (predicted ${x.route_successor_expected})` : ""}</dd>
           <dt>Routing groups</dt><dd>${regions}</dd>
-          ${x.peer ? ownerFacts(x) : ""}
+          ${x.peer ? ownerFacts(x, d, now) : ""}
         </dl>${errs}
       </div>
       <div>

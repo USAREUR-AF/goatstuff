@@ -172,6 +172,11 @@ pub struct Directory {
     /// Which inputs are configured, so "not recorded" can say why.
     pub peers_configured: bool,
     pub roster_configured: bool,
+    /// When each file was last written (Unix ms; 0 when unread), so the page
+    /// can say a file is old. Absolute times, not ages, so the payload does
+    /// not change while nothing happens.
+    pub peers_modified_ms: u64,
+    pub roster_modified_ms: u64,
 }
 
 impl Directory {
@@ -365,6 +370,14 @@ impl Sources {
         }
     }
 
+    fn mtime_ms(p: &PathBuf) -> u64 {
+        std::fs::metadata(p)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_millis() as u64)
+    }
+
     fn mtime(p: &Option<PathBuf>) -> Option<SystemTime> {
         p.as_ref()
             .and_then(|p| std::fs::metadata(p).ok())
@@ -396,7 +409,10 @@ impl Sources {
                 .with_context(|| format!("read {}", p.display()))
                 .and_then(|b| parse_peers(&b))
             {
-                Ok(m) => d.peers = m,
+                Ok(m) => {
+                    d.peers = m;
+                    d.peers_modified_ms = Self::mtime_ms(p);
+                }
                 Err(e) => d.errors.push(format!("peer directory not read: {e:#}")),
             }
         }
@@ -405,7 +421,10 @@ impl Sources {
                 .with_context(|| format!("read {}", p.display()))
                 .and_then(|b| serde_json::from_slice::<Roster>(&b).context("roster shape"))
             {
-                Ok(r) => d.roster = r,
+                Ok(r) => {
+                    d.roster = r;
+                    d.roster_modified_ms = Self::mtime_ms(p);
+                }
                 Err(e) => d.errors.push(format!("roster not read: {e:#}")),
             }
         }
@@ -426,6 +445,8 @@ pub mod testing {
             show_individual,
             peers_configured: true,
             roster_configured: true,
+            peers_modified_ms: 0,
+            roster_modified_ms: 0,
             errors: vec![],
         }
     }
@@ -561,9 +582,16 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("peers.json");
         std::fs::write(&p, "{not json").unwrap();
-        let d = Sources::new(Some(p), None, String::new(), true).load();
+        let r = dir.join("roster.json");
+        std::fs::write(&r, testing::ROSTER).unwrap();
+        let d = Sources::new(Some(p), Some(r), String::new(), true).load();
         assert_eq!(d.errors.len(), 1, "{:?}", d.errors);
         assert!(d.errors[0].starts_with("peer directory not read"));
+        assert_eq!(d.peers_modified_ms, 0, "an unread file has no time");
+        assert!(
+            d.roster_modified_ms > 0,
+            "the roster's write time is carried"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }
