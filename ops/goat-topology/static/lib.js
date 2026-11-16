@@ -51,3 +51,32 @@ export function displayName(id) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
   return `${ADJ[h % ADJ.length]}-${NOUN[(h >>> 8) % NOUN.length]} (${s.slice(0, 6)})`;
 }
+
+/** What a router is called on the page. A reporting router: its node name. A
+ *  router that sends no report: the name of the mesh peer it connects from,
+ *  when the peer directory has it; otherwise the derived display name. The ZID
+ *  is always shown beside it in the detail. */
+export function labelOf(x) {
+  if (!x) return "";
+  if (x.node) return x.node;
+  if (x.peer && x.peer.name) return x.peer.name;
+  return displayName(x.zid);
+}
+
+/** The label for a graph key (node name or ZID), looked up in the payload. */
+export function labelFor(d, id) {
+  const x = (d.routers || []).find(r => (r.node || r.zid) === id);
+  return x ? labelOf(x) : displayName(id);
+}
+
+export const NOT_RECORDED = "not recorded";
+
+/** The organisation line on the graph and in the table: the organisation, and
+ *  the ORGANISATION's nation. A person's nationality is a different fact and
+ *  is shown only in the detail, beside the individual. */
+export function orgLine(x) {
+  const o = x && x.owner;
+  if (o) return `${o.org_display_name || o.org || "org " + NOT_RECORDED} · ${o.org_nation || "nation " + NOT_RECORDED}`;
+  if (x && x.peer) return "org " + NOT_RECORDED;
+  return "";
+}

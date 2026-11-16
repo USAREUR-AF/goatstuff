@@ -8,7 +8,7 @@
 // routing map lists it — a partner's router, or a host the publisher was never
 // deployed to. It is drawn smaller, with a dashed outline and its display name,
 // so the picture is complete without pretending to know its settings or load.
-import { $, esc, displayName, roleOf } from "../lib.js";
+import { $, esc, displayName, roleOf, labelOf as nameOf, orgLine } from "../lib.js";
 
 const W = 900, H_MIN = 380;
 const R_REPORTING = 25, R_SILENT = 15;
@@ -19,13 +19,48 @@ export function onNodeClick(fn) { onPick = fn; }
 /** The key a node and its edges share: node name for a reporting router,
  *  full ZID for one that is not reporting (the server keys edges the same). */
 export const keyOf = x => x.node || x.zid;
-/** What is printed beside a node: the node name, or for a bare ZID the derived
- *  display name with the ZID's first six characters (lib.js `displayName`). */
-export const labelOf = x => displayName(keyOf(x));
+/** What is printed beside a node: the node name; for a router that sends no
+ *  report, its mesh peer name; else the derived display name (lib.js). */
+export const labelOf = nameOf;
 
 /** Arc length one node needs on the ring. Labels sit outside the ring, so this
  *  is the circle plus the gap two neighbouring labels need not to touch. */
 const slot = x => (x.reporting === false ? 72 : 84);
+
+/** The most characters a graph label line carries; the full text is in the
+ *  node's tooltip, the detail and the table. */
+const MAX_LABEL = 30;
+const clip = (t, n = MAX_LABEL) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
+/** Height of one stack of label lines, for the stagger offset. */
+const STACK = 44;
+/** The organisation line, clipped in the organisation's name so the nation
+ *  is never the part cut off. */
+function orgShort(x) {
+  const o = x.owner;
+  if (!o) return orgLine(x);
+  const nation = o.org_nation || "nation not recorded";
+  return `${clip(o.org_display_name || o.org || "org not recorded", Math.max(10, MAX_LABEL - nation.length - 3))} · ${nation}`;
+}
+
+/** A node's label lines as [text, colour, font size]. Shared by the layout,
+ *  which sizes the picture from them, and the node renderers. */
+export function labelLines(x) {
+  const org = orgLine(x);
+  if (x.reporting === false) {
+    const stroke = x.stale ? "var(--status-err-fg)" : "var(--fg-faint)";
+    const ls = [[clip(labelOf(x)), "var(--fg-secondary, var(--fg-primary))", 10]];
+    if (org) ls.push([orgShort(x), "var(--fg-faint)", 9]);
+    if (x.stale) ls.push(["gone quiet", stroke, 9]);
+    return ls;
+  }
+  const role = roleOf(x);
+  const tagCol = x.stale ? "var(--status-err-fg)"
+    : role === "gateway" ? "var(--c-amber-hi)" : "var(--fg-faint)";
+  const ls = [[clip(labelOf(x)), "var(--fg-primary)", 12],
+    [x.stale ? "gone quiet" : `${x.site} · ${role}`, tagCol, 10]];
+  if (org) ls.push([orgShort(x), "var(--fg-faint)", 9]);
+  return ls;
+}
 
 /** Reporting routers first, in the server's order; then silent ones by ZID.
  *  A small goatnet keeps the compact ring; past that the radius grows with the
@@ -38,36 +73,72 @@ export function layout(routers) {
   const need = rs.reduce((s, x) => s + slot(x), 0);
   const r = rs.length === 1 ? 0
     : Math.max(Math.min(122, 60 + rs.length * 17), need / (2 * Math.PI));
-  const H = Math.max(H_MIN, Math.ceil(2 * r + 170));
-  const cx = W / 2, cy = H / 2 + 2;
+  // Past a handful of routers the ring becomes an ellipse half again as wide as
+  // it is tall: the routers at its top and bottom then sit further apart, which
+  // is where neighbouring labels would otherwise run into each other.
+  const ry = r, rx = rs.length <= 4 ? r : r * 1.5;
+  // Room for a staggered label (two label heights) above and below; side
+  // labels as wide as the longest one, so a long peer name widens the picture
+  // rather than running off its edge.
+  const H = Math.max(H_MIN, Math.ceil(2 * ry + 2 * (R_REPORTING + 2 * STACK + 30)));
+  const widest = rs.reduce((m, x) => Math.max(m, ...labelLines(x).map(([t, , sz]) => t.length * sz * 0.62)), 0);
+  const Wd = Math.max(W, Math.ceil(2 * (rx + R_REPORTING + 9 + widest) + 24));
+  const cx = Wd / 2, cy = H / 2 + 2;
   const pos = {};
-  let at = 0;
+  let at = 0, i = 0;
   for (const x of rs) {
     const w = slot(x);
     const a = -Math.PI / 2 + (2 * Math.PI * (at + w / 2)) / Math.max(need, 1);
     at += w;
-    pos[keyOf(x)] = { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    // Near the top and bottom, every other label moves one label-height
+    // further out, so two neighbours' labels sit on different rows.
+    const stagger = rs.length > 8 && Math.abs(Math.sin(a)) > 0.75 && i % 2 === 1;
+    i++;
+    pos[keyOf(x)] = { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a), stagger };
   }
-  return { pos, cx, cy, r, H };
+  return { pos, cx, cy, r, rx, ry, H, W: Wd };
 }
 
-/** Where a router's two label lines go: outside the ring, on the side away from
+/** Where a router's label lines go (`n` of them): outside the ring, on the side away from
  *  the centre, so a label never lies across a link or a neighbouring router.
  *  A lone router sits at the centre and keeps its name above and tag below.
  *  `rad` is the node's radius; the offsets keep the same gap for either size. */
-export function labelAt(p, c, rad = R_REPORTING) {
+export function labelAt(p, c, rad = R_REPORTING, n = 2) {
   const dx = p.x - c.cx, dy = p.y - c.cy, len = Math.hypot(dx, dy);
-  if (len < 1) return { nx: p.x, ny: p.y - (rad + 11), tx: p.x, ty: p.y + rad + 19, anchor: "middle" };
+  const at = (x, y0, step, anchor) => ({ x, ys: Array.from({ length: n }, (_, i) => y0 + i * step), anchor });
+  if (len < 1) return centred(p, rad, n);
   const ux = dx / len, uy = dy / len;
   // Above or below the ring, lean the text away from the neighbour on the
   // inner side so two adjacent labels do not run into each other.
   const lean = ux > 0.15 ? { x: p.x - 14, anchor: "start" }
     : ux < -0.15 ? { x: p.x + 14, anchor: "end" } : { x: p.x, anchor: "middle" };
-  if (uy < -0.75) return { nx: lean.x, ny: p.y - (rad + 23), tx: lean.x, ty: p.y - (rad + 9), anchor: lean.anchor };
-  if (uy > 0.75) return { nx: lean.x, ny: p.y + rad + 19, tx: lean.x, ty: p.y + rad + 33, anchor: lean.anchor };
+  const out = p.stagger ? STACK : 0;
+  if (uy < -0.75) return { ...at(lean.x, p.y - (rad + 9) - 14 * (n - 1) - out, 14, lean.anchor), staggered: !!out };
+  if (uy > 0.75) return { ...at(lean.x, p.y + rad + 19 + out, 14, lean.anchor), staggered: !!out };
   const x = p.x + (ux > 0 ? rad + 9 : -(rad + 9));
-  return { nx: x, ny: p.y - 1, tx: x, ty: p.y + 13, anchor: ux > 0 ? "start" : "end" };
+  return at(x, p.y - 1 - 7 * (n - 2), 14, ux > 0 ? "start" : "end");
 }
+
+/** A lone router at the centre: name above, the other lines below. */
+function centred(p, rad, n) {
+  const ys = [p.y - (rad + 11)];
+  for (let i = 1; i < n; i++) ys.push(p.y + rad + 19 + (i - 1) * 14);
+  return { x: p.x, ys, anchor: "middle" };
+}
+
+/** A faint line from a node to its label, when the label was staggered one row
+ *  out and would otherwise float free of it. */
+function leader(p, L, rad) {
+  if (!L.staggered) return "";
+  const below = L.ys[0] > p.y;
+  const y2 = below ? L.ys[0] - 11 : L.ys[L.ys.length - 1] + 4;
+  return `<line x1="${p.x}" y1="${p.y + (below ? rad : -rad)}" x2="${L.x}" y2="${y2}"
+      stroke="var(--fg-faint)" stroke-width="0.8" opacity=".6"/>`;
+}
+
+/** One text line of a node label. */
+const line = (L, i, txt, fill, size, extra = "") => `<text x="${L.x}" y="${L.ys[i]}" fill="${fill}"
+      font-family="var(--font-mono)" font-size="${size}" ${extra} text-anchor="${L.anchor}">${esc(txt)}</text>`;
 
 const selRing = (p, rad) => `<circle cx="${p.x}" cy="${p.y}" r="${rad + 6}" fill="none"
       stroke="var(--accent-flare)" stroke-width="1.5" stroke-dasharray="3 3"/>`;
@@ -76,18 +147,17 @@ function silentNode(x, p, picked, selected, c) {
   const stroke = x.stale ? "var(--status-err-fg)"
     : picked ? "var(--accent-flare)" : "var(--fg-faint)";
   const from = (x.known_from || []).map(displayName).join(", ");
-  const L = labelAt(p, c, R_SILENT);
+  const lines = labelLines(x);
+  const L = labelAt(p, c, R_SILENT, Math.max(lines.length, 2));
   return `<g class="gnode gnode--silent" data-node="${esc(keyOf(x))}">
-    <title>${esc(x.zid)} — not reporting; listed in the routing map of ${esc(from)}</title>
+    <title>${esc(labelOf(x))} · ${esc(x.zid)} — not reporting; listed in the routing map of ${esc(from)}</title>
     ${selected ? selRing(p, R_SILENT) : ""}
     <circle cx="${p.x}" cy="${p.y}" r="${R_SILENT}" fill="var(--bg-card)"
       stroke="${stroke}" stroke-width="1.5" stroke-dasharray="3 3"/>
     <text x="${p.x}" y="${p.y + 4}" fill="${stroke}" font-family="var(--font-mono)"
       font-size="11" text-anchor="middle">?</text>
-    <text x="${L.nx}" y="${L.ny}" fill="var(--fg-secondary, var(--fg-primary))"
-      font-family="var(--font-mono)" font-size="10" text-anchor="${L.anchor}">${esc(labelOf(x))}</text>
-    ${x.stale ? `<text x="${L.tx}" y="${L.ty}" fill="${stroke}" font-family="var(--font-mono)"
-      font-size="9" letter-spacing="1" text-anchor="${L.anchor}">gone quiet</text>` : ""}
+    ${leader(p, L, R_SILENT)}
+    ${lines.map(([t, f, sz], i) => line(L, i, t, f, sz, i ? 'letter-spacing="0.5"' : "")).join("")}
   </g>`;
 }
 
@@ -101,11 +171,8 @@ function node(x, p, picked, selected, c) {
   const arc = Math.min(1, x.sessions_total / 60), circ = 2 * Math.PI * R_REPORTING;
   // The tag says where the router is and what part it plays, so two routers
   // with similar names are still told apart at a glance.
-  const role = roleOf(x);
-  const L = labelAt(p, c);
-  const tag = x.stale ? "gone quiet" : `${x.site} · ${role}`;
-  const tagCol = x.stale ? "var(--status-err-fg)"
-    : role === "gateway" ? "var(--c-amber-hi)" : "var(--fg-faint)";
+  const lines = labelLines(x);
+  const L = labelAt(p, c, R_REPORTING, lines.length);
 
   return `<g class="gnode" data-node="${esc(keyOf(x))}">
     ${selected ? selRing(p, R_REPORTING) : ""}
@@ -120,10 +187,9 @@ function node(x, p, picked, selected, c) {
       stroke="${stroke}" stroke-width="1.5"/>
     <text x="${p.x}" y="${p.y + 4}" fill="${stroke}" font-family="var(--font-mono)"
       font-size="12" text-anchor="middle">${x.sessions_total}</text>
-    <text x="${L.nx}" y="${L.ny}" fill="var(--fg-primary)" font-family="var(--font-mono)"
-      font-size="12" text-anchor="${L.anchor}">${esc(labelOf(x))}</text>
-    <text x="${L.tx}" y="${L.ty}" fill="${tagCol}" font-family="var(--font-mono)"
-      font-size="10" letter-spacing="1" text-anchor="${L.anchor}">${esc(tag)}</text>
+    <title>${esc(labelOf(x))} · ${esc(x.zid)}${x.owner || x.peer ? " · " + esc(orgLine(x)) : ""}</title>
+    ${leader(p, L, R_REPORTING)}
+    ${lines.map(([t, f, sz], i) => line(L, i, t, f, sz, i ? 'letter-spacing="0.5"' : "")).join("")}
   </g>`;
 }
 
@@ -151,11 +217,11 @@ export function renderGraph(d, picks = new Set(), selected = null) {
     return;
   }
 
-  const { pos, cx, cy, r, H } = layout(rs);
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const { pos, cx, cy, rx, ry, H, W: Wd } = layout(rs);
+  svg.setAttribute("viewBox", `0 0 ${Wd} ${H}`);
   let g = "";
-  for (const rr of [r + 66, r + 34]) {
-    g += `<circle cx="${cx}" cy="${cy}" r="${rr}" fill="none"
+  for (const d of [66, 34]) {
+    g += `<ellipse cx="${cx}" cy="${cy}" rx="${rx + d}" ry="${ry + d}" fill="none"
            stroke="var(--c-line)" stroke-width="1" opacity=".45"/>`;
   }
   for (const e of d.edges) {

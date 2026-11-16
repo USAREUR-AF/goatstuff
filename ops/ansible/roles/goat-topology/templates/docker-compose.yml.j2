@@ -53,6 +53,7 @@ services:
 {% if goat_topology_serve_site %}
       - --site={{ goat_topology_serve_site }}
 {% endif %}
+
 {% if goat_topology_zenoh_endpoint.startswith('tls/') %}
       - --cert=/certs/goat-topology-cert.pem
       - --key=/certs/goat-topology-key.pem
@@ -60,6 +61,17 @@ services:
 {% endif %}
     environment:
       RUST_LOG: "{{ goat_topology_rust_log }}"
+      # Who each router belongs to. Environment, not flags: an older image
+      # pinned on another goatnet ignores a variable it does not know, where it
+      # would refuse an unknown flag and stop serving.
+{% if goat_topology_peer_directory_mounted | default(false) | bool %}
+      TOPOLOGY_PEER_DIRECTORY: /identity/peer-directory.json
+{% endif %}
+{% if goat_topology_roster_mounted | default(false) | bool %}
+      TOPOLOGY_ROSTER: /identity/roster.json
+{% endif %}
+      TOPOLOGY_GOATNET: "{{ goat_topology_goatnet }}"
+      TOPOLOGY_HIDE_INDIVIDUAL: "{{ 'false' if goat_topology_show_individual | bool else 'true' }}"
     networks:
       # `zenoh` — reaches the router by container name to subscribe.
       - zenoh
@@ -73,10 +85,20 @@ services:
     ports:
       # Host-side loopback map, for on-host probes and the isitup fallback.
       - "127.0.0.1:{{ goat_topology_container_port }}:8080"
-{% if goat_topology_zenoh_endpoint.startswith('tls/') %}
+{% if goat_topology_zenoh_endpoint.startswith('tls/') or goat_topology_peer_directory_mounted | default(false) | bool or goat_topology_roster_mounted | default(false) | bool %}
     volumes:
+{% if goat_topology_zenoh_endpoint.startswith('tls/') %}
       - "{{ goat_topology_cert_dir }}:/certs:ro"
       - "{{ goat_topology_ca_root_src }}:/ca/ca-root.pem:ro"
+{% endif %}
+{% if goat_topology_peer_directory_mounted | default(false) | bool %}
+      # Read-only. Both identity files are written on this host by other roles;
+      # this container reads them when they change and writes nothing.
+      - "{{ goat_topology_peer_directory_path }}:/identity/peer-directory.json:ro"
+{% endif %}
+{% if goat_topology_roster_mounted | default(false) | bool %}
+      - "{{ goat_topology_roster_path }}:/identity/roster.json:ro"
+{% endif %}
 {% endif %}
     healthcheck:
       # Liveness only — deliberately not a fabric probe (ADR 1123).

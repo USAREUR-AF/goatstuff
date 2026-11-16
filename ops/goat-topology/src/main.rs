@@ -15,6 +15,7 @@
 
 mod adminspace;
 mod assets;
+mod directory;
 mod findings;
 mod gwconfig;
 mod serve;
@@ -116,6 +117,27 @@ struct ServeArgs {
     site: Option<String>,
     #[arg(long, env = "TOPOLOGY_BIND", default_value = "0.0.0.0:8080")]
     bind: String,
+
+    /// A file on this host that maps a mesh address to a peer name, hostname
+    /// and groups: the relay-health peer-names file or the mesh-health peer
+    /// registry. Read when it changes; never fetched from the mesh controller.
+    /// Omit and routers that send no report keep their derived names.
+    #[arg(long, env = "TOPOLOGY_PEER_DIRECTORY")]
+    peer_directory: Option<std::path::PathBuf>,
+    /// The identity registry's public-safe roster (`roster.json`): the
+    /// organisation, organisation nation and individual for a peer whose name
+    /// leads to a roster handle.
+    #[arg(long, env = "TOPOLOGY_ROSTER")]
+    roster: Option<std::path::PathBuf>,
+    /// This goatnet's name, as it appears in person-device peer names
+    /// (`peer-<handle>-<goatnet>-<date>-<host>`), so it is not read as part of
+    /// the handle.
+    #[arg(long, env = "TOPOLOGY_GOATNET", default_value = "")]
+    goatnet: String,
+    /// Leave the individual (and their nationality) out of the payload. The
+    /// organisation and its nation are still shown.
+    #[arg(long, env = "TOPOLOGY_HIDE_INDIVIDUAL", default_value_t = false)]
+    hide_individual: bool,
 
     #[arg(long, env = "TOPOLOGY_CERT")]
     cert: Option<String>,
@@ -352,7 +374,9 @@ async fn main() -> Result<()> {
                 root_ca: a.root_ca.as_ref(),
             })
             .await?;
-            serve::run(session, a.site, &a.bind).await
+            let sources =
+                directory::Sources::new(a.peer_directory, a.roster, a.goatnet, !a.hide_individual);
+            serve::run(session, a.site, &a.bind, sources).await
         }
     }
 }

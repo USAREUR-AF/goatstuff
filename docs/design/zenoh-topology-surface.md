@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Built and deployed; not-reporting routers and publish fallback (§2.3, §2.4) built, measured on a local rig, not yet deployed |
+| Status | Built and deployed, including not-reporting routers and publish fallback (§2.3, §2.4). Router names and owners (§2.5) built, measured on a local rig, not deployed |
 | ADR | [1160](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1160-zenoh-topology-surface.md) |
 | Component | `ops/goat-topology` — one binary, two modes |
 | Evidence it rests on | M-111 (the fleet on `Auto`), M-112 (`Custom([...])` in a rig) |
@@ -259,6 +259,89 @@ publisher was refused by its own router and published through a core router;
 after appending the client subregion and restarting the router, it published
 through its own router on the first attempt and `T-013` cleared.
 
+### 2.5 Who operates a router that sends no report
+
+A router that sends no report is labelled with the name of the mesh peer its
+session comes from, and its detail says who operates it: the peer name,
+hostname and mesh groups, and the organisation, the organisation's nation and
+the individual that the identity registry records. Nothing new is asked of the
+fabric or of the mesh controller: `serve` joins two files that other roles
+already write on the management host, and it reads them only when they change.
+
+**The address.** A reporting router's snapshot already carries, for every
+session it holds, the address the session comes from (`SessionV1.link_dst`,
+for example `tls/100.127.0.21:50508`). On a goatnet that is the peer's mesh
+address. `serve` takes the address a fresh reporter sees; a stale reporter's
+view is used only when no fresh one has the session.
+
+**The peer directory** (`--peer-directory`, role variable
+`goat_topology_peer_directory_path`). A file mapping a mesh address to peer
+name, hostname and groups. Two existing writers produce one, and both shapes
+are read:
+
+| File on the management host | Written by | Every | Credential it uses (the surface needs none) |
+|---|---|---|---|
+| `<relay_health_www_dir>/ingest/peer-names.json` | relay-health `relay-peer-names` timer, on by default | 5 min | none: it reads the mesh controller's database on the host |
+| `/opt/mesh-health/state/peer-registry.json` | mesh-health snapshot timer, when `mesh_health_registry_enabled` | 20 s | the host's existing infra token, kept on the host |
+
+**The roster** (`--roster`, role variable `goat_topology_roster_path`). The
+identity registry's public-safe projection that the peerview role installs at
+`/opt/peerview/roster.json`. It carries handles, organisations and their
+nations, and each member's own nationality; it carries no names and no email
+addresses.
+
+**From peer to roster.** A peer name is evidence about ownership, not the
+record of it, and the page says which it used. The name is used only to find a
+roster handle, by the onboarding grammar the peerview surface already applies:
+
+| Peer name | Handle | Individual shown |
+|---|---|---|
+| `peer-<handle>[-<goatnet>]-<yyyy>-<mm>-<dd>-<host>` | everything before the date, minus the goatnet token (`--goatnet`) | the person, `<handle>` |
+| `machine-<handle>[-<host>]` | the longest roster handle the rest starts with | the custodian who enrolled the machine (roster `custody`) |
+| anything else | none | none; organisation `not recorded` |
+
+The handle is never decomposed further. Organisation, organisation nation and
+nationality are then read from the roster and never derived from the name, a
+group or an address. Every owner carries `attribution: peer-name`, and the
+detail says "the peer name led to roster handle …; a lead, not the recorded
+enrolment link". The recorded link (the portal's slot registry) needs the
+portal operator key and is not read.
+
+**Two nationality facts, kept apart.** An organisation's nation (roster
+`orgs[].nation`) and a person's nationality (roster `members[].nationality`)
+are different facts, and neither fills in for the other (ADR 1171). A machine
+has no nationality: for a machine the detail shows the organisation's nation
+and, beside the custodian, the custodian's own nationality, labelled as theirs.
+A fact the roster does not hold is shown as `not recorded`.
+
+| Where | Shows |
+|---|---|
+| Graph label, below the name | `<organisation> · <organisation nation>`, clipped in the organisation's name so the nation is always visible |
+| Routers table | an Organisation · nation column |
+| Detail, on click | mesh peer, hostname, groups, the address it connects from, organisation, organisation nation, the individual (or the custodian, for a machine), that person's nationality, and how the owner was found |
+
+The individual and their nationality are in the detail only. A goatnet that
+must not show them sets `goat_topology_show_individual: false`; the payload
+then carries neither.
+
+**What stays unnamed, and the page says why.** The detail's "Operated by" line
+gives the reason:
+
+| Case | Name shown |
+|---|---|
+| Known only through link state: no reporter holds a session with it | the display name derived from the ZID (§0.3); "known only through link state" |
+| Its address is not in the peer directory | derived name; "the address it connects from is not in the peer directory" |
+| No peer directory configured, or the file unreadable | derived name; the reason is said once above the routers table |
+
+Measured on the rig of §2.3, extended to twenty-two routers (twenty drawn),
+each on its own loopback address, with a synthetic peer-names file and roster:
+`rig.sh check` matched every not-reporting router's label to its directory
+entry and its organisation, organisation nation, individual and nationality to
+the roster (0 mismatches). It also showed the link-state-only router with its
+derived name and reason, and a router absent from the directory with its reason.
+The page loaded in headless Chromium had no label outside the picture and no
+two labels overlapping.
+
 ## 3. The envelope — `RouterTopologyV1`
 
 Published to `ops/fabric/topology/<site>/<node>`, protobuf, canonical schema at
@@ -464,11 +547,13 @@ an operator re-find the same node every time. Same input, same picture.
 A router is labeled so that two routers are told apart at a glance, and one
 click on it gathers what the page holds about it.
 
-**Labels.** Each router in the graph carries two lines, placed outside the
-ring: its node name, and `<site> · <role>`. The role is read from what the
+**Labels.** Each router in the graph carries its lines outside the ring: its
+node name and `<site> · <role>`, then, when the roster knows its owner,
+`<organisation> · <organisation nation>` (§2.5). A router that sends no report
+is labelled with its mesh peer name when the peer directory has it (§2.5). The role is read from what the
 router reports: a router that holds other routers in a south group, or that
 declares a custom gateway block, is a `gateway`; every other router is a
-`member`. A router that is known only by its ZID gets a display name derived
+`member`. A router that is known only by its ZID, with no peer name, gets a display name derived
 from the ZID, two words and the first six characters of the ZID, for example
 `coral-pier (e1e1e1)` for the ZID `e1e1e1…`. The derivation is a hash of the ZID and nothing else,
 so the name is the same on every load and for every viewer. It is display
@@ -480,13 +565,21 @@ table, opens one panel below the graph. Selecting it again closes the panel.
 | Part | Content | Read from |
 |---|---|---|
 | Identity and state | site, node, ZID, Zenoh version, declared mode, time since the last report, connections held, route entries beside the predicted count, routing groups | the router's row in `routers` |
+| Operated by | mesh peer, hostname, groups, address, organisation, organisation nation, individual and their nationality, or why none is known (§2.5) | the row's `peer`, `owner`, `address`, `name_note` |
 | Connected to | every router it has a link with, whether the link is routed or terminated, and which end sits below the other; each entry selects that router | `edges` |
 | Findings that name this router | severity, id and headline | `findings`, by subject |
 | Changes it made | time and change | `changes`, by node |
 
 A neighbor that has sent no report is listed with the words `not reporting`,
-and selecting it shows its ZID, the reporting routers whose routing map lists
-it (the payload's `known_from`) and its links.
+and selecting it shows its ZID, its derived display name, who operates it
+(§2.5), the reporting routers whose routing map lists it (the payload's
+`known_from`) and its links.
+
+Past eight routers the ring becomes an ellipse half again as wide as it is
+tall, every other label near its top and bottom sits one row further out with a
+leader line to its node, and a label line is clipped at thirty characters (the
+full text is in the tooltip, the table and the detail). The picture widens to
+fit the longest label rather than letting it run off the edge.
 
 The panel is a second reading of the payload the page already holds. It makes
 no request, so a drill-down costs the fabric nothing
@@ -573,7 +666,7 @@ exists.
 | Piece | Where |
 |---|---|
 | Image | `ghcr.io/<org>/goat-topology`, built by `.github/workflows/goat-topology-image.yml` **from the repo-root context** (the design-system `include_str!` needs it), digest-pinned in `ops/pins/fleet-pins.yaml` |
-| Role | `roles/goat-topology`, one role with two modes; `goat_topology_modes` per group_vars. **Publish runs on every host whose router serves the adminspace REST plugin** — core, standby and pod routers alike; a router host without it shows as not reporting (§2.3). A peering edge (`goat-zenoh-edge`) loads no REST plugin, by design: its in-process session presents no certificate and matches no ACL subject. Edges are therefore always drawn not reporting, from the core router's map. `goat_topology_publish_fallback_endpoints` for a router that refuses clients (§2.4) |
+| Role | `roles/goat-topology`, one role with two modes; `goat_topology_modes` per group_vars. **Publish runs on every host whose router serves the adminspace REST plugin** — core, standby and pod routers alike; a router host without it shows as not reporting (§2.3). A peering edge (`goat-zenoh-edge`) loads no REST plugin, by design: its in-process session presents no certificate and matches no ACL subject. Edges are therefore always drawn not reporting, from the core router's map. `goat_topology_publish_fallback_endpoints` for a router that refuses clients (§2.4). Serve mode: `goat_topology_peer_directory_path`, `goat_topology_roster_path`, `goat_topology_goatnet`, `goat_topology_show_individual` (§2.5), mounted read-only and only when the file exists, passed as environment so an older pinned image ignores them |
 | Playbook | `ops/ansible/topology-deploy.yml -e target=<group>` |
 | Zenoh ACL | rule `infra-w-topology` + subject `infra-topology` in `roles/goat-zenoh/templates/config.json5.j2` |
 | Certificate | a `goat-topology` row in the site cert manifest, minted by `ops/scripts/mint-site-certs.sh` |

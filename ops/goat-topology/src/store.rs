@@ -175,6 +175,9 @@ pub struct Store {
     /// Which routers were stale at the last rebuild. The refresh tick rebuilds
     /// ONLY when this set changes — see [`Store::refresh`].
     stale_set: std::collections::BTreeSet<String>,
+    /// Who each router belongs to, from files on this host (see
+    /// [`crate::directory`]). Replaced whole when a file changes.
+    directory: crate::directory::Directory,
 }
 
 impl Store {
@@ -193,6 +196,13 @@ impl Store {
     }
     pub fn changes(&self) -> &[Change] {
         &self.changes
+    }
+    pub fn directory(&self) -> &crate::directory::Directory {
+        &self.directory
+    }
+    /// Install a reloaded directory. The caller rebuilds the projection.
+    pub fn set_directory(&mut self, d: crate::directory::Directory) {
+        self.directory = d;
     }
     pub fn len(&self) -> usize {
         self.routers.len()

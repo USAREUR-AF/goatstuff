@@ -4,7 +4,7 @@
 // it and the changes it made. Selecting a router opens this; nothing here
 // fetches — it is a second reading of the payload the page already has, so a
 // drill-down costs the fabric nothing (ADR 1123).
-import { $, esc, ageSecs, severityChip, displayName, roleOf } from "../lib.js";
+import { $, esc, ageSecs, severityChip, displayName, roleOf, labelOf, labelFor, NOT_RECORDED } from "../lib.js";
 
 let onSelect = () => {};
 let onCarve = () => {};
@@ -21,12 +21,41 @@ function neighbours(d, id, self) {
     const routed = e.region === "north";
     return {
       other,
+      label: labelFor(d, other),
       reporting: d.routers.some(r => key(r) === other && r.reporting !== false),
       kind: routed ? "routed" : "terminated",
       reads: routed ? "same routing group"
         : gateway ? "sits below this router" : "this router sits below it",
     };
   }).sort((a, b) => a.kind.localeCompare(b.kind) || a.other.localeCompare(b.other));
+}
+
+/** Who operates a router: the mesh peer it connects from and what the
+ *  identity registry records for that peer. A person's nationality and an
+ *  organisation's nation are two facts and are shown as two rows. */
+export function ownerFacts(x) {
+  const nr = `<span class="sub">${NOT_RECORDED}</span>`;
+  const v = s => (s ? esc(s) : nr);
+  const derived = `<dt>Display name</dt><dd>${esc(displayName(x.zid))} <span class="sub">derived from the ZID</span></dd>`;
+  if (!x.peer) {
+    return `${x.node ? "" : derived}
+      ${x.address ? `<dt>Connects from</dt><dd>${esc(x.address)}</dd>` : ""}
+      <dt>Operated by</dt><dd><span class="sub">not known — ${esc(x.name_note || "no reporting router sees its session")}</span></dd>`;
+  }
+  const p = x.peer, o = x.owner;
+  const who = !o ? `<dt>Organisation</dt><dd>${nr} <span class="sub">— the peer name leads to no roster handle</span></dd>`
+    : `<dt>Organisation</dt><dd>${v(o.org_display_name || o.org)}${o.org_display_name ? ` <span class="sub">${esc(o.org)}</span>` : ""}</dd>
+       <dt>Organisation nation</dt><dd>${v(o.org_nation)}</dd>
+       <dt>${o.kind === "machine" ? "Enrolled by" : "Individual"}</dt><dd>${v(o.individual)}</dd>
+       <dt>${o.kind === "machine" ? "Their nationality" : "Nationality"}</dt><dd>${o.individual ? v(o.individual_nationality) : nr}${
+         o.kind === "machine" ? ` <span class="sub">a machine has none; this is the person who enrolled it</span>` : ""}</dd>
+       <dt>Found by</dt><dd><span class="sub">the peer name led to roster handle ${esc(o.handle)}; a lead, not the recorded enrolment link</span></dd>`;
+  return `${x.node ? "" : derived}
+    <dt>Mesh peer</dt><dd>${esc(p.name)}</dd>
+    <dt>Hostname</dt><dd>${v(p.hostname)}</dd>
+    <dt>Groups</dt><dd>${p.groups && p.groups.length ? esc(p.groups.join(", ")) : `<span class="sub">none</span>`}</dd>
+    <dt>Connects from</dt><dd>${esc(x.address)}</dd>
+    ${who}`;
 }
 
 /** A finding names one router, a pair ("a ↔ b"), or the environment. */
@@ -47,16 +76,17 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
     // whose maps name it; an older server leaves it out of `routers` entirely.
     const ns = neighbours(d, selected, null);
     const from = (x?.known_from || []).map(displayName);
-    box.innerHTML = `<div class="d-head"><span class="d-name">${esc(displayName(selected))}</span>
+    box.innerHTML = `<div class="d-head"><span class="d-name">${esc(x ? labelOf(x) : displayName(selected))}</span>
         <span class="chip chip--muted">not reporting</span></div>
       <p class="d-plain">No report has arrived from this router. ${from.length
         ? `It is known only because the routing map of ${esc(from.join(", "))} lists it.`
         : `It is known only because ${ns.length} reporting router${ns.length === 1 ? "" : "s"} list${ns.length === 1 ? "s" : ""} a link to it.`}</p>
       <dl class="d-facts"><dt>ZID</dt><dd>${esc(selected)}</dd>
+        ${x ? ownerFacts(x) : ""}
         ${x?.stale ? `<dt>State</dt><dd style="color:var(--status-err-fg)">every router that lists it has gone quiet</dd>` : ""}</dl>
       ${linkList(ns)}`;
     wire(box);
-    $("#detail-note").textContent = displayName(selected);
+    $("#detail-note").textContent = x ? labelOf(x) : displayName(selected);
     return;
   }
 
@@ -94,6 +124,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
           <dt>Route entries</dt><dd${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${x.route_successor_count}${
             mism ? ` (predicted ${x.route_successor_expected})` : ""}</dd>
           <dt>Routing groups</dt><dd>${regions}</dd>
+          ${x.peer ? ownerFacts(x) : ""}
         </dl>${errs}
       </div>
       <div>
@@ -118,7 +149,7 @@ function linkList(ns) {
   if (!ns.length) return `<div class="sub">no router links reported</div>`;
   return ns.map(n => `<div class="d-row">
       <i class="${n.kind === "routed" ? "k-north" : "k-south"}"></i>
-      <a href="#detail" class="d-link" data-select="${esc(n.other)}">${esc(displayName(n.other))}</a>
+      <a href="#detail" class="d-link" data-select="${esc(n.other)}">${esc(n.label)}</a>
       <span class="sub">${esc(n.kind)} · ${esc(n.reads)}${n.reporting ? "" : " · not reporting"}</span>
     </div>`).join("");
 }

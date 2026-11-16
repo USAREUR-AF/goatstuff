@@ -131,8 +131,23 @@ async fn health(State(store): State<Shared>) -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "routers_known": n }))
 }
 
-pub async fn run(session: zenoh::Session, site: Option<String>, bind: &str) -> Result<()> {
+/// How often to look at the identity files' modification times. A local
+/// `stat`, never a fabric or controller call.
+const DIRECTORY_SECS: u64 = 30;
+
+pub async fn run(
+    session: zenoh::Session,
+    site: Option<String>,
+    bind: &str,
+    mut sources: crate::directory::Sources,
+) -> Result<()> {
     let store: Shared = Arc::new(RwLock::new(Store::new(now_ms())));
+    if let Some(d) = sources.reload_if_changed() {
+        for e in &d.errors {
+            tracing::warn!("{e}");
+        }
+        store.write().await.set_directory(d);
+    }
 
     let selector = match &site {
         Some(s) => format!("ops/fabric/topology/{s}/**"),
@@ -185,6 +200,28 @@ pub async fn run(session: zenoh::Session, site: Option<String>, bind: &str) -> R
             if st.refresh(now) {
                 let body = view::build(&st, now);
                 st.set_cached(body);
+            }
+        }
+    });
+
+    let names = store.clone();
+    #[allow(clippy::disallowed_methods)]
+    tokio::spawn(async move {
+        let mut t = tokio::time::interval(std::time::Duration::from_secs(DIRECTORY_SECS));
+        t.tick().await;
+        loop {
+            t.tick().await;
+            if let Some(d) = sources.reload_if_changed() {
+                for e in &d.errors {
+                    tracing::warn!("{e}");
+                }
+                let now = now_ms();
+                let mut st = names.write().await;
+                st.set_directory(d);
+                if st.len() > 0 {
+                    let body = view::build(&st, now);
+                    st.set_cached(body);
+                }
             }
         }
     });
