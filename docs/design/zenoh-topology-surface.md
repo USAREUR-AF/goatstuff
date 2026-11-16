@@ -695,6 +695,7 @@ because they are load-bearing here:
   reporting**, and its unknown numbers are blank, not zero. It is counted in the
   router total, and the total is split into reporting and not reporting.
 - Every rendered number carries its snapshot age.
+- **Built:** every absolute time on the page is UTC with the zone named (`11:25:27 UTC`, `2026-11-16 11:25:18 UTC`), so two operators in different time zones quote the same time and it matches the logs, which are UTC. A test fails on any browser-local time format in the page's JavaScript. **Measured** 2026-11-16 in a browser set to America/Los_Angeles: the page from main showed `3:25:58 AM`, this one `11:25:27 UTC`.
 - A finding states what was *observed*. Where a finding rests on a projection —
   only `T-009` does — it says so in the finding text, not in a footnote.
 

@@ -314,6 +314,21 @@ mod tests {
         }
     }
 
+    /// Every absolute time on the page is UTC with the zone named (lib.js
+    /// `utcTime`, `utcDateTime`). A browser-local time would differ between
+    /// two operators and from every log.
+    #[test]
+    fn the_page_shows_no_browser_local_time() {
+        for (path, body, ct) in FILES {
+            if *ct == JS {
+                assert!(
+                    !body.contains("toLocale"),
+                    "{path} formats a time in the browser's zone; use utcTime from lib.js"
+                );
+            }
+        }
+    }
+
     #[test]
     fn nothing_reaches_outside_the_mesh() {
         // A mesh-only admin surface must not attempt egress on page load — the
