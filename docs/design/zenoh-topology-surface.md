@@ -333,6 +333,17 @@ gives the reason:
 | Its address is not in the peer directory | derived name; "the address it connects from is not in the peer directory" |
 | No peer directory configured, or the file unreadable | derived name; the reason is said once above the routers table |
 
+**How old the two files are.** The payload carries when each file was last
+written (`directory.peers_modified_ms`, `directory.roster_modified_ms`), and the
+note above the routers table names a file that is old: a roster written seven
+or more days ago ("anyone enrolled since has no entry, so their routers show a
+name and no owner"), and a peer directory not rewritten for a day. A router
+whose name leads to no roster handle gives the roster's date in its detail.
+The roster is not on a timer: the peerview role copies the goatnet's own
+`docs/operators/<goatnet>/roster.json` from the assembled tree each time
+`peerview-deploy.yml` runs, so a host's roster is as old as its last peerview
+deploy.
+
 Measured on the rig of §2.3, extended to twenty-two routers (twenty drawn),
 each on its own loopback address, with a synthetic peer-names file and roster:
 `rig.sh check` matched every not-reporting router's label to its directory

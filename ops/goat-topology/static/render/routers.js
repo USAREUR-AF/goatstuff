@@ -56,20 +56,34 @@ export function renderRouters(d, now = Date.now()) {
       <td class="num"${x.stale ? ' style="color:var(--status-err-fg)"' : ""}>${age}s</td>
     </tr>`;
   }).join("") + "</tbody>";
-  $("#names-note").textContent = namesNote(d);
+  $("#names-note").textContent = namesNote(d, now);
   for (const tr of $("#routers").querySelectorAll("tr[data-node]")) {
     tr.onclick = () => onPick(tr.dataset.node);
   }
 }
 
+/** A roster older than this is called out: anyone enrolled since it was written
+ *  has no roster entry, so their routers show a name and no owner. */
+const ROSTER_OLD_DAYS = 7;
+/** The peer directory is rewritten every few minutes; a day without is news. */
+const PEERS_OLD_DAYS = 1;
+const days = (ms, now) => Math.floor((now - ms) / 86400000);
+
 /** Where names and owners come from, said once. Exported for a test. */
-export function namesNote(d) {
+export function namesNote(d, now = Date.now()) {
   const dir = d.directory || {};
   const parts = [];
   if (!dir.peers_configured) parts.push("No peer directory is configured, so routers that send no report keep names derived from their ZIDs.");
   else parts.push("Routers that send no report are named from the mesh peer their session comes from.");
   if (!dir.roster_configured) parts.push("No roster is configured, so organisation and nation are not shown.");
   else parts.push("Organisation, nation and the individual are read from the identity roster, found through the peer name.");
+  if (dir.roster_modified_ms && days(dir.roster_modified_ms, now) >= ROSTER_OLD_DAYS) {
+    parts.push(`The roster on this host was written ${days(dir.roster_modified_ms, now)} days ago `
+      + `(${new Date(dir.roster_modified_ms).toISOString().slice(0, 10)}); anyone enrolled since has no entry, so their routers show a name and no owner.`);
+  }
+  if (dir.peers_modified_ms && days(dir.peers_modified_ms, now) >= PEERS_OLD_DAYS) {
+    parts.push(`The peer directory was last written ${days(dir.peers_modified_ms, now)} days ago, so a peer added since is not named.`);
+  }
   for (const e of dir.errors || []) parts.push(e + ".");
   return parts.join(" ");
 }

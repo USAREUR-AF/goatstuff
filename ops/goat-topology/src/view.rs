@@ -85,6 +85,9 @@ pub struct DirectoryView<'a> {
     pub peers_configured: bool,
     pub roster_configured: bool,
     pub errors: &'a [String],
+    /// When the peer directory and the roster were last written (Unix ms).
+    pub peers_modified_ms: u64,
+    pub roster_modified_ms: u64,
 }
 
 /// A router-to-router link, deduplicated so A→B and B→A draw one line.
@@ -418,6 +421,8 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             peers_configured: dir.peers_configured,
             roster_configured: dir.roster_configured,
             errors: &dir.errors,
+            peers_modified_ms: dir.peers_modified_ms,
+            roster_modified_ms: dir.roster_modified_ms,
         },
     }
 }
