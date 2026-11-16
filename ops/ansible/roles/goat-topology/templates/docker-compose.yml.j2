@@ -36,6 +36,8 @@ services:
       TOPOLOGY_DECLARATIONS_TIMEOUT_SECS: "{{ goat_topology_declarations_timeout_secs }}"
       TOPOLOGY_DECLARATIONS_MAX_ENTRIES: "{{ goat_topology_declarations_max_entries }}"
       TOPOLOGY_DECLARATIONS_TOP_KEYS: "{{ goat_topology_declarations_top_keys }}"
+      # When to read the route table; see the role defaults.
+      TOPOLOGY_ROUTE_TABLE: "{{ goat_topology_route_table }}"
     # The adminspace binds to the HOST's loopback, so this half shares the host
     # network namespace to read it — and therefore has no docker DNS, which is
     # why it dials the router by mesh IP rather than container name.

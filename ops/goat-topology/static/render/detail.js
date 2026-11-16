@@ -121,7 +121,8 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
   }
 
   const role = roleOf(x);
-  const mism = x.route_successor_count !== x.route_successor_expected;
+  const unread = Boolean(x.route_table_note);
+  const mism = !unread && x.route_successor_count !== x.route_successor_expected;
   const ns = neighbours(d, selected, x);
   const fs = d.findings.filter(f => names(f, selected));
   const cs = d.changes.filter(c => c.node === selected);
@@ -151,8 +152,9 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
           <dt>Declared mode</dt><dd>${esc(x.gateway_mode)}</dd>
           <dt>Last report</dt><dd${x.stale ? ' style="color:var(--status-err-fg)"' : ""}>${ageSecs(x.received_ms, now)}s ago</dd>
           <dt>Applications</dt><dd>${x.sessions_total} connections held</dd>
-          <dt>Route entries</dt><dd${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${x.route_successor_count}${
-            mism ? ` (predicted ${x.route_successor_expected})` : ""}</dd>
+          <dt>Route entries</dt><dd${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${unread
+            ? `<span class="sub">${esc(x.route_table_note)}</span>`
+            : `${x.route_successor_count}${mism ? ` (predicted ${x.route_successor_expected})` : ""}`}</dd>
           <dt>Routing groups</dt><dd>${regions}</dd>
           ${x.peer ? ownerFacts(x, d, now) : ""}
           ${carriesFacts(x, now)}

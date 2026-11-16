@@ -61,6 +61,18 @@ struct InspectArgs {
     /// config parser be exercised off-host, against a captured file.
     #[arg(long, default_value_t = false)]
     config_only: bool,
+
+    /// When to read the route table: `settled` (default) reads it only when
+    /// the routing map holds still for `--route-table-settle-ms`; `always`
+    /// reads it every cycle; `off` never does. A route-table read that lands
+    /// just after a router joins or leaves can crash a zenoh 1.9.0 router
+    /// (zenoh#2831); see README.md, "Known issues".
+    #[arg(long, env = "TOPOLOGY_ROUTE_TABLE", value_enum, default_value_t = adminspace::RouteTable::Settled)]
+    route_table: adminspace::RouteTable,
+    /// How long the routing map must hold still before `settled` reads the
+    /// route table.
+    #[arg(long, env = "TOPOLOGY_ROUTE_TABLE_SETTLE_MS", default_value_t = 1000)]
+    route_table_settle_ms: u64,
 }
 
 #[derive(Parser, Debug)]
@@ -98,6 +110,18 @@ struct PublishArgs {
 
     #[arg(long, env = "TOPOLOGY_INTERVAL_SECS", default_value_t = 30)]
     interval_secs: u64,
+
+    /// When to read the route table: `settled` (default) reads it only when
+    /// the routing map holds still for `--route-table-settle-ms`; `always`
+    /// reads it every cycle; `off` never does. A route-table read that lands
+    /// just after a router joins or leaves can crash a zenoh 1.9.0 router
+    /// (zenoh#2831); see README.md, "Known issues".
+    #[arg(long, env = "TOPOLOGY_ROUTE_TABLE", value_enum, default_value_t = adminspace::RouteTable::Settled)]
+    route_table: adminspace::RouteTable,
+    /// How long the routing map must hold still before `settled` reads the
+    /// route table.
+    #[arg(long, env = "TOPOLOGY_ROUTE_TABLE_SETTLE_MS", default_value_t = 1000)]
+    route_table_settle_ms: u64,
 
     /// How often to read the subscriber and publisher tables for the
     /// declarations census. 0 turns the census off. Slower than the snapshot
@@ -253,11 +277,18 @@ async fn snapshot(a: &PublishArgs) -> RouterTopologyV1 {
         snap.observe_error = "adminspace not read (--config-only)".into();
         return snap;
     }
-    match adminspace::fetch_snapshot(&a.admin_addr, 10).await {
+    let policy = adminspace::RoutePolicy {
+        mode: a.route_table,
+        settle_ms: a.route_table_settle_ms,
+    };
+    match adminspace::fetch_snapshot(&a.admin_addr, 10, policy).await {
         Err(e) => snap.observe_error = format!("{e:#}"),
-        Ok(body) => match adminspace::parse(&body) {
+        Ok(read) => match adminspace::parse(&read.body) {
             Err(e) => snap.observe_error = format!("{e:#}"),
-            Ok(obs) => adminspace::apply(&mut snap, obs),
+            Ok(obs) => {
+                adminspace::apply(&mut snap, obs);
+                snap.route_table_note = read.route_table_note;
+            }
         },
     }
     snap
@@ -430,6 +461,8 @@ async fn main() -> Result<()> {
                 },
                 config_path: a.config_path,
                 interval_secs: 0,
+                route_table: a.route_table,
+                route_table_settle_ms: a.route_table_settle_ms,
                 declarations_interval_secs: 0,
                 declarations_timeout_secs: 10,
                 declarations_max_entries: 20000,

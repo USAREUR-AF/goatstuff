@@ -16,7 +16,7 @@
 //! makes the mistake latent rather than obvious. `local` is the alias for this
 //! router alone.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -38,12 +38,46 @@ struct AdminEntry {
 /// on a busy router those are hundreds of entries the snapshot does not use.
 /// The declaration tables are read on their own, slower cycle
 /// ([`crate::declarations`]).
-pub const SNAPSHOT_KEYS: [&str; 4] = [
-    "@/local/router",
-    "@/local/router/linkstate/*",
-    "@/local/router/route/successor/**",
-    "@/local/router/status/plugins/rest/version",
-];
+///
+/// The route table is read last, and only as [`RouteTable`] allows: see there
+/// for why.
+const ROUTER_KEY: &str = "@/local/router";
+const LINKSTATE_KEY: &str = "@/local/router/linkstate/*";
+const VERSION_KEY: &str = "@/local/router/status/plugins/rest/version";
+const ROUTE_TABLE_KEY: &str = "@/local/router/route/successor/**";
+
+/// When to read the route table (`route/successor/**`).
+///
+/// # Why this is a setting
+///
+/// In zenoh 1.9.0 (and 1.8.0 and 1.10.x), a `route/successor` query that
+/// arrives after a router joins or leaves, but before the routing trees are
+/// recomputed (100 ms later by default), indexes past the end of a routing
+/// tree and panics the router; a release build then aborts the whole
+/// `zenohd` process (eclipse-zenoh/zenoh#2831, open). A router fabric whose
+/// membership is changing is exactly when a publisher on every router reads
+/// it, so reading the table unconditionally can take a router down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum RouteTable {
+    /// Read it every cycle, whatever the routing map is doing. Use only with a
+    /// router build that has the fix for zenoh#2831.
+    Always,
+    /// Read the routing map twice, `--route-table-settle-ms` apart, and read
+    /// the route table only if the two agree. A router that joined or left
+    /// within that time skips the read for this cycle. This narrows the
+    /// window in which the read can land; it does not close it.
+    Settled,
+    /// Never read it. The page shows route entries as not read, and the
+    /// route-table finding (T-005) does not run.
+    Off,
+}
+
+/// How a snapshot read treats the route table.
+#[derive(Clone, Copy, Debug)]
+pub struct RoutePolicy {
+    pub mode: RouteTable,
+    pub settle_ms: u64,
+}
 
 /// The largest adminspace body read. A body past this is refused, not
 /// truncated: half a JSON array is not a smaller answer, it is no answer.
@@ -94,22 +128,89 @@ pub async fn get_body(addr: &str, key: &str, timeout_secs: u64) -> Result<Vec<u8
     Ok(body.to_vec())
 }
 
-/// Read every [`SNAPSHOT_KEYS`] entry within one shared time budget and
-/// concatenate the entries into one JSON array body.
-pub async fn fetch_snapshot(addr: &str, timeout_secs: u64) -> Result<Vec<u8>> {
+/// One snapshot body: every snapshot key the policy allows, read
+/// within one shared time budget and concatenated into one JSON array. The
+/// note is empty when the route table was read, otherwise says why not.
+pub struct SnapshotBody {
+    pub body: Vec<u8>,
+    pub route_table_note: String,
+}
+
+async fn get_entries(addr: &str, key: &str, timeout_secs: u64) -> Result<Vec<serde_json::Value>> {
+    let body = get_body(addr, key, timeout_secs).await?;
+    serde_json::from_slice(&body)
+        .with_context(|| format!("{key}: body is not a JSON array of entries"))
+}
+
+/// What a link-state read says, with node numbering taken out: per region, the
+/// set of member ZIDs and the set of links between them. Two reads that agree
+/// on this agree on the routing map, whatever order the DOT text lists it in.
+type MapShape = BTreeMap<String, (BTreeSet<String>, BTreeSet<(String, String)>, u32)>;
+
+fn map_shape(entries: &[serde_json::Value]) -> MapShape {
+    let mut out = MapShape::new();
+    for e in entries {
+        let key = e.get("key").and_then(|k| k.as_str()).unwrap_or_default();
+        let Some((_, region)) = key.split_once("/linkstate/") else {
+            continue;
+        };
+        let g = parse_dot(e.get("value").and_then(|v| v.as_str()).unwrap_or_default());
+        let links = g
+            .links
+            .into_iter()
+            .map(|l| if l.a <= l.b { (l.a, l.b) } else { (l.b, l.a) })
+            .collect();
+        out.insert(
+            region.to_string(),
+            (g.nodes.into_iter().collect(), links, g.edges),
+        );
+    }
+    out
+}
+
+pub async fn fetch_snapshot(
+    addr: &str,
+    timeout_secs: u64,
+    policy: RoutePolicy,
+) -> Result<SnapshotBody> {
     let all = async {
         let mut out: Vec<serde_json::Value> = Vec::new();
-        for key in SNAPSHOT_KEYS {
-            let body = get_body(addr, key, timeout_secs).await?;
-            let v: Vec<serde_json::Value> = serde_json::from_slice(&body)
-                .with_context(|| format!("{key}: body is not a JSON array of entries"))?;
-            out.extend(v);
+        out.extend(get_entries(addr, ROUTER_KEY, timeout_secs).await?);
+        let linkstate = get_entries(addr, LINKSTATE_KEY, timeout_secs).await?;
+        let first = map_shape(&linkstate);
+        out.extend(linkstate);
+        out.extend(get_entries(addr, VERSION_KEY, timeout_secs).await?);
+
+        let note = match policy.mode {
+            RouteTable::Off => "not read: the publisher runs with --route-table off".to_string(),
+            RouteTable::Always => String::new(),
+            RouteTable::Settled => {
+                tokio::time::sleep(std::time::Duration::from_millis(policy.settle_ms)).await;
+                let again = map_shape(&get_entries(addr, LINKSTATE_KEY, timeout_secs).await?);
+                if again == first {
+                    String::new()
+                } else {
+                    format!(
+                        "not read this cycle: the routing map changed within {} ms (a router \
+                         joined or left), and a route-table read at that moment can crash the \
+                         router (zenoh#2831); it is read again next cycle",
+                        policy.settle_ms
+                    )
+                }
+            }
+        };
+        if note.is_empty() {
+            out.extend(get_entries(addr, ROUTE_TABLE_KEY, timeout_secs).await?);
         }
-        Ok::<_, anyhow::Error>(serde_json::to_vec(&out)?)
+        Ok::<_, anyhow::Error>(SnapshotBody {
+            body: serde_json::to_vec(&out)?,
+            route_table_note: note,
+        })
     };
-    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), all)
+    let budget = timeout_secs.saturating_add(policy.settle_ms.div_ceil(1000));
+    tokio::time::timeout(std::time::Duration::from_secs(budget), all)
         .await
-        .map_err(|_| anyhow::anyhow!("adminspace read timed out after {timeout_secs}s"))?
+        .map_err(|_| anyhow::anyhow!("adminspace read timed out after {budget}s"))?
 }
 
 /// Split an HTTP/1.1 response into (status, body).
@@ -474,6 +575,25 @@ mod tests {
         let g = parse_dot("graph {\n    0 [ label = \"aa\" ]\n    0 -- 7 [ label = \"1\" ]\n}\n");
         assert_eq!(g.edges, 1);
         assert!(g.links.is_empty());
+    }
+
+    fn ls(region: &str, dot: &str) -> serde_json::Value {
+        serde_json::json!({"key": format!("@/aa/router/linkstate/{region}"), "value": dot})
+    }
+
+    #[test]
+    fn the_routing_map_compares_by_shape_not_by_numbering() {
+        // The same three routers and two links, numbered and ordered
+        // differently: the same map, so `settled` reads the route table.
+        let a = ls("north", "graph {\n 0 [ label = \"aa\" ]\n 1 [ label = \"bb\" ]\n 2 [ label = \"cc\" ]\n 1 -- 0 [ label = \"1\" ]\n 2 -- 1 [ label = \"1\" ]\n}\n");
+        let b = ls("north", "graph {\n 0 [ label = \"cc\" ]\n 1 [ label = \"aa\" ]\n 2 [ label = \"bb\" ]\n 0 -- 2 [ label = \"1\" ]\n 2 -- 1 [ label = \"1\" ]\n}\n");
+        assert_eq!(map_shape(std::slice::from_ref(&a)), map_shape(&[b]));
+        // A router joined: a different map, so the read is skipped.
+        let c = ls("north", "graph {\n 0 [ label = \"aa\" ]\n 1 [ label = \"bb\" ]\n 2 [ label = \"cc\" ]\n 3 [ label = \"dd\" ]\n 1 -- 0 [ label = \"1\" ]\n 2 -- 1 [ label = \"1\" ]\n 3 -- 0 [ label = \"1\" ]\n}\n");
+        assert_ne!(map_shape(std::slice::from_ref(&a)), map_shape(&[c]));
+        // A new region appearing is a change too.
+        let d = ls("south:0:router", "graph {\n 0 [ label = \"aa\" ]\n}\n");
+        assert_ne!(map_shape(std::slice::from_ref(&a)), map_shape(&[a, d]));
     }
 
     #[test]
