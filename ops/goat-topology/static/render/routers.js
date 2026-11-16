@@ -46,7 +46,8 @@ export function renderRouters(d, now = Date.now()) {
     const unread = Boolean(x.route_table_note);
     const mism = !unread && x.route_successor_count !== x.route_successor_expected;
     const errs = [x.observe_error, x.gateway_read_error].filter(Boolean)
-      .map(e => `<div class="sub" style="color:var(--status-err-fg)">${esc(e)}</div>`).join("");
+      .map(e => `<div class="sub" style="color:var(--status-err-fg)">${esc(e)}</div>`).join("")
+      + ((x.shape_notes || []).length ? `<div class="sub" style="color:var(--status-warn-fg)" title="${esc(x.shape_notes.join("\n"))}">${x.shape_notes.length} thing${x.shape_notes.length === 1 ? "" : "s"} not read; see detail</div>` : "");
     const age = ageSecs(x.received_ms, now);
 
     return `<tr class="enter rowlink" data-node="${esc(x.node || x.zid)}">

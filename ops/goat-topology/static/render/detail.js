@@ -131,7 +131,8 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
     + (r.link_state_e ? "" : ` <span class="dead">· carries no routes</span>`) + `</div>`).join("")
     || `<span class="sub">none reported</span>`;
   const errs = [x.observe_error, x.gateway_read_error].filter(Boolean)
-    .map(e => `<div class="sub" style="color:var(--status-err-fg)">${esc(e)}</div>`).join("");
+    .map(e => `<div class="sub" style="color:var(--status-err-fg)">${esc(e)}</div>`).join("")
+    + (x.shape_notes || []).map(n => `<div class="sub" style="color:var(--status-warn-fg)">not read: ${esc(n)}</div>`).join("");
 
   box.innerHTML = `
     <div class="d-head">

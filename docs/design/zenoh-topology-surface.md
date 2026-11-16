@@ -525,6 +525,7 @@ interval. Shape:
 | `declarations` | The declarations census, from its own slower cycle (§2.6). Absent from an older publisher or one with the census off. |
 | `next_hops[]` | Route-table entries per next-hop neighbour (§2.6). |
 | `route_table_note` | Empty when the route table was read this cycle; otherwise why not, and `route_successor_count` and `next_hops` are then unknown (§2.1a). Empty from an older publisher, which always read it. |
+| `shape_notes[]` | What the publisher expected in the adminspace and did not find: a zenoh version other than the tested 1.9.0, a router entry with no `sessions` list, no link-state graph, a graph that is not DOT, sessions with no region. Empty on the tested shape and from an older publisher. The page lists them in the router's detail and flags the row; what they name is shown as not read. **Measured** 2026-11-16 against stock `eclipse/zenoh:1.10.2`: everything parsed, and the only note was the version one. |
 | `client_admission` | `admitted` \| `refused` \| `unspecified`. From the declared `gateway` block: whether any Custom subregion can match a default client (§2.4). `unspecified` under `auto`, `unreadable`, or from an older publisher, and then no finding fires. |
 
 ### 3.1 Two sources, because neither one is enough
