@@ -190,6 +190,13 @@ async fn open_session(t: Tls<'_>) -> Result<zenoh::Session> {
     config
         .insert_json5("connect/endpoints", &format!("[\"{}\"]", t.endpoint))
         .map_err(|e| anyhow::anyhow!("config connect/endpoints: {e}"))?;
+    // One session to one named router is all either mode needs. Multicast
+    // scouting would also make this process listen on 224.0.0.224:7446 and
+    // answer scouts on the host's network (the publisher runs with the host's
+    // network on a router host), which is traffic and exposure for nothing.
+    config
+        .insert_json5("scouting/multicast/enabled", "false")
+        .map_err(|e| anyhow::anyhow!("config scouting/multicast/enabled: {e}"))?;
     if t.endpoint.starts_with("tls/") {
         let cert = t.cert.context("--cert required for a tls/ endpoint")?;
         let key = t.key.context("--key required for a tls/ endpoint")?;
