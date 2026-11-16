@@ -347,7 +347,9 @@ pub struct RouterTopologyV1 {
     /// was told them (`--self-address`). They let the surface look a reporting
     /// router's owner up directly, rather than only through another reporter's
     /// session with it. Empty from an older publisher.
-    #[prost(string, repeated, tag = "17")]
+    // Tag 19: 17 (route_table_note) and 18 (shape_notes) belong to other
+    // changes to this message.
+    #[prost(string, repeated, tag = "19")]
     pub self_addresses: Vec<String>,
 }
 
@@ -377,6 +379,21 @@ impl RouterTopologyV1 {
 
 #[cfg(test)]
 mod tests {
+    /// `self_addresses` is field 19 on the wire. Fields 17 and 18 belong to
+    /// other changes to this message (the route-table note and the shape
+    /// notes); a length-delimited field read under the wrong number decodes
+    /// silently as the wrong thing, so the number is pinned here.
+    #[test]
+    fn self_addresses_is_field_19() {
+        let snap = RouterTopologyV1 {
+            self_addresses: vec!["192.0.2.7".into()],
+            ..Default::default()
+        };
+        let b = snap.encode_to_vec();
+        // key = (19 << 3) | 2 = 154, varint 0x9a 0x01; then the length.
+        assert_eq!(&b[..3], &[0x9a, 0x01, 9], "{b:?}");
+    }
+
     use super::*;
 
     fn region(name: &str, v: u32, e: u32) -> RegionV1 {

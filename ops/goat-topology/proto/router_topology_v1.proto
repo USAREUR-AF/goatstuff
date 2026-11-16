@@ -198,5 +198,6 @@ message RouterTopologyV1 {
   // told them (--self-address). The surface looks a reporting router's owner up
   // by these, so a router no other reporter holds a session with still has an
   // owner. Empty from an older publisher.
-  repeated string self_addresses = 17;
+  // 17 (route_table_note) and 18 (shape_notes) are taken by other changes.
+  repeated string self_addresses = 19;
 }

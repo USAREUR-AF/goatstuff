@@ -228,13 +228,15 @@ fn owner_state(
             return graded("recorded", with_malformed(stale.unwrap_or_default()), "");
         }
         "roster" | "none" => {}
-        other => return graded(
-            "not_read",
-            format!(
+        other => {
+            return graded(
+                "not_read",
+                format!(
                 "the peer directory names an owner source this surface does not know ({other:?})"
             ),
-            "unknown_source",
-        ),
+                "unknown_source",
+            )
+        }
     }
     if let Some(e) = p.exception.as_ref().filter(|e| e.applies()) {
         return graded("excepted", format!("owner exception: {}", e.reason), "");
