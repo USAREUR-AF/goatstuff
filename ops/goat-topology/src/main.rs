@@ -124,13 +124,20 @@ struct PublishArgs {
     #[arg(long, env = "TOPOLOGY_DECLARATIONS_TOP_KEYS", default_value_t = 5)]
     declarations_top_keys: usize,
 
-    /// Leaf X.509 cert (PEM) for mTLS. Required for a `tls/` endpoint.
+    /// Client certificate (PEM) for mutual TLS. With `--key`; leave both out
+    /// to authenticate only the router.
     #[arg(long, env = "TOPOLOGY_CERT")]
     cert: Option<String>,
     #[arg(long, env = "TOPOLOGY_KEY_FILE")]
     key: Option<String>,
+    /// CA certificate (PEM) the router's certificate is verified against.
+    /// Required for a tls/ or quic/ endpoint.
     #[arg(long, env = "TOPOLOGY_ROOT_CA")]
     root_ca: Option<String>,
+    /// With a tls/ or quic/ endpoint, also check the router's certificate
+    /// against the host name in the endpoint. Off by default.
+    #[arg(long, env = "TOPOLOGY_TLS_VERIFY_NAME", default_value_t = false)]
+    tls_verify_name: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -169,8 +176,14 @@ struct ServeArgs {
     cert: Option<String>,
     #[arg(long, env = "TOPOLOGY_KEY_FILE")]
     key: Option<String>,
+    /// CA certificate (PEM) the router's certificate is verified against.
+    /// Required for a tls/ or quic/ endpoint.
     #[arg(long, env = "TOPOLOGY_ROOT_CA")]
     root_ca: Option<String>,
+    /// With a tls/ or quic/ endpoint, also check the router's certificate
+    /// against the host name in the endpoint. Off by default.
+    #[arg(long, env = "TOPOLOGY_TLS_VERIFY_NAME", default_value_t = false)]
+    tls_verify_name: bool,
 }
 
 /// Shared zenoh client config. Mirrors goat-fabric-health so both meters fail
@@ -180,6 +193,48 @@ struct Tls<'a> {
     cert: Option<&'a String>,
     key: Option<&'a String>,
     root_ca: Option<&'a String>,
+    verify_name: bool,
+}
+
+/// The `transport/link/tls` block for one endpoint, or `None` when the
+/// endpoint is not TLS.
+///
+/// - `tls/` and `quic/` endpoints both use this block (QUIC carries TLS).
+/// - The router's certificate is always verified against `--root-ca`.
+/// - With `--cert` and `--key`, the client presents a certificate (mutual
+///   TLS); with neither, it does not. One without the other is refused, since
+///   it is never what was meant.
+/// - `--tls-verify-name` also checks the router's certificate against the
+///   host name in the endpoint. Off by default, which is what every
+///   deployment before the setting used (they connect by address).
+///
+/// Built as JSON, not by formatting strings, so a path with a quote or a
+/// backslash in it cannot break the config.
+fn link_tls(t: &Tls<'_>) -> Result<Option<serde_json::Value>> {
+    if !(t.endpoint.starts_with("tls/") || t.endpoint.starts_with("quic/")) {
+        return Ok(None);
+    }
+    let root_ca = t.root_ca.context(
+        "--root-ca is required for a tls/ or quic/ endpoint: the router's certificate is \
+         verified against it",
+    )?;
+    let mut block = serde_json::json!({
+        "root_ca_certificate": root_ca,
+        "verify_name_on_connect": t.verify_name,
+    });
+    match (t.cert, t.key) {
+        (Some(cert), Some(key)) => {
+            block["connect_certificate"] = cert.as_str().into();
+            block["connect_private_key"] = key.as_str().into();
+            block["enable_mtls"] = true.into();
+        }
+        (None, None) => block["enable_mtls"] = false.into(),
+        _ => anyhow::bail!(
+            "--cert and --key go together: give both for mutual TLS, or neither to \
+             authenticate only the router"
+        ),
+    }
+    Ok(Some(block))
 }
 
 async fn open_session(t: Tls<'_>) -> Result<zenoh::Session> {
@@ -188,19 +243,14 @@ async fn open_session(t: Tls<'_>) -> Result<zenoh::Session> {
         .insert_json5("mode", "\"client\"")
         .map_err(|e| anyhow::anyhow!("config mode: {e}"))?;
     config
-        .insert_json5("connect/endpoints", &format!("[\"{}\"]", t.endpoint))
+        .insert_json5(
+            "connect/endpoints",
+            &serde_json::to_string(&[t.endpoint]).expect("a string list serializes"),
+        )
         .map_err(|e| anyhow::anyhow!("config connect/endpoints: {e}"))?;
-    if t.endpoint.starts_with("tls/") {
-        let cert = t.cert.context("--cert required for a tls/ endpoint")?;
-        let key = t.key.context("--key required for a tls/ endpoint")?;
-        let root_ca = t
-            .root_ca
-            .context("--root-ca required for a tls/ endpoint")?;
-        let block = format!(
-            r#"{{ "root_ca_certificate": "{root_ca}", "connect_certificate": "{cert}", "connect_private_key": "{key}", "enable_mtls": true, "verify_name_on_connect": false }}"#
-        );
+    if let Some(block) = link_tls(&t)? {
         config
-            .insert_json5("transport/link/tls", &block)
+            .insert_json5("transport/link/tls", &block.to_string())
             .map_err(|e| anyhow::anyhow!("config transport/link/tls: {e}"))?;
     }
     zenoh::open(config)
@@ -331,6 +381,7 @@ async fn open_first(a: &PublishArgs) -> Result<(zenoh::Session, String)> {
             cert: a.cert.as_ref(),
             key: a.key.as_ref(),
             root_ca: a.root_ca.as_ref(),
+            verify_name: a.tls_verify_name,
         })
         .await
         {
@@ -437,6 +488,7 @@ async fn main() -> Result<()> {
                 cert: None,
                 key: None,
                 root_ca: None,
+                tls_verify_name: false,
             })
             .await;
             println!("{}", serde_json::to_string_pretty(&snap)?);
@@ -452,11 +504,95 @@ async fn main() -> Result<()> {
                 cert: a.cert.as_ref(),
                 key: a.key.as_ref(),
                 root_ca: a.root_ca.as_ref(),
+                verify_name: a.tls_verify_name,
             })
             .await?;
             let sources =
                 directory::Sources::new(a.peer_directory, a.roster, a.goatnet, !a.hide_individual);
             serve::run(session, a.site, &a.bind, sources).await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t<'a>(
+        endpoint: &'a str,
+        cert: Option<&'a String>,
+        key: Option<&'a String>,
+        root_ca: Option<&'a String>,
+    ) -> Tls<'a> {
+        Tls {
+            endpoint,
+            cert,
+            key,
+            root_ca,
+            verify_name: false,
+        }
+    }
+
+    #[test]
+    fn plain_tcp_has_no_tls_block() {
+        assert!(link_tls(&t("tcp/192.0.2.1:7447", None, None, None))
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn mutual_tls_is_what_every_deployment_had() {
+        let (c, k, ca) = (
+            "c.pem".to_string(),
+            "k.pem".to_string(),
+            "ca.pem".to_string(),
+        );
+        let b = link_tls(&t("tls/192.0.2.1:7447", Some(&c), Some(&k), Some(&ca)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(b["enable_mtls"], true);
+        assert_eq!(b["connect_certificate"], "c.pem");
+        assert_eq!(b["connect_private_key"], "k.pem");
+        assert_eq!(b["root_ca_certificate"], "ca.pem");
+        assert_eq!(b["verify_name_on_connect"], false);
+    }
+
+    #[test]
+    fn server_only_tls_and_quic_need_only_the_ca() {
+        let ca = "ca.pem".to_string();
+        for ep in [
+            "tls/router.example.org:7447",
+            "quic/router.example.org:7447",
+        ] {
+            let b = link_tls(&t(ep, None, None, Some(&ca))).unwrap().unwrap();
+            assert_eq!(b["enable_mtls"], false, "{ep}");
+            assert!(b.get("connect_certificate").is_none(), "{ep}");
+        }
+    }
+
+    #[test]
+    fn half_a_client_identity_or_no_ca_is_refused() {
+        let (c, ca) = ("c.pem".to_string(), "ca.pem".to_string());
+        let e = link_tls(&t("tls/x:7447", Some(&c), None, Some(&ca)))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("go together"), "{e}");
+        let e = link_tls(&t("tls/x:7447", None, None, None))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("--root-ca"), "{e}");
+    }
+
+    #[test]
+    fn a_path_with_a_quote_cannot_break_the_config() {
+        let ca = r#"/etc/zenoh/ca "a\b".pem"#.to_string();
+        let b = link_tls(&t("tls/x:7447", None, None, Some(&ca)))
+            .unwrap()
+            .unwrap();
+        let mut config = zenoh::Config::default();
+        config
+            .insert_json5("transport/link/tls", &b.to_string())
+            .expect("the block parses whatever the path holds");
+        assert_eq!(b["root_ca_certificate"], ca.as_str());
     }
 }
