@@ -343,6 +343,12 @@ pub struct RouterTopologyV1 {
     /// Route-table entries per next hop, from the successor table.
     #[prost(message, repeated, tag = "16")]
     pub next_hops: Vec<NextHopV1>,
+    /// Empty when the route table (`route/successor/**`) was read this cycle.
+    /// Otherwise why it was not, and `route_successor_count` and `next_hops`
+    /// are then unknown, not zero. Empty from a publisher older than this
+    /// field, which always read it.
+    #[prost(string, tag = "17")]
+    pub route_table_note: String,
 }
 
 impl RouterTopologyV1 {

@@ -428,7 +428,9 @@ fn gateway_config(r: &Known<'_>, out: &mut Vec<Finding>) {
 
 fn route_table(r: &Known<'_>, out: &mut Vec<Finding>) {
     let s = r.snap;
-    if s.regions.is_empty() || !s.observe_error.is_empty() {
+    // A route table that was not read this cycle is unknown, not empty: a
+    // count of zero against a non-zero prediction would be a false T-005.
+    if s.regions.is_empty() || !s.observe_error.is_empty() || !s.route_table_note.is_empty() {
         return;
     }
     let expected = s.expected_successors();
@@ -965,6 +967,23 @@ mod tests {
         assert!(
             f.iter().all(|x| x.severity >= Severity::Advisory),
             "a healthy goatnet should raise nothing above advisory"
+        );
+    }
+
+    #[test]
+    fn a_route_table_that_was_not_read_raises_no_route_finding() {
+        let mut s = router("a", "aaaa");
+        s.regions = vec![north(3, &["aaaa", "bbbb", "cccc"])];
+        s.route_successor_count = 0;
+        s.route_table_note = "not read: the publisher runs with --route-table off".into();
+        assert!(
+            !has(&evaluate(&[fresh(&s)]), "T-005"),
+            "an unread table is unknown, not zero"
+        );
+        s.route_table_note.clear();
+        assert!(
+            has(&evaluate(&[fresh(&s)]), "T-005"),
+            "the same zero, read, is flagged"
         );
     }
 

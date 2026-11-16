@@ -55,6 +55,9 @@ pub struct RouterView<'a> {
     pub sessions_total: usize,
     pub route_successor_count: u32,
     pub route_successor_expected: u32,
+    /// Empty when the route table was read; otherwise why not, and
+    /// `route_successor_count` is then unknown, not zero.
+    pub route_table_note: &'a str,
     /// `false` = known only from other routers' link-state; this router sends
     /// no snapshot of its own (a partner's router, or a host with no
     /// publisher). It is drawn so the picture is complete, and everything
@@ -424,6 +427,7 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             sessions_total: k.snap.sessions.len(),
             route_successor_count: k.snap.route_successor_count,
             route_successor_expected: k.snap.expected_successors(),
+            route_table_note: &k.snap.route_table_note,
             reporting: true,
             known_from: vec![],
             client_admission: k.snap.admission().label(),
@@ -470,6 +474,7 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             sessions_total: 0,
             route_successor_count: 0,
             route_successor_expected: 0,
+            route_table_note: "",
             reporting: false,
             known_from: by.into_iter().collect(),
             client_admission: "unspecified",
