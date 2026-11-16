@@ -4,7 +4,7 @@
 // it and the changes it made. Selecting a router opens this; nothing here
 // fetches — it is a second reading of the payload the page already has, so a
 // drill-down costs the fabric nothing (ADR 1123).
-import { $, esc, ageSecs, severityChip, displayName, roleOf, labelOf, labelFor, NOT_RECORDED } from "../lib.js";
+import { $, esc, ageSecs, utcTime, severityChip, displayName, roleOf, labelOf, labelFor, NOT_RECORDED } from "../lib.js";
 
 let onSelect = () => {};
 let onCarve = () => {};
@@ -172,7 +172,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
         <span class="f-id">${esc(f.id)}</span><span>${esc(f.headline)}</span></div>`).join("")
       : `<div class="sub">none</div>`}
     <h3 class="t-label">Changes it made</h3>
-    ${cs.length ? cs.map(c => `<div class="d-row"><time class="sub">${new Date(c.ts_unix_ms).toLocaleTimeString()}</time>
+    ${cs.length ? cs.map(c => `<div class="d-row"><time class="sub">${utcTime(c.ts_unix_ms)}</time>
         <span>${esc(c.what)}</span></div>`).join("")
       : `<div class="sub">none since this surface started watching</div>`}`;
   wire(box);
