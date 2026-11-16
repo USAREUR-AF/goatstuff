@@ -49,13 +49,15 @@ goat_topology_config_path: "/etc/{{ zenoh_stack | default('goat-zenoh') }}/confi
 goat_topology_interval_secs: 30
 
 # When the publisher reads the route table (`route/successor/**`): always,
-# settled or off. The binary's default is `settled`, because on a zenoh 1.9.0
-# router a route-table read that lands just after a router joins or leaves can
-# panic the router (eclipse-zenoh/zenoh#2831); `settled` reads it only when the
-# routing map has held still for a moment. This role keeps `always`, which is
-# what every goatnet ran before the setting existed. Passed as environment, so
-# an older pinned image ignores it.
-goat_topology_route_table: "always"
+# settled or off. On a zenoh 1.9.0 router, a route-table read that lands just
+# after a router joins or leaves can panic the router
+# (eclipse-zenoh/zenoh#2831), and the router images in use do not carry a fix.
+# `settled` reads the table only when the link-state graphs have held still for
+# --route-table-settle-ms (1 s); otherwise that cycle's report says "not read"
+# and the route-table finding (T-005) does not run for it. Set `always` only for
+# a router build with a fix for #2831. Passed as environment, so an older
+# pinned image ignores it and keeps reading every cycle.
+goat_topology_route_table: "settled"
 
 # The declarations census (what each router carries): the subscriber and
 # publisher tables, read on their own cycle. 300 s: these are the large part of

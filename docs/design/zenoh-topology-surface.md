@@ -204,8 +204,15 @@ default `settled`, with `--route-table-settle-ms` (default 1000).
 
 When the table is not read, `route_table_note` (wire field 17) says why, the
 page shows route entries as `not read` with that reason, and `T-005` does not
-run: an unread table is unknown, not zero. The goat role passes `always`, so a
-goatnet's behavior is unchanged.
+run: an unread table is unknown, not zero.
+
+**goat uses `settled` (operator decision, 2026-11-16).** The role default
+`goat_topology_route_table` is `settled`, because #2831 is not fixed in the
+router images goatnets run either. What a goatnet sees change: a router whose
+routing map changed within the settle second shows route entries as `not read`
+for that cycle and gets no `T-005` for it; every other cycle reads the table
+as before, after one extra link-state read and a one-second wait. An image
+older than this change ignores the variable and keeps reading every cycle.
 
 **Measured** 2026-11-16, the crate's compose example (three stock
 `eclipse/zenoh:1.9.0` routers, one publisher each, 10 s interval), 10 clean
