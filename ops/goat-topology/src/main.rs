@@ -151,7 +151,7 @@ struct ServeArgs {
     #[arg(long, env = "TOPOLOGY_PEER_DIRECTORY")]
     peer_directory: Option<std::path::PathBuf>,
     /// The identity registry's public-safe roster (`roster.json`): the
-    /// organisation, organisation nation and individual for a peer whose name
+    /// organization, organization nation and individual for a peer whose name
     /// leads to a roster handle.
     #[arg(long, env = "TOPOLOGY_ROSTER")]
     roster: Option<std::path::PathBuf>,
@@ -161,7 +161,7 @@ struct ServeArgs {
     #[arg(long, env = "TOPOLOGY_GOATNET", default_value = "")]
     goatnet: String,
     /// Leave the individual (and their nationality) out of the payload. The
-    /// organisation and its nation are still shown.
+    /// organization and its nation are still shown.
     #[arg(long, env = "TOPOLOGY_HIDE_INDIVIDUAL", default_value_t = false)]
     hide_individual: bool,
 

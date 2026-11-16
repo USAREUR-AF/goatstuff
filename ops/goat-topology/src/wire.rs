@@ -251,7 +251,7 @@ pub struct DeclarationsV1 {
 }
 
 /// How many entries of this router's route table name `zid` as the next hop:
-/// the destinations it reaches through that neighbour. From the successor
+/// the destinations it reaches through that neighbor. From the successor
 /// table already read on the snapshot cycle.
 #[derive(Clone, PartialEq, ::prost::Message, Serialize)]
 pub struct NextHopV1 {

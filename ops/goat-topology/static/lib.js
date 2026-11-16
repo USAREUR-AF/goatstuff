@@ -71,15 +71,30 @@ export function labelFor(d, id) {
 
 export const NOT_RECORDED = "not recorded";
 
-/** The organisation line on the graph and in the table: the organisation, and
- *  the ORGANISATION's nation. A person's nationality is a different fact and
+/** The organization line on the graph and in the table: the organization, and
+ *  the ORGANIZATION's nation. A person's nationality is a different fact and
  *  is shown only in the detail, beside the individual. */
 export function orgLine(x) {
-  const o = x && x.owner;
-  if (o) return `${o.org_display_name || o.org || "org " + NOT_RECORDED} · ${o.org_nation || "nation " + NOT_RECORDED}`;
-  if (x && x.peer) return "org " + NOT_RECORDED;
+  if (!x) return "";
+  const r = x.peer && x.peer.owner;
+  // The record first (ADR 1249). An owner the record does not hold, or could
+  // not be read, is said in words: never a blank, never a gray "not recorded".
+  if (x.owner_state === "recorded" && r) {
+    return `${r.org_short_tag || r.org_id || "org " + NOT_RECORDED} · ${r.org_nation || "nation " + NOT_RECORDED}`;
+  }
+  if (x.owner_state === "no_record") return "NO RECORDED OWNER";
+  if (x.owner_state === "excepted") return "owner exception";
+  if (x.owner_state === "not_read") return "owner not read";
+  const o = x.owner;
+  if (o) return `${o.org_display_name || o.org || "org " + NOT_RECORDED} · ${o.org_nation || "nation " + NOT_RECORDED} (lead)`;
+  if (x.peer) return "owner: a lead only";
   return "";
 }
+
+/** The color an owner state is drawn in. */
+export const ownerTone = x => (x && x.owner_state === "no_record") ? "var(--status-err-fg)"
+  : (x && x.owner_state === "not_read") ? "var(--status-warn-fg)"
+  : (x && x.owner_state === "excepted") ? "var(--status-info-fg)" : "var(--fg-faint)";
 
 /** What a router carries, in one table cell's words. A reporting router: its
  *  own census. One that sends no report: what a reporter in its routing group

@@ -81,7 +81,7 @@ goat_topology_serve_site: ""
 #     relay-health peer-names file (relay_health_www_dir + /ingest/peer-names.json)
 #     or the mesh-health peer registry (/opt/mesh-health/state/peer-registry.json).
 #   roster: the identity registry's public-safe projection, installed by the
-#     peerview role (/opt/peerview/roster.json): organisation, its nation, and
+#     peerview role (/opt/peerview/roster.json): organization, its nation, and
 #     the individual's own nationality.
 goat_topology_peer_directory_path: ""
 goat_topology_roster_path: ""
@@ -90,7 +90,7 @@ goat_topology_roster_path: ""
 # of the handle.
 goat_topology_goatnet: "{{ goatnet | default('') }}"
 # Show the individual (the person whose device it is, or who enrolled a
-# machine) and that person's nationality in the router detail. Organisation and
+# machine) and that person's nationality in the router detail. Organization and
 # its nation are shown either way.
 goat_topology_show_individual: true
 

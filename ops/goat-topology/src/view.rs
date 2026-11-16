@@ -21,7 +21,7 @@ use serde::Serialize;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::directory::{Owner, Peer};
+use crate::directory::{Owner, OwnerRead, Peer};
 use crate::findings::{self, Finding, Known, Silent};
 use crate::store::{Change, Store};
 use crate::wire::{is_router_region, DeclarationsV1, RegionV1};
@@ -77,13 +77,21 @@ pub struct RouterView<'a> {
     pub owner: Option<Owner>,
     /// Why there is no peer name, when there is none. Empty when there is.
     pub name_note: &'static str,
+    /// Where this router's owner stands (ADR 1249): `recorded` (the record
+    /// or a declaration names a responsible person and organization), `lead`
+    /// (the roster or the name only), `not_read` (the lookup failed; the
+    /// reason says why), `no_record` (the record holds no owner: a finding),
+    /// `excepted` (an owner exception the operator granted: shown with its
+    /// reason, never as recorded).
+    pub owner_state: &'static str,
+    pub owner_reason: String,
     /// This router's own declarations census. Reporting routers only; `None`
     /// from a publisher older than the census or run with it off.
     pub census: Option<&'a DeclarationsV1>,
     /// What a reporting router in the same routing group attributes to this
     /// one. `None` when no such reporter has a census.
     pub held: Option<HeldView<'a>>,
-    /// Route-table entries per neighbour, keyed as edges are (node name or
+    /// Route-table entries per neighbor, keyed as edges are (node name or
     /// ZID). Reporting routers only.
     pub next_hops: Vec<HopView<'a>>,
 }
@@ -105,6 +113,64 @@ pub struct HopView<'a> {
     pub routes: u32,
 }
 
+/// Grade one router's owner from what the peer directory carried.
+fn owner_state(
+    peer: &Option<Peer>,
+    lead: &Option<Owner>,
+    note: &str,
+    read: &Option<OwnerRead>,
+) -> (&'static str, String) {
+    let Some(p) = peer else {
+        return ("not_read", note.to_string());
+    };
+    // An owner exception the operator granted (ADR 1249 decision 7) is its own
+    // state: never recorded, never hidden. A stale one (the record now names
+    // an owner) leaves the recorded state below and is said in the reason.
+    if let Some(e) = p.exception.as_ref().filter(|e| e.state != "stale") {
+        return ("excepted", format!("owner exception: {}", e.reason));
+    }
+    if let Some(o) = &p.owner {
+        return match o.source.as_str() {
+            "record" | "declared" => (
+                "recorded",
+                if p.exception.is_some() {
+                    "an owner exception is still on file for this peer although the record now names an owner: remove it".to_string()
+                } else {
+                    String::new()
+                },
+            ),
+            "roster" => (
+                "lead",
+                if o.reason.is_empty() {
+                    "answered from the declared roster, not the record".to_string()
+                } else {
+                    o.reason.clone()
+                },
+            ),
+            "none" => ("no_record", o.reason.clone()),
+            _ => ("not_read", o.reason.clone()),
+        };
+    }
+    if let Some(r) = read.as_ref().filter(|r| r.state == "unread") {
+        return (
+            "not_read",
+            format!("the owner lookup failed on this host: {}", r.reason),
+        );
+    }
+    if lead.is_some() {
+        return (
+            "lead",
+            "matched in the roster file through the peer name; the peer directory carries no owner from the record"
+                .to_string(),
+        );
+    }
+    (
+        "not_read",
+        "the peer directory carries no owner from the record (its writer predates owner-from-record)"
+            .to_string(),
+    )
+}
+
 /// What the page needs to say about the two identity inputs, once.
 #[derive(Serialize)]
 pub struct DirectoryView<'a> {
@@ -114,6 +180,7 @@ pub struct DirectoryView<'a> {
     /// When the peer directory and the roster were last written (Unix ms).
     pub peers_modified_ms: u64,
     pub roster_modified_ms: u64,
+    pub owner_read: &'a Option<OwnerRead>,
 }
 
 /// A router-to-router link, deduplicated so A→B and B→A draw one line.
@@ -431,6 +498,8 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             peer: None,
             owner: None,
             name_note: "",
+            owner_state: "not_read",
+            owner_reason: String::new(),
             census: k.snap.declarations.as_ref(),
             held: held(&k.snap.zid),
             next_hops: k
@@ -447,13 +516,17 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
     // A reporting router is named by its own node name; the peer it connects
     // from, when another reporter sees it, still says who operates it.
     for r in routers.iter_mut() {
-        let (a, p, o, _) = who(r.zid);
+        let (a, p, o, note) = who(r.zid);
+        let (st, why) = owner_state(&p, &o, note, &dir.owner_read);
         r.address = a;
         r.peer = p;
         r.owner = o;
+        r.owner_state = st;
+        r.owner_reason = why;
     }
     routers.extend(silent.into_iter().map(|(z, (by, fresh))| {
         let (address, peer, owner, name_note) = who(z);
+        let (owner_state, owner_reason) = owner_state(&peer, &owner, name_note, &dir.owner_read);
         RouterView {
             site: "",
             node: "",
@@ -477,11 +550,59 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             peer,
             owner,
             name_note,
+            owner_state,
+            owner_reason,
             census: None,
             held: held(z),
             next_hops: vec![],
         }
     }));
+
+    // ADR 1249: a router in the fabric with no recorded owner is a finding,
+    // never a gray label; one whose owner could not be looked up is a finding
+    // of its own, so a failed lookup never reads as "no owner".
+    let label = |r: &RouterView<'a>| -> String {
+        if !r.node.is_empty() {
+            r.node.to_string()
+        } else if let Some(p) = &r.peer {
+            p.name.clone()
+        } else {
+            r.zid.chars().take(8).collect()
+        }
+    };
+    let unowned: Vec<(String, String)> = routers
+        .iter()
+        .filter(|r| r.owner_state == "no_record")
+        .map(|r| (label(r), r.owner_reason.clone()))
+        .collect();
+    let unread: Vec<(String, String)> = routers
+        .iter()
+        .filter(|r| r.owner_state == "not_read")
+        .map(|r| (label(r), r.owner_reason.clone()))
+        .collect();
+    let excepted: Vec<(String, String)> = routers
+        .iter()
+        .filter(|r| r.owner_state == "excepted")
+        .map(|r| (label(r), r.owner_reason.clone()))
+        .collect();
+    let mut added = false;
+    if let Some(f) = findings::routers_under_owner_exception(&excepted) {
+        findings.push(f);
+        added = true;
+    }
+    if let Some(f) = findings::routers_without_owner(&unowned) {
+        counts.critical += 1;
+        findings.push(f);
+        added = true;
+    }
+    if let Some(f) = findings::router_owner_not_read(&unread) {
+        counts.warning += 1;
+        findings.push(f);
+        added = true;
+    }
+    if added {
+        findings::sort(&mut findings);
+    }
 
     Snapshot {
         watching_since_ms: store.started_ms(),
@@ -496,6 +617,7 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             errors: &dir.errors,
             peers_modified_ms: dir.peers_modified_ms,
             roster_modified_ms: dir.roster_modified_ms,
+            owner_read: &dir.owner_read,
         },
     }
 }
@@ -858,6 +980,184 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("not read"));
+    }
+
+    /// ADR 1249: owners come from the record the host writer carried. A
+    /// router the record holds no owner for is a critical finding; one whose
+    /// owner could not be looked up is a warning of its own; a roster answer
+    /// is a lead, not the record.
+    #[test]
+    fn router_owners_come_from_the_record_and_unowned_routers_are_findings() {
+        use crate::directory::testing::{directory, ROSTER};
+        let relay = r#"{"owner_read": {"state": "read", "at": 1}, "names": {
+            "a": {"name": "machine-anvil-pod-7-rack2", "ip": "100.127.0.21", "owner": {
+                "source": "record", "via": "machine-custody", "matched_by": "peer-name",
+                "person": {"handle": "rivera-j", "identity_id": "ory-1"},
+                "org": {"id": "org-anvil", "short_tag": "anvil", "nation": "XAA", "state": "recorded"},
+                "nationality": {"value": "", "state": "not_stamped"}, "machine_unit": "1st Anvil Bn"}},
+            "b": {"name": "edge-gw-unlisted", "ip": "100.127.0.22", "owner": {
+                "source": "none", "reason": "no enrolled machine and no slot handle matches this peer name"}},
+            "c": {"name": "peer-okafor-n-zagros-2026-10-02-laptop", "ip": "100.127.0.23", "owner": {
+                "source": "roster", "note": "answered from the declared roster"}}
+        }}"#;
+        let mut st = Store::new(0);
+        st.set_directory(directory(relay, ROSTER, true));
+        let mut r = with_clients("hub", "aa00", 0);
+        r.regions = vec![region(
+            "north",
+            &["aa00", "bb11", "cc22", "dd33", "ee44"],
+            &[
+                ("aa00", "bb11"),
+                ("aa00", "cc22"),
+                ("aa00", "dd33"),
+                ("dd33", "ee44"),
+            ],
+        )];
+        let sess = |z: &str, ip: &str| {
+            let mut s = router_session(z, "north");
+            s.link_dst = vec![format!("tls/{ip}:50000")];
+            s
+        };
+        r.sessions = vec![
+            sess("bb11", "100.127.0.21"),
+            sess("cc22", "100.127.0.22"),
+            sess("dd33", "100.127.0.23"),
+        ];
+        ingest(&mut st, "s/hub".into(), r, 1_000);
+        let v = json(&st);
+        let by = |z: &str| {
+            v["routers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["zid"] == z)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(by("bb11")["owner_state"], "recorded");
+        assert_eq!(by("bb11")["peer"]["owner"]["org_nation"], "XAA");
+        assert_eq!(by("bb11")["peer"]["owner"]["person_handle"], "rivera-j");
+        assert_eq!(by("cc22")["owner_state"], "no_record");
+        assert_eq!(by("dd33")["owner_state"], "lead");
+        assert_eq!(
+            by("ee44")["owner_state"],
+            "not_read",
+            "link state only: no address to look up"
+        );
+        let f = |id: &str| {
+            v["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["id"] == id)
+                .cloned()
+        };
+        let t14 = f("T-014").expect("an unowned router is a finding");
+        assert_eq!(t14["severity"], "critical");
+        assert!(t14["what"].as_str().unwrap().contains("edge-gw-unlisted"));
+        let t15 = f("T-015").expect("an owner that could not be read is a finding of its own");
+        assert_eq!(t15["severity"], "warning");
+        assert!(v["counts"]["critical"].as_u64().unwrap() >= 1);
+        assert_eq!(v["directory"]["owner_read"]["state"], "read");
+    }
+
+    /// A writer the portal refused: every router's owner is "not read", never
+    /// "no owner", and no T-014 fires on a failed lookup.
+    #[test]
+    fn a_refused_owner_lookup_is_not_read_not_unowned() {
+        use crate::directory::testing::{directory, ROSTER};
+        let relay = r#"{"owner_read": {"state": "unread", "reason": "portal answered HTTP 401", "at": 1}, "names": {
+            "a": {"name": "edge-gw-unlisted", "ip": "100.127.0.22",
+                  "owner": {"source": "unread", "reason": "portal answered HTTP 401"}}}}"#;
+        let mut st = Store::new(0);
+        st.set_directory(directory(relay, ROSTER, true));
+        let mut r = with_clients("hub", "aa00", 0);
+        r.regions = vec![region("north", &["aa00", "cc22"], &[("aa00", "cc22")])];
+        let mut s1 = router_session("cc22", "north");
+        s1.link_dst = vec!["tls/100.127.0.22:50000".into()];
+        r.sessions = vec![s1];
+        ingest(&mut st, "s/hub".into(), r, 1_000);
+        let v = json(&st);
+        let c = v["routers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["zid"] == "cc22")
+            .unwrap();
+        assert_eq!(c["owner_state"], "not_read");
+        assert!(c["owner_reason"].as_str().unwrap().contains("401"));
+        assert!(v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["id"] != "T-014"));
+    }
+
+    /// ADR 1249 decision 7: an owner exception is its own state, shown with
+    /// its reason, never recorded and never T-014; a stale one (the record now
+    /// names an owner) stays recorded and says to remove the exception.
+    #[test]
+    fn an_owner_exception_is_shown_and_counted_never_hidden() {
+        use crate::directory::testing::{directory, ROSTER};
+        let relay = r#"{"owner_read": {"state": "read", "at": 1}, "names": {
+            "a": {"name": "edge-gw-unlisted", "ip": "100.127.0.22",
+                  "owner": {"source": "none", "reason": "no slot handle matches"},
+                  "owner_exception": {"reason": "present before the owner rule", "granted_by": "ops-lead",
+                                      "granted_on": "2026-01-05", "state": "active"}},
+            "b": {"name": "machine-anvil-pod-7", "ip": "100.127.0.21",
+                  "owner": {"source": "record", "org": {"id": "org-anvil", "nation": "XAA"}},
+                  "owner_exception": {"reason": "old", "granted_by": "ops-lead",
+                                      "granted_on": "2026-01-05", "state": "stale"}}}}"#;
+        let mut st = Store::new(0);
+        st.set_directory(directory(relay, ROSTER, true));
+        let mut r = with_clients("hub", "aa00", 0);
+        r.regions = vec![region(
+            "north",
+            &["aa00", "bb11", "cc22"],
+            &[("aa00", "bb11"), ("aa00", "cc22")],
+        )];
+        let sess = |z: &str, ip: &str| {
+            let mut s = router_session(z, "north");
+            s.link_dst = vec![format!("tls/{ip}:50000")];
+            s
+        };
+        r.sessions = vec![sess("bb11", "100.127.0.21"), sess("cc22", "100.127.0.22")];
+        ingest(&mut st, "s/hub".into(), r, 1_000);
+        let v = json(&st);
+        let by = |z: &str| {
+            v["routers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["zid"] == z)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(by("cc22")["owner_state"], "excepted");
+        assert!(by("cc22")["owner_reason"]
+            .as_str()
+            .unwrap()
+            .contains("present before the owner rule"));
+        assert_eq!(by("cc22")["peer"]["exception"]["granted_by"], "ops-lead");
+        assert_eq!(by("bb11")["owner_state"], "recorded");
+        assert!(by("bb11")["owner_reason"]
+            .as_str()
+            .unwrap()
+            .contains("remove it"));
+        let ids: Vec<&str> = v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["id"].as_str().unwrap())
+            .collect();
+        assert!(
+            ids.contains(&"T-016"),
+            "an exception is listed, not hidden: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"T-014"),
+            "an excepted router does not raise T-014: {ids:?}"
+        );
     }
 }
 

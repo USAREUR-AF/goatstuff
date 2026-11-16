@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Built and deployed, including not-reporting routers and publish fallback (§2.3, §2.4). Router names and owners (§2.5) built, measured on a local rig, not deployed. What each router carries (§2.6) built, measured on a local rig, not deployed |
+| Status | Built and deployed, including not-reporting routers, publish fallback, router names and owners and what each router carries (§2.3 to §2.6). Owners from the record, owner exceptions and findings T-014, T-015 and T-016 (§2.5a) built, measured on a local rig, not deployed |
 | ADR | [1160](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1160-zenoh-topology-surface.md) |
 | Component | `ops/goat-topology` — one binary, two modes |
 | Evidence it rests on | M-111 (the fleet on `Auto`), M-112 (`Custom([...])` in a rig) |
@@ -261,9 +261,9 @@ through its own router on the first attempt and `T-013` cleared.
 
 ### 2.5 Who operates a router that sends no report
 
-A router that sends no report is labelled with the name of the mesh peer its
+A router that sends no report is labeled with the name of the mesh peer its
 session comes from, and its detail says who operates it: the peer name,
-hostname and mesh groups, and the organisation, the organisation's nation and
+hostname and mesh groups, and the organization, the organization's nation and
 the individual that the identity registry records. Nothing new is asked of the
 fabric or of the mesh controller: `serve` joins two files that other roles
 already write on the management host, and it reads them only when they change.
@@ -286,7 +286,7 @@ are read:
 
 **The roster** (`--roster`, role variable `goat_topology_roster_path`). The
 identity registry's public-safe projection that the peerview role installs at
-`/opt/peerview/roster.json`. It carries handles, organisations and their
+`/opt/peerview/roster.json`. It carries handles, organizations and their
 nations, and each member's own nationality; it carries no names and no email
 addresses.
 
@@ -298,27 +298,27 @@ roster handle, by the onboarding grammar the peerview surface already applies:
 |---|---|---|
 | `peer-<handle>[-<goatnet>]-<yyyy>-<mm>-<dd>-<host>` | everything before the date, minus the goatnet token (`--goatnet`) | the person, `<handle>` |
 | `machine-<handle>[-<host>]` | the longest roster handle the rest starts with | the custodian who enrolled the machine (roster `custody`) |
-| anything else | none | none; organisation `not recorded` |
+| anything else | none | none; organization `not recorded` |
 
-The handle is never decomposed further. Organisation, organisation nation and
+The handle is never decomposed further. Organization, organization nation and
 nationality are then read from the roster and never derived from the name, a
 group or an address. Every owner carries `attribution: peer-name`, and the
 detail says "the peer name led to roster handle …; a lead, not the recorded
-enrolment link". The recorded link (the portal's slot registry) needs the
+enrollment link". The recorded link (the portal's slot registry) needs the
 portal operator key and is not read.
 
-**Two nationality facts, kept apart.** An organisation's nation (roster
+**Two nationality facts, kept apart.** An organization's nation (roster
 `orgs[].nation`) and a person's nationality (roster `members[].nationality`)
 are different facts, and neither fills in for the other (ADR 1171). A machine
-has no nationality: for a machine the detail shows the organisation's nation
-and, beside the custodian, the custodian's own nationality, labelled as theirs.
+has no nationality: for a machine the detail shows the organization's nation
+and, beside the custodian, the custodian's own nationality, labeled as theirs.
 A fact the roster does not hold is shown as `not recorded`.
 
 | Where | Shows |
 |---|---|
-| Graph label, below the name | `<organisation> · <organisation nation>`, clipped in the organisation's name so the nation is always visible |
-| Routers table | an Organisation · nation column |
-| Detail, on click | mesh peer, hostname, groups, the address it connects from, organisation, organisation nation, the individual (or the custodian, for a machine), that person's nationality, and how the owner was found |
+| Graph label, below the name | `<organization> · <organization nation>`, clipped in the organization's name so the nation is always visible |
+| Routers table | an Organization · nation column |
+| Detail, on click | mesh peer, hostname, groups, the address it connects from, organization, organization nation, the individual (or the custodian, for a machine), that person's nationality, and how the owner was found |
 
 The individual and their nationality are in the detail only. A goatnet that
 must not show them sets `goat_topology_show_individual: false`; the payload
@@ -347,11 +347,50 @@ deploy.
 Measured on the rig of §2.3, extended to twenty-two routers (twenty drawn),
 each on its own loopback address, with a synthetic peer-names file and roster:
 `rig.sh check` matched every not-reporting router's label to its directory
-entry and its organisation, organisation nation, individual and nationality to
+entry and its organization, organization nation, individual and nationality to
 the roster (0 mismatches). It also showed the link-state-only router with its
 derived name and reason, and a router absent from the directory with its reason.
 The page loaded in headless Chromium had no label outside the picture and no
 two labels overlapping.
+
+### 2.5a Owners come from the record, and an unowned router is a finding
+
+**The rule** (goatcore ADR 1249): no machine, and above all no router, is in
+the environment without a recorded responsible person and organization. The
+page shows a router's owner from the record. It shows a router the record
+holds no owner for as a critical finding, never as a gray label.
+
+**Where the owner comes from.** The relay-health writer fills
+`peer-names.json` with the portal resolver's `owner` block for every peer
+(goatcore `peer-identity-resolution.md`, "The owner comes from the record, not
+the roster"), and with the file-level `owner_read`. `serve` reads the block
+first. The roster join of §2.5 remains only as a labeled lead.
+
+| `owner_state` | When | Shown as |
+|---|---|---|
+| `recorded` | the block's `source` is `record` (machine custody or slot identity) or `declared` | `<organization> · <organization nation>` on the graph and in the table. The detail shows the custodian or responsible person, organization, organization nation, the person's own nationality with its state, a machine's recorded unit, and how the first hop matched (`peer-name` today) |
+| `lead` | `source: roster`, or no block and a roster match | `lead: <organization> · <nation>`; the detail says a lead, not the record |
+| `not_read` | `source: unread`, `owner_read.state: unread`, no address (link state only), not in the directory, or a writer older than the block | "owner not read" in the warning color, with the reason; finding **T-015** (warning) |
+| `no_record` | `source: none` | "NO RECORDED OWNER" in the critical color, with the reason; finding **T-014** (critical) |
+| `excepted` | the card carries an active `owner_exception` the operator granted (goatcore ADR 1249 decision 7) | "owner exception" in the info color; the detail shows the reason, who granted it, when, and the review date if the operator set one; finding **T-016** (info) lists every such router. Never shown as recorded, never hidden, and not counted in T-014 |
+
+A failed lookup is never shown as "no owner", and a roster answer never as
+the record. A stale exception (the record now names an owner) leaves the
+router `recorded`, and its reason says to remove the exception.
+
+Measured on the rig of §2.3. The synthetic peer-names file carries owner
+blocks and owner exceptions as the new writer writes them: 14 recorded (one of
+them with a stale exception), 2 roster leads, 1 with no record, 1 under an
+active exception, and 2 routers whose owner cannot be read. `rig.sh check`
+matched every router's `owner_state` and each recorded router's organization
+and its nation (0 mismatches). It also confirmed:
+
+- T-014 names exactly the router with no record and not the excepted one;
+- T-016 lists the excepted router;
+- the stale exception stays recorded with a note to remove it;
+- T-015 lists the not-read routers and no recorded one.
+
+The page loaded in headless Chromium with no label outside the picture.
 
 ### 2.6 What each router carries
 
@@ -367,7 +406,7 @@ nothing (§5).
 declared it, as `{clients:[], peers:[], routers:[]}`
 (`net/runtime/adminspace.rs`, `resources_data`). Measured on the rig
 (`rig-client` declaring known keys on seven routers) and matched against a
-live router's 539-entry table:
+live router's table:
 
 | List | Holds | Attributable to |
 |---|---|---|
@@ -397,10 +436,10 @@ report.
   `--declarations-max-entries` cap of 20 000 entries per table was hit, so
   counts are lower bounds) and `read_error`.
 
-**Route entries per neighbour.** `next_hops` counts, from the successor table
+**Route entries per neighbor.** `next_hops` counts, from the successor table
 the snapshot already reads, how many `src/<a>/dst/<b>` entries name each
-neighbour as the next hop. That is how many destinations this router reaches
-through each link. The detail lists it beside each neighbour.
+neighbor as the next hop. That is how many destinations this router reaches
+through each link. The detail lists it beside each neighbor.
 
 **The surface.** A reporting router shows its own census. A router that sends
 no report shows what the freshest readable census of a reporter in its routing
@@ -468,7 +507,7 @@ interval. Shape:
 | `route_successor_count` | Observed, for the Σ V(V−1) cross-check. |
 | `sessions[]` | Per session: peer ZID, `whatami`, assigned region, link endpoints. |
 | `declarations` | The declarations census, from its own slower cycle (§2.6). Absent from an older publisher or one with the census off. |
-| `next_hops[]` | Route-table entries per next-hop neighbour (§2.6). |
+| `next_hops[]` | Route-table entries per next-hop neighbor (§2.6). |
 | `client_admission` | `admitted` \| `refused` \| `unspecified`. From the declared `gateway` block: whether any Custom subregion can match a default client (§2.4). `unspecified` under `auto`, `unreadable`, or from an older publisher, and then no finding fires. |
 
 ### 3.1 Two sources, because neither one is enough
@@ -518,6 +557,9 @@ it is about — never "the fabric".
 | `T-011` unreadable-config | The declared config could not be read | warning | The mode is reported `unreadable`, never assumed `auto` — see §3.1. Give the publisher read access, or fix the path it was pointed at. |
 | `T-012` not-reporting | A router appears in a reporter's router regions and publishes no snapshot | info | One finding for all of them, naming the reporter that sees most. Deploy the publisher if the router is ours; nothing to do for a partner's. A ZID identifies nothing — match a router to a host by its session's source address. |
 | `T-013` clients-refused | Mode is `custom` and no subregion can match a client (`client_admission: refused`) | **critical** | Every default client of this router is refused. Append `{ filters: [ { modes: ["client"] } ] }` to the gateway list and restart; meanwhile give the publisher a fallback endpoint (§2.4). |
+| `T-014` router-without-owner | A router's owner block says the record holds no owner (`source: none`) | **critical** | A router nobody is recorded as answering for. Record its owner through enrollment or onboarding, or declare it if it is ours (ADR 1249). Nothing is removed automatically. |
+| `T-015` router-owner-not-read | A router's owner could not be looked up: refused or absent writer key, no address, not in the peer directory | warning | The page cannot say whether it is owned. Fix the lookup; T-014 cannot cover these routers until then. |
+| `T-016` router-under-owner-exception | A router's card carries an active owner exception | info | The operator excepted it from the owner rule for now, with a reason. Record its owner, then remove the stale exception. |
 | `T-010` declared-vs-running | Mode is `custom` **and** the declared subregion indices are not the running ones | **critical** | The file on disk is not what the router is doing — almost always a config change without a restart. Merged is not deployed. Restart the router, or find out who edited the file out of band. Only decidable under `custom`; see §4.2. |
 
 ### 4.1 The successor model needed a correction that only live data could give
@@ -661,8 +703,8 @@ click on it gathers what the page holds about it.
 
 **Labels.** Each router in the graph carries its lines outside the ring: its
 node name and `<site> · <role>`, then, when the roster knows its owner,
-`<organisation> · <organisation nation>` (§2.5). A router that sends no report
-is labelled with its mesh peer name when the peer directory has it (§2.5). The role is read from what the
+`<organization> · <organization nation>` (§2.5). A router that sends no report
+is labeled with its mesh peer name when the peer directory has it (§2.5). The role is read from what the
 router reports: a router that holds other routers in a south group, or that
 declares a custom gateway block, is a `gateway`; every other router is a
 `member`. A router that is known only by its ZID, with no peer name, gets a display name derived
@@ -677,7 +719,7 @@ table, opens one panel below the graph. Selecting it again closes the panel.
 | Part | Content | Read from |
 |---|---|---|
 | Identity and state | site, node, ZID, Zenoh version, declared mode, time since the last report, connections held, route entries beside the predicted count, routing groups | the router's row in `routers` |
-| Operated by | mesh peer, hostname, groups, address, organisation, organisation nation, individual and their nationality, or why none is known (§2.5) | the row's `peer`, `owner`, `address`, `name_note` |
+| Operated by | mesh peer, hostname, groups, address, organization, organization nation, individual and their nationality, or why none is known (§2.5) | the row's `peer`, `owner`, `address`, `name_note` |
 | Connected to | every router it has a link with, whether the link is routed or terminated, and which end sits below the other; each entry selects that router | `edges` |
 | Findings that name this router | severity, id and headline | `findings`, by subject |
 | Changes it made | time and change | `changes`, by node |

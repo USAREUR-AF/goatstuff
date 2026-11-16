@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Who a router belongs to: the mesh peer it connects from, and the
-//! organisation, nation and individual the identity registry records for it.
+//! organization, nation and individual the identity registry records for it.
 //!
 //! # Two files, both already on the management host, no credential
 //!
@@ -22,12 +22,12 @@
 //! surface already uses: `peer-<handle>[-<goatnet>]-<yyyy>-<mm>-<dd>-<host>` for
 //! a person's device, and `machine-<handle>[-<host>]` for a machine, matched
 //! against the roster's handles, longest first. The handle is never decomposed
-//! further. Organisation, organisation nation and person nationality are then
+//! further. Organization, organization nation and person nationality are then
 //! READ from the roster, never derived from the name, a group or an address,
 //! and every owner carries `attribution: "peer-name"` so the page can say so.
 //!
-//! A person's nationality and an organisation's nation are two facts and are
-//! kept apart: an organisation's nation is never shown as a person's
+//! A person's nationality and an organization's nation are two facts and are
+//! kept apart: an organization's nation is never shown as a person's
 //! nationality, and a machine has no nationality. Absent means not recorded.
 
 use std::collections::BTreeMap;
@@ -44,6 +44,122 @@ pub struct Peer {
     pub name: String,
     pub hostname: String,
     pub groups: Vec<String>,
+    /// What the identity record says about this peer's owner, as the host
+    /// writer carried it from the portal resolver. `None` when the file
+    /// carries no owner block (a writer older than owner-from-record).
+    pub owner: Option<RecordOwner>,
+    /// An owner exception the operator granted for this peer (goatcore ADR
+    /// 1249 decision 7), as the host writer carried it. Shown, never hidden.
+    pub exception: Option<OwnerException>,
+}
+
+/// One owner exception: a decision the operator made about one peer.
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct OwnerException {
+    pub reason: String,
+    pub granted_by: String,
+    pub granted_on: String,
+    /// Set only by the operator; empty when not set.
+    pub review_by: String,
+    /// `active`, or `stale` (the record now names an owner: remove it).
+    pub state: String,
+}
+
+impl OwnerException {
+    fn from_json(v: &serde_json::Value) -> Option<Self> {
+        let g = |k: &str| {
+            v.get(k)
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let e = OwnerException {
+            reason: g("reason"),
+            granted_by: g("granted_by"),
+            granted_on: g("granted_on"),
+            review_by: g("review_by"),
+            state: g("state"),
+        };
+        (!e.reason.is_empty()).then_some(e)
+    }
+}
+
+/// The portal resolver's owner block for one peer, as `peer-names.json`
+/// carries it (goatcore `docs/design/peer-identity-resolution.md`, "The owner
+/// comes from the record, not the roster"). Only identifiers and states: the
+/// writer drops e-mail and display name.
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct RecordOwner {
+    /// `record`, `declared`, `roster`, `none` or `unread`.
+    pub source: String,
+    /// `machine-custody`, `slot-identity`, … (for `record`).
+    pub via: String,
+    /// What the first hop matched on (`peer-name` today).
+    pub matched_by: String,
+    pub reason: String,
+    pub person_handle: String,
+    pub identity_id: String,
+    pub org_id: String,
+    pub org_short_tag: String,
+    /// The ORGANIZATION's nation.
+    pub org_nation: String,
+    pub org_state: String,
+    /// The PERSON's own nationality, and its state (`recorded`, `not_stamped`).
+    pub nationality: String,
+    pub nationality_state: String,
+    /// A machine's recorded unit, beside its custodian's organization.
+    pub machine_unit: String,
+}
+
+impl RecordOwner {
+    fn from_json(v: &serde_json::Value) -> Option<Self> {
+        let o = v.as_object()?;
+        let s = |m: Option<&serde_json::Value>, k: &str| -> String {
+            m.and_then(|m| m.get(k))
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let top = Some(v);
+        let person = o.get("person");
+        let org = o.get("org");
+        let nat = o.get("nationality");
+        let source = s(top, "source");
+        if source.is_empty() {
+            return None;
+        }
+        Some(RecordOwner {
+            source,
+            via: s(top, "via"),
+            matched_by: s(top, "matched_by"),
+            reason: {
+                let r = s(top, "reason");
+                if r.is_empty() {
+                    s(top, "note")
+                } else {
+                    r
+                }
+            },
+            person_handle: s(person, "handle"),
+            identity_id: s(person, "identity_id"),
+            org_id: s(org, "id"),
+            org_short_tag: s(org, "short_tag"),
+            org_nation: s(org, "nation"),
+            org_state: s(org, "state"),
+            nationality: s(nat, "value"),
+            nationality_state: s(nat, "state"),
+            machine_unit: s(top, "machine_unit"),
+        })
+    }
+}
+
+/// Whether the host writer could ask the portal at all, from the file's
+/// `owner_read`. `None` when the file predates it.
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct OwnerRead {
+    pub state: String,
+    pub reason: String,
+    pub at: u64,
 }
 
 /// What the roster records for the peer, when its name leads to a handle.
@@ -56,14 +172,14 @@ pub struct Owner {
     pub handle: String,
     pub org: Option<String>,
     pub org_display_name: Option<String>,
-    /// The ORGANISATION's nation (roster `orgs[].nation`).
+    /// The ORGANIZATION's nation (roster `orgs[].nation`).
     pub org_nation: Option<String>,
     /// The individual: the person for a person's device, the custodian who
     /// enrolled it for a machine. `None` when the roster records none, or when
     /// the surface is run with the individual hidden.
     pub individual: Option<String>,
     /// That individual's OWN nationality (roster `members[].nationality`).
-    /// Never the organisation's nation.
+    /// Never the organization's nation.
     pub individual_nationality: Option<String>,
     /// How the owner was found. Always `peer-name` today: the name led to the
     /// handle. The recorded linkage (the portal's slot registry) needs the
@@ -74,6 +190,8 @@ pub struct Owner {
 #[derive(Debug, Deserialize)]
 struct RelayFile {
     names: BTreeMap<String, RelayCard>,
+    #[serde(default)]
+    owner_read: Option<serde_json::Value>,
 }
 #[derive(Debug, Deserialize)]
 struct RelayCard {
@@ -85,6 +203,10 @@ struct RelayCard {
     host: String,
     #[serde(default)]
     aff: String,
+    #[serde(default)]
+    owner: Option<serde_json::Value>,
+    #[serde(default)]
+    owner_exception: Option<serde_json::Value>,
 }
 #[derive(Debug, Deserialize)]
 struct RegistryPeer {
@@ -177,6 +299,9 @@ pub struct Directory {
     /// not change while nothing happens.
     pub peers_modified_ms: u64,
     pub roster_modified_ms: u64,
+    /// Whether the host writer could ask the portal for owners (the peer
+    /// directory's `owner_read`). `None` when the file carries none.
+    pub owner_read: Option<OwnerRead>,
 }
 
 impl Directory {
@@ -290,12 +415,26 @@ impl Directory {
     }
 }
 
-fn parse_peers(body: &[u8]) -> Result<BTreeMap<IpAddr, Peer>> {
+type Parsed = (BTreeMap<IpAddr, Peer>, Option<OwnerRead>);
+
+fn parse_peers(body: &[u8]) -> Result<Parsed> {
     let v: serde_json::Value =
         serde_json::from_slice(body).context("peer directory is not JSON")?;
     let mut out = BTreeMap::new();
+    let mut read = None;
     if v.get("names").is_some() {
         let f: RelayFile = serde_json::from_value(v).context("peer-names shape")?;
+        read = f.owner_read.as_ref().and_then(|r| {
+            Some(OwnerRead {
+                state: r.get("state")?.as_str()?.to_string(),
+                reason: r
+                    .get("reason")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                at: r.get("at").and_then(|x| x.as_u64()).unwrap_or(0),
+            })
+        });
         for c in f.names.into_values() {
             if let Some(a) = address_of(&c.ip) {
                 let groups = c
@@ -311,6 +450,11 @@ fn parse_peers(body: &[u8]) -> Result<BTreeMap<IpAddr, Peer>> {
                         name: c.name,
                         hostname: c.host,
                         groups,
+                        owner: c.owner.as_ref().and_then(RecordOwner::from_json),
+                        exception: c
+                            .owner_exception
+                            .as_ref()
+                            .and_then(OwnerException::from_json),
                     },
                 );
             }
@@ -331,6 +475,8 @@ fn parse_peers(body: &[u8]) -> Result<BTreeMap<IpAddr, Peer>> {
                         name: p.name,
                         hostname: p.hostname,
                         groups,
+                        owner: None,
+                        exception: None,
                     },
                 );
             }
@@ -338,7 +484,7 @@ fn parse_peers(body: &[u8]) -> Result<BTreeMap<IpAddr, Peer>> {
     } else {
         anyhow::bail!("peer directory is neither a peer-names file nor a peer list");
     }
-    Ok(out)
+    Ok((out, read))
 }
 
 /// Where the inputs live, and their last-seen modification times, so a reload
@@ -409,8 +555,9 @@ impl Sources {
                 .with_context(|| format!("read {}", p.display()))
                 .and_then(|b| parse_peers(&b))
             {
-                Ok(m) => {
+                Ok((m, read)) => {
                     d.peers = m;
+                    d.owner_read = read;
                     d.peers_modified_ms = Self::mtime_ms(p);
                 }
                 Err(e) => d.errors.push(format!("peer directory not read: {e:#}")),
@@ -438,8 +585,10 @@ pub mod testing {
 
     /// A directory built from in-memory JSON, for the view tests.
     pub fn directory(peers: &str, roster: &str, show_individual: bool) -> Directory {
+        let (peers, owner_read) = parse_peers(peers.as_bytes()).unwrap();
         Directory {
-            peers: parse_peers(peers.as_bytes()).unwrap(),
+            peers,
+            owner_read,
             roster: serde_json::from_str(roster).unwrap(),
             goatnet: "zagros".into(),
             show_individual,

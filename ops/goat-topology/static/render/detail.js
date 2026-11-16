@@ -34,7 +34,7 @@ function neighbours(d, id, self) {
 
 /** Who operates a router: the mesh peer it connects from and what the
  *  identity registry records for that peer. A person's nationality and an
- *  organisation's nation are two facts and are shown as two rows. */
+ *  organization's nation are two facts and are shown as two rows. */
 export function ownerFacts(x, d = {}, now = Date.now()) {
   const rm = (d.directory || {}).roster_modified_ms;
   const rosterAge = rm ? ` in the roster written ${new Date(rm).toISOString().slice(0, 10)}` : "";
@@ -44,16 +44,40 @@ export function ownerFacts(x, d = {}, now = Date.now()) {
   if (!x.peer) {
     return `${x.node ? "" : derived}
       ${x.address ? `<dt>Connects from</dt><dd>${esc(x.address)}</dd>` : ""}
-      <dt>Operated by</dt><dd><span class="sub">not known — ${esc(x.name_note || "no reporting router sees its session")}</span></dd>`;
+      <dt>Owner</dt><dd style="color:var(--status-warn-fg)">the owner lookup failed <span class="sub">— ${esc(x.owner_reason || x.name_note || "no reporting router sees its session")}</span></dd>`;
   }
-  const p = x.peer, o = x.owner;
-  const who = !o ? `<dt>Organisation</dt><dd>${nr} <span class="sub">— the peer name leads to no roster handle${rosterAge}</span></dd>`
-    : `<dt>Organisation</dt><dd>${v(o.org_display_name || o.org)}${o.org_display_name ? ` <span class="sub">${esc(o.org)}</span>` : ""}</dd>
-       <dt>Organisation nation</dt><dd>${v(o.org_nation)}</dd>
-       <dt>${o.kind === "machine" ? "Enrolled by" : "Individual"}</dt><dd>${v(o.individual)}</dd>
-       <dt>${o.kind === "machine" ? "Their nationality" : "Nationality"}</dt><dd>${o.individual ? v(o.individual_nationality) : nr}${
-         o.kind === "machine" ? ` <span class="sub">a machine has none; this is the person who enrolled it</span>` : ""}</dd>
-       <dt>Found by</dt><dd><span class="sub">the peer name led to roster handle ${esc(o.handle)}; a lead, not the recorded enrolment link</span></dd>`;
+  const p = x.peer, o = x.owner, r = p.owner;
+  const state = {
+    recorded: "from the record",
+    lead: "a lead, not the record",
+    not_read: "the owner lookup failed",
+    no_record: "the record holds no owner for this router",
+    excepted: "owner exception",
+  }[x.owner_state] || "";
+  const tone = x.owner_state === "no_record" ? ' style="color:var(--status-err-fg)"'
+    : x.owner_state === "not_read" ? ' style="color:var(--status-warn-fg)"' : "";
+  let who = `<dt>Owner</dt><dd${tone}>${esc(state)}${x.owner_reason && x.owner_state !== "excepted" ? ` <span class="sub">— ${esc(x.owner_reason)}</span>` : ""}</dd>`;
+  const ex = p.exception;
+  if (ex) {
+    who += `<dt>Owner exception</dt><dd${ex.state === "stale" ? ' style="color:var(--status-warn-fg)"' : ""}>${esc(ex.reason)}${
+      ex.state === "stale" ? ` <span class="sub">— stale: the record now names an owner; remove the exception</span>` : ""}</dd>
+      <dt>Granted</dt><dd>by ${esc(ex.granted_by)} on ${esc(ex.granted_on)}${ex.review_by ? ` <span class="sub">review by ${esc(ex.review_by)}</span>` : ""}</dd>`;
+  }
+  if (x.owner_state === "recorded" && r) {
+    const machine = r.via === "machine-custody";
+    who += `<dt>${machine ? "Custodian" : "Responsible person"}</dt><dd>${v(r.person_handle)}</dd>
+      <dt>Organization</dt><dd>${v(r.org_short_tag || r.org_id)}${r.org_short_tag && r.org_id ? ` <span class="sub">${esc(r.org_id)}</span>` : ""}</dd>
+      <dt>Organization nation</dt><dd>${v(r.org_nation)}</dd>
+      <dt>${machine ? "Their nationality" : "Nationality"}</dt><dd>${r.nationality ? esc(r.nationality)
+        : `${nr} <span class="sub">${r.nationality_state === "not_stamped" ? "— the identity record carries none yet" : ""}</span>`}</dd>
+      ${machine && r.machine_unit ? `<dt>Machine unit</dt><dd>${esc(r.machine_unit)} <span class="sub">as recorded at enrollment</span></dd>` : ""}
+      <dt>Found by</dt><dd><span class="sub">${esc(r.via)}; the first hop matched the ${esc(r.matched_by || "peer name")}, every later hop is a recorded link</span></dd>`;
+  } else if (o) {
+    who += `<dt>Organization (lead)</dt><dd>${v(o.org_display_name || o.org)}</dd>
+       <dt>Organization nation (lead)</dt><dd>${v(o.org_nation)}</dd>
+       <dt>${o.kind === "machine" ? "Enrolled by (lead)" : "Individual (lead)"}</dt><dd>${v(o.individual)}</dd>
+       <dt>Found by</dt><dd><span class="sub">the peer name led to roster handle ${esc(o.handle)}${rosterAge}; a lead, not the record</span></dd>`;
+  }
   return `${x.node ? "" : derived}
     <dt>Mesh peer</dt><dd>${esc(p.name)}</dd>
     <dt>Hostname</dt><dd>${v(p.hostname)}</dd>

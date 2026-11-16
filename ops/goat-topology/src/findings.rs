@@ -692,6 +692,126 @@ fn growth(routers: &[Known<'_>], out: &mut Vec<Finding>) {
     });
 }
 
+/// Name a list of routers for a finding, with each one's reason, capped.
+fn router_list(rs: &[(String, String)]) -> String {
+    let mut v: Vec<String> = rs
+        .iter()
+        .map(|(n, why)| {
+            if why.is_empty() {
+                n.clone()
+            } else {
+                format!("{n} ({why})")
+            }
+        })
+        .collect();
+    v.sort();
+    if v.len() > 8 {
+        let more = v.len() - 8;
+        v.truncate(8);
+        format!("{} and {more} more", v.join("; "))
+    } else {
+        v.join("; ")
+    }
+}
+
+/// T-014: routers in the fabric whose owner the record does not hold (ADR
+/// 1249). Critical: a router carries other parties' traffic, and one nobody
+/// is recorded as answering for is the case the rule exists to exclude.
+pub fn routers_without_owner(rs: &[(String, String)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    Some(Finding {
+        id: "T-014",
+        severity: Severity::Critical,
+        subject: "this environment".into(),
+        headline: format!(
+            "{n} router{} in the fabric {} no recorded responsible person or organization.",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "has" } else { "have" }
+        ),
+        what: format!("The identity record holds no owner for: {}.", router_list(rs)),
+        why: "Every machine on the mesh must trace to a responsible person and an organization \
+              from the record: the portal's enrollment of a machine names its custodian, and a \
+              person's slot names the person. These routers came in through a door that records \
+              neither, or before the rule existed."
+            .into(),
+        impact: "Nobody is on record as answering for what these routers carry or who they let \
+                 in. If one misbehaves there is no one to ask and no organization to hold to it."
+            .into(),
+        steps: steps(&[
+            "If the router is ours, declare its owner in the goatnet's declared-owner registry (ADR 1249 decision 2).",
+            "If it belongs to a partner or a person, record the owner through the portal's machine enrollment or onboarding.",
+            "If nobody claims it, decide with the operator whether its access stays; nothing is removed automatically.",
+        ]),
+    })
+}
+
+/// T-016: routers under an owner exception (goatcore ADR 1249 decision 7).
+/// Info: the operator decided these stay for now, with a reason. Listed so an
+/// exception is always visible, never a silent gap in T-014.
+pub fn routers_under_owner_exception(rs: &[(String, String)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    Some(Finding {
+        id: "T-016",
+        severity: Severity::Info,
+        subject: "this environment".into(),
+        headline: format!(
+            "{n} router{} {} in the fabric under an owner exception.",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "is" } else { "are" }
+        ),
+        what: format!("Owner exceptions on file for: {}.", router_list(rs)),
+        why: "The rule is that every router has a recorded responsible person and organization. \
+              The operator has excepted these for now, each with a reason, in the goatnet's \
+              owner exceptions file."
+            .into(),
+        impact: "They do not raise T-014 or page, so they stay here until an owner is recorded \
+                 or the operator decides otherwise."
+            .into(),
+        steps: steps(&[
+            "Record the owner through enrollment or onboarding, or declare it if the router is ours; the exception then reports itself stale.",
+            "Remove the entry from the owner exceptions file once it is stale.",
+        ]),
+    })
+}
+
+/// T-015: routers whose owner could not be looked up. A warning of its own so
+/// a failed lookup never reads as "no owner" and never as "owned".
+pub fn router_owner_not_read(rs: &[(String, String)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    Some(Finding {
+        id: "T-015",
+        severity: Severity::Warning,
+        subject: "this environment".into(),
+        headline: format!(
+            "The owner of {n} router{} could not be looked up.",
+            if n == 1 { "" } else { "s" }
+        ),
+        what: format!("No owner was read for: {}.", router_list(rs)),
+        why: "This page learns owners from the peer directory on its host, which the relay-health \
+              writer fills from the portal's owner resolver. A router known only through another \
+              router's map has no address to look up, and a writer the portal refuses carries no \
+              owners at all."
+            .into(),
+        impact: "These routers may be owned or not; the page cannot say, so the T-014 check does \
+                 not cover them."
+            .into(),
+        steps: steps(&[
+            "Read the reason beside each router above.",
+            "If it says the lookup failed on this host, check that the portal accepts the relay-peer-names key.",
+            "If the router is known only through link state, deploy the publisher on a router it holds a session with.",
+        ]),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

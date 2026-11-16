@@ -8,7 +8,7 @@
 // routing map lists it — a partner's router, or a host the publisher was never
 // deployed to. It is drawn smaller, with a dashed outline and its display name,
 // so the picture is complete without pretending to know its settings or load.
-import { $, esc, displayName, roleOf, labelOf as nameOf, orgLine } from "../lib.js";
+import { $, esc, displayName, roleOf, labelOf as nameOf, orgLine, ownerTone } from "../lib.js";
 
 const W = 900, H_MIN = 380;
 const R_REPORTING = 25, R_SILENT = 15;
@@ -33,23 +33,30 @@ const MAX_LABEL = 30;
 const clip = (t, n = MAX_LABEL) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
 /** Height of one stack of label lines, for the stagger offset. */
 const STACK = 44;
-/** The organisation line, clipped in the organisation's name so the nation
+/** The organization line, clipped in the organization's name so the nation
  *  is never the part cut off. */
 function orgShort(x) {
+  const r = x.peer && x.peer.owner;
+  if (x.owner_state === "recorded" && r) {
+    const nation = r.org_nation || "nation not recorded";
+    return `${clip(r.org_short_tag || r.org_id || "org not recorded", Math.max(10, MAX_LABEL - nation.length - 3))} · ${nation}`;
+  }
   const o = x.owner;
-  if (!o) return orgLine(x);
-  const nation = o.org_nation || "nation not recorded";
-  return `${clip(o.org_display_name || o.org || "org not recorded", Math.max(10, MAX_LABEL - nation.length - 3))} · ${nation}`;
+  if (o && x.owner_state === "lead") {
+    const nation = o.org_nation || "nation ?";
+    return `lead: ${clip(o.org_display_name || o.org || "org ?", Math.max(8, MAX_LABEL - nation.length - 9))} · ${nation}`;
+  }
+  return orgLine(x);
 }
 
-/** A node's label lines as [text, colour, font size]. Shared by the layout,
+/** A node's label lines as [text, color, font size]. Shared by the layout,
  *  which sizes the picture from them, and the node renderers. */
 export function labelLines(x) {
   const org = orgLine(x);
   if (x.reporting === false) {
     const stroke = x.stale ? "var(--status-err-fg)" : "var(--fg-faint)";
     const ls = [[clip(labelOf(x)), "var(--fg-secondary, var(--fg-primary))", 10]];
-    if (org) ls.push([orgShort(x), "var(--fg-faint)", 9]);
+    if (org) ls.push([orgShort(x), ownerTone(x), 9]);
     if (x.stale) ls.push(["gone quiet", stroke, 9]);
     return ls;
   }
@@ -58,7 +65,7 @@ export function labelLines(x) {
     : role === "gateway" ? "var(--c-amber-hi)" : "var(--fg-faint)";
   const ls = [[clip(labelOf(x)), "var(--fg-primary)", 12],
     [x.stale ? "gone quiet" : `${x.site} · ${role}`, tagCol, 10]];
-  if (org) ls.push([orgShort(x), "var(--fg-faint)", 9]);
+  if (org) ls.push([orgShort(x), ownerTone(x), 9]);
   return ls;
 }
 
@@ -75,7 +82,7 @@ export function layout(routers) {
     : Math.max(Math.min(122, 60 + rs.length * 17), need / (2 * Math.PI));
   // Past a handful of routers the ring becomes an ellipse half again as wide as
   // it is tall: the routers at its top and bottom then sit further apart, which
-  // is where neighbouring labels would otherwise run into each other.
+  // is where neighboring labels would otherwise run into each other.
   const ry = r, rx = rs.length <= 4 ? r : r * 1.5;
   // Room for a staggered label (two label heights) above and below; side
   // labels as wide as the longest one, so a long peer name widens the picture
@@ -91,7 +98,7 @@ export function layout(routers) {
     const a = -Math.PI / 2 + (2 * Math.PI * (at + w / 2)) / Math.max(need, 1);
     at += w;
     // Near the top and bottom, every other label moves one label-height
-    // further out, so two neighbours' labels sit on different rows.
+    // further out, so two neighbors' labels sit on different rows.
     const stagger = rs.length > 8 && Math.abs(Math.sin(a)) > 0.75 && i % 2 === 1;
     i++;
     pos[keyOf(x)] = { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a), stagger };
@@ -119,7 +126,7 @@ export function labelAt(p, c, rad = R_REPORTING, n = 2) {
   return at(x, p.y - 1 - 7 * (n - 2), 14, ux > 0 ? "start" : "end");
 }
 
-/** A lone router at the centre: name above, the other lines below. */
+/** A lone router at the center: name above, the other lines below. */
 function centred(p, rad, n) {
   const ys = [p.y - (rad + 11)];
   for (let i = 1; i < n; i++) ys.push(p.y + rad + 19 + (i - 1) * 14);
