@@ -1,0 +1,65 @@
+{
+  "library": {
+    "repository": "https://github.com/USAREUR-AF/goat-transformers",
+    "rev": "0be9fc9cf926139d7c188465e56f0320f348657a"
+  },
+  "formats": [
+    "canonical-track-v2",
+    "cot-protobuf",
+    "cot-xml",
+    "geo-track-v1",
+    "geojson"
+  ],
+  "files": [
+    {
+      "path": "model/core.def",
+      "sha256": "275729696e9bb7a91e3b46bc0f8a3f5ebf0fad66b9af9f458923eaf36cefe859",
+      "origin": "library"
+    },
+    {
+      "path": "model/cotxml.def",
+      "sha256": "913947e6f8885102817ba0206898dd69b4d03e8827f468cd1e635e6d0cc1f607",
+      "origin": "upstream-proposed"
+    },
+    {
+      "path": "model/geotrack.def",
+      "sha256": "4c8cc0974fc2d72c2e4b7cbb1feee1e24ead044b18dabb8f18171b023497dfe3",
+      "origin": "upstream-proposed"
+    },
+    {
+      "path": "model/takproto.def",
+      "sha256": "fafe510700a2d841636d3e536b8a63de51bd0791aee92f7a3a6e9c256e2cc0fc",
+      "origin": "library"
+    },
+    {
+      "path": "model/track.def",
+      "sha256": "a64c182427b56bfbaf3cbd329e63ba3ae7fd42232c84aaf3987e8eaa418e7187",
+      "origin": "library"
+    },
+    {
+      "path": "packs/canonical-track-v2/pack.def",
+      "sha256": "efbf84f764bb3233134974dd583fc182742be8e3f6cafb25e7f14d8f2d8773ea",
+      "origin": "library"
+    },
+    {
+      "path": "packs/cot-protobuf/pack.def",
+      "sha256": "d534c1904a83ad5b22d4e1fb6efdfa832eae593760ea16fa6f9fd298959e0c72",
+      "origin": "library"
+    },
+    {
+      "path": "packs/cot-xml/pack.def",
+      "sha256": "6df0c6576ecd13b8064d0f082c874b6237f6b2ff8f7e6a507f0e876955fa8ea7",
+      "origin": "upstream-proposed"
+    },
+    {
+      "path": "packs/geo-track-v1/pack.def",
+      "sha256": "347b3edbcd5147423f57643bc8978ca93efdf8bf2cee6156bce202355ed2019d",
+      "origin": "upstream-proposed"
+    },
+    {
+      "path": "packs/geojson/pack.def",
+      "sha256": "33b649aa3241e5ff6b54e8bd9aa8712cab2359be095c9b23c2a4e566ff31b96e",
+      "origin": "library"
+    }
+  ]
+}

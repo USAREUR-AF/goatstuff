@@ -1,2 +1,6 @@
 eclipse-zenoh==1.9.0
 aiohttp==3.14.5
+# The goat-transformers Python engine (standard library only), for
+# GOATMAP_COT_ENGINE=library. The commit is the one in ops/xf/goat-transformers.ref;
+# the packs it loads are in xf-bundle/.
+goat-transformers @ https://github.com/USAREUR-AF/goat-transformers/archive/0be9fc9cf926139d7c188465e56f0320f348657a.zip#subdirectory=engines/python

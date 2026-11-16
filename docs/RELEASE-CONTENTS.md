@@ -12,6 +12,7 @@ This repository, `goatstuff`, holds the surfaces, demos and example applications
 | panoscope web interface | `ops/panoscope/frontend/` | Tested in CI | `panoscope-frontend-test.yml` |
 | Map surface | `ops/serve/goat-map/` | Tested in CI | `ci.yml` runs `tests-public/` |
 | Peer view | `ops/peerview/` | Tested in CI | `ci.yml` |
+| Format transformer shim and pack bundles | `ops/zenoh-shims/transform-shim/`, `ops/xf/` | Tested in CI | `transform-shim.yml` (Rust: build, test, lint) and `ci.yml` job `python-and-ansible` (bundles, proposed vectors, goat-map); both fetch the pinned commit of `goat-transformers` |
 | Browser playground, trust sandbox, dataflows | `ops/serve/` | Built | image workflows |
 | Topology, trashgoat, synthetic vendors, health publishers | `ops/goat-topology/`, `ops/goat-trashgoat/`, `ops/zenoh-trial-peers/` | Built | image workflows |
 | Gym training surface | `ops/gym/` | Not run | |

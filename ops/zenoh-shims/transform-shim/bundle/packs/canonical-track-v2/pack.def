@@ -1,0 +1,56 @@
+# Canonical Track v2, the track contract of USAREUR-AF/open-billie. Public.
+# One JSON object per track. `apiVersion` and `kind` are constants of the
+# schema: the common `when` lines check them on decode and write them on encode.
+# `classification` fills two keys: `track.class` as written, and `type` through
+# the table `class-cot`. On encode the `track.class` line is the earlier one, so
+# its value is written when the entity has it; an entity with only `type` writes
+# the class its type maps to. `unknown`, `clutter` and `other` share a-u-X, and
+# a-u-X encodes as the first of them, `unknown`. The `identifiers` array is the
+# list `track.identifiers`.
+format  canonical-track-v2
+version 0.1.0
+distribution public
+source  "USAREUR-AF/open-billie schemas/canonical-track-v2.schema.json (Apache-2.0)"
+uses    track
+wire    json
+when    apiVersion  billie.dev/track-v2
+when    kind        Track
+kind    Track
+requires uid track.source_id track.generation time_ms lat lon
+field   uid                  trackId                          string
+field   track.source_id      sourceId                         string
+field   track.generation     trackGeneration                  string
+field   track.test_data      testData                         bool
+field   track.header_simulated  headerSimulated               bool
+field   track.simulated      simulated                        bool
+field   track.confirmed      confirmed                        bool
+field   track.coasting       coasting                         bool
+field   track.final_update   finalUpdate                      bool
+field   time_ms              observedAt                       iso8601_ms
+field   lat                  position.latitudeDeg             float
+field   lon                  position.longitudeDeg            float
+field   hae                  position.altitudeM               float
+field   track.vel_east_ms    velocity.eastMps                 float
+field   track.vel_north_ms   velocity.northMps                float
+field   track.vel_up_ms      velocity.upMps                   float
+field   track.class          classification                   string
+field   type                 classification                   string  via class-cot
+field   track.confidence     confidence                       float
+field   track.sigma_east_m   positionUncertainty.sigmaEastM   float
+field   track.sigma_north_m  positionUncertainty.sigmaNorthM  float
+field   track.sigma_up_m     positionUncertainty.sigmaUpM     float
+# `identifiers`: an array of objects, each with `scheme` and `value`
+# (engine-spec 0.7, groups). An empty array is carried as an empty list.
+group   track.identifiers    identifiers
+  field  track.id_scheme  scheme  string
+  field  track.id_value   value   string
+end
+map     class-cot  unknown               a-u-X
+map     class-cot  fixed-wing-aircraft   a-u-A-M-F
+map     class-cot  rotary-wing-aircraft  a-u-A-M-H
+map     class-cot  uas                   a-u-A-M-F-Q
+map     class-cot  balloon               a-u-A-M-L
+map     class-cot  bird                  a-u-A
+map     class-cot  vehicle               a-u-G-E-V
+map     class-cot  clutter               a-u-X
+map     class-cot  other                 a-u-X

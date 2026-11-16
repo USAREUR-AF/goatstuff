@@ -24,6 +24,7 @@ The inspection surfaces, demos and example applications that run on a goat data 
 | **goat-topology**, **netview**, **peerview** | topology and peer views | `ops/goat-topology/`, `ops/netview/`, `ops/peerview/` |
 | **gym** | the training surface: modules teach in place | `ops/gym/` |
 | **example apps** | dataflows, the map, the browser playground, the SPIFFE trust sandbox | `ops/serve/*` |
+| **transform-shim** | a fabric peer that converts messages between formats with [goat-transformers](https://github.com/USAREUR-AF/goat-transformers); built, not deployed | `ops/zenoh-shims/transform-shim/`, `ops/xf/`, design `docs/design/format-transformers.md` |
 | **synthetic vendors and trial peers** | publishers that stand in for real sensors | `ops/zenoh-trial-peers/`, `ops/zenoh-shims/` |
 
 The design documents published so far are under `docs/design/`; a surface without one is described by its role and code. A surface that deploys has an Ansible role and a playbook under `ops/ansible/` that assume a goatnet built from `goatcore`.

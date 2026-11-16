@@ -1,0 +1,16 @@
+{
+  "name": "to-geo-track-v1-with-context",
+  "from": "cot-xml",
+  "to": "geo-track-v1",
+  "input": "<event version=\"2.0\" uid=\"4411\" type=\"a-f-A\" time=\"2021-02-27T20:00:00.250Z\" start=\"2021-02-27T20:00:00.250Z\" stale=\"2021-02-27T20:03:00.250Z\" how=\"m-g\"><point lat=\"30.25\" lon=\"-85.5\" hae=\"120.5\" ce=\"25.5\" le=\"40\"/><detail><track course=\"90\" speed=\"12.5\"/></detail></event>",
+  "context": {
+    "geotrack.kind": "track",
+    "geotrack.sensor": "radar-a",
+    "geotrack.site": "site-a",
+    "geotrack.node": "node-a",
+    "geotrack.observed_at": "2021-02-27T20:00:01.000Z",
+    "geotrack.producer_anchor": "00112233445566778899aabbccddeeff",
+    "geotrack.synthetic": "0"
+  },
+  "expect": "{\"schema\":\"goat.geo.track.v1\",\"id\":\"radar-a:4411\",\"label\":\"4411\",\"kind\":\"track\",\"source\":{\"sensor\":\"radar-a\",\"site\":\"site-a\",\"node\":\"node-a\"},\"lat\":30.25,\"lon\":-85.5,\"alt_m\":120.5,\"course_deg\":90,\"speed_mps\":12.5,\"ce_m\":25.5,\"le_m\":40,\"cot_type\":\"a-f-A\",\"how\":\"m-g\",\"reported_at\":\"2021-02-27T20:00:00.250Z\",\"stale_at\":\"2021-02-27T20:03:00.250Z\",\"observed_at\":\"2021-02-27T20:00:01.000Z\",\"producer_anchor\":\"00112233445566778899aabbccddeeff\",\"synthetic\":false}"
+}

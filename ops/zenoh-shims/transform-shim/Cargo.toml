@@ -1,0 +1,55 @@
+# transform-shim: a fabric peer that converts messages between formats with
+# the goat-transformers library. See docs/design/format-transformers.md.
+#
+# Workspace: deliberately NOT a member of any repo-root workspace; own
+# workspace per the rest-pub-bridge / feeds-shim pattern.
+#
+# Pinned zenoh version per goatcore docs/design/zenoh-version-pinning.md.
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+
+[package]
+name = "transform-shim"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+description = "Fabric peer that subscribes to messages in one format and republishes them in another, from a declarative route table. See docs/design/format-transformers.md."
+repository = "https://github.com/usareur-af/goatstuff"
+
+[lib]
+name = "transform_shim"
+path = "src/lib.rs"
+
+[[bin]]
+name = "transform-shim"
+path = "src/main.rs"
+
+[dependencies]
+# The engine. Standard library only. The commit is the one in
+# ops/xf/goat-transformers.ref; tests/routes.rs holds the two together.
+goat-transformers = { git = "https://github.com/USAREUR-AF/goat-transformers", rev = "0be9fc9cf926139d7c188465e56f0320f348657a" }
+zenoh = { version = "=1.9.0", features = ["unstable"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

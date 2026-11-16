@@ -34,6 +34,15 @@ or Zenoh key grammar, so a second sensor family lands by adding a parser
 (`goatmap/cot.py` is the whole of the current one) rather than by touching the
 front end.
 
+`GOATMAP_COT_ENGINE=library` does the same transform with the
+[goat-transformers](https://github.com/USAREUR-AF/goat-transformers) packs in
+`xf-bundle/` instead of `goatmap/cot.py` (`goatmap/cot_library.py`). The
+default is `builtin`. `tools/cot_parity.py` compares the two paths member by
+member: over its 26 inputs the library path gives the same value for every
+member of every track both paths publish. Three named steps in
+`cot_library.py` complete what the packs do not state.
+`docs/design/format-transformers.md` in goatstuff holds the counts.
+
 With no fabric leg configured the service runs ingest-only: the map still
 works, and `/healthz` says which leg the picture is coming from.
 

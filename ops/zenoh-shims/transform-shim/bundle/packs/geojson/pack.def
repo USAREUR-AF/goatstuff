@@ -1,0 +1,18 @@
+# GeoJSON Feature (Point). Public.
+format  geojson
+version 0.1.0
+distribution public
+source  "IETF RFC 7946"
+wire    geojson
+field   uid       id                     string
+field   type      properties.type        string
+field   time_ms   properties.time_ms     int
+field   how       properties.how         string
+field   lat       geometry.lat           float
+field   lon       geometry.lon           float
+field   hae       geometry.alt           float
+field   ce        properties.ce          float
+field   le        properties.le          float
+field   callsign  properties.callsign    string
+field   course    properties.course      float
+field   speed_ms  properties.speed_ms    float

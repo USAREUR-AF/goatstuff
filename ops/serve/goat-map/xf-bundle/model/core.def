@@ -1,0 +1,20 @@
+# The core module: what every track or point report means, in fixed units.
+# Keys of this module are written bare in a pack (`lat`); keys of every other
+# module are written `<module>.<key>`. spec/shared-model.md.
+module        core
+version       0.1.0
+distribution  public
+source        "goat-transformers spec/shared-model.md; type and how tokens follow the public Cursor on Target event schema"
+key  uid       string  -      "stable identifier of the entity"
+key  type      string  -      "CoT type token (a-f-G-U-C-I), the shared type vocabulary"
+key  time_ms   int     ms     "time the report is valid, epoch milliseconds UTC"
+key  lat       float   deg    "latitude, WGS84"
+key  lon       float   deg    "longitude, WGS84"
+key  hae       float   m      "height above the WGS84 ellipsoid"
+key  ce        float   m      "circular (horizontal) error"
+key  le        float   m      "linear (vertical) error"
+key  callsign  string  -      "human-readable name"
+key  course    float   deg    "direction of travel, degrees true"
+key  speed_ms  float   m/s    "ground speed"
+key  how       string  -      "provenance token (m-g, h-e, ...)"
+key  stale_ms  int     ms     "time after which the report is no longer valid, epoch milliseconds UTC"

@@ -36,6 +36,7 @@ ops/panoscope/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: panoscope servi
 ops/serve/trust-sandbox/orchestrator/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trust sandbox orchestrator
 ops/zenoh-shims/feeds-shim/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: Zenoh feeds shim
 ops/zenoh-shims/rest-pub-bridge/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: Zenoh REST publish bridge (goatcore ADR 1023)
+ops/zenoh-shims/transform-shim/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: fabric peer that converts message formats with goat-transformers (docs/design/format-transformers.md)
 ops/zenoh-trial-peers/audit-subscriber/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric audit subscriber
 ops/zenoh-trial-peers/crypto-posture/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric crypto posture publisher
 ops/zenoh-trial-peers/fabric-crawler/Cargo.toml | @USAREUR-AF/goat-owners | Rust crate: trial-fabric lazy crawler

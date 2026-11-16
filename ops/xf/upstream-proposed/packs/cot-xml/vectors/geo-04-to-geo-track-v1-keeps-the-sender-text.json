@@ -1,0 +1,16 @@
+{
+  "name": "to-geo-track-v1-keeps-the-sender-text",
+  "from": "cot-xml",
+  "to": "geo-track-v1",
+  "input": "<event version=\"2.0\" uid=\"4411\" time=\"2021-02-27T20:00:00Z\" start=\"2021-02-27T20:00:00Z\" stale=\"2021-02-27T20:03:00+00:00\" how=\"m-g\"><point lat=\"30.25\" lon=\"-85.5\" hae=\"120.5\" ce=\"25.5\" le=\"40\"/><detail><uid Droid=\"radar/radar-a:4411\"/></detail></event>",
+  "context": {
+    "geotrack.kind": "track",
+    "geotrack.sensor": "radar-a",
+    "geotrack.site": "site-a",
+    "geotrack.node": "node-a",
+    "geotrack.observed_at": "2021-02-27T20:00:01.000Z",
+    "geotrack.producer_anchor": "00112233445566778899aabbccddeeff",
+    "geotrack.synthetic": "0"
+  },
+  "expect": "{\"schema\":\"goat.geo.track.v1\",\"id\":\"radar-a:4411\",\"label\":\"4411\",\"kind\":\"track\",\"source\":{\"sensor\":\"radar-a\",\"site\":\"site-a\",\"node\":\"node-a\"},\"lat\":30.25,\"lon\":-85.5,\"alt_m\":120.5,\"ce_m\":25.5,\"le_m\":40,\"cot_type\":\"\",\"how\":\"m-g\",\"descriptor\":\"radar/radar-a:4411\",\"reported_at\":\"2021-02-27T20:00:00Z\",\"stale_at\":\"2021-02-27T20:03:00+00:00\",\"observed_at\":\"2021-02-27T20:00:01.000Z\",\"producer_anchor\":\"00112233445566778899aabbccddeeff\",\"synthetic\":false}"
+}

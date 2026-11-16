@@ -17,6 +17,9 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY goatmap /app/goatmap
+# The goat-transformers packs for GOATMAP_COT_ENGINE=library, checked against
+# their manifest when that engine is selected.
+COPY xf-bundle /app/xf-bundle
 COPY web /app/web
 # The synthetic producer ships in the same image so it deploys, versions and
 # rolls back with the consumer instead of living on someone's laptop.
