@@ -41,11 +41,8 @@ function orgShort(x) {
     const nation = r.org_nation || "nation not recorded";
     return `${clip(r.org_short_tag || r.org_id || "org not recorded", Math.max(10, MAX_LABEL - nation.length - 3))} · ${nation}`;
   }
-  const o = x.owner;
-  if (o && x.owner_state === "lead") {
-    const nation = o.org_nation || "nation ?";
-    return `lead: ${clip(o.org_display_name || o.org || "org ?", Math.max(8, MAX_LABEL - nation.length - 9))} · ${nation}`;
-  }
+  // A roster lead is not an owner: the label says so, and never shows the
+  // local roster file's organization as if it were the record's.
   return orgLine(x);
 }
 
@@ -113,7 +110,7 @@ export function layout(routers) {
 export function labelAt(p, c, rad = R_REPORTING, n = 2) {
   const dx = p.x - c.cx, dy = p.y - c.cy, len = Math.hypot(dx, dy);
   const at = (x, y0, step, anchor) => ({ x, ys: Array.from({ length: n }, (_, i) => y0 + i * step), anchor });
-  if (len < 1) return centred(p, rad, n);
+  if (len < 1) return centered(p, rad, n);
   const ux = dx / len, uy = dy / len;
   // Above or below the ring, lean the text away from the neighbour on the
   // inner side so two adjacent labels do not run into each other.
@@ -127,7 +124,7 @@ export function labelAt(p, c, rad = R_REPORTING, n = 2) {
 }
 
 /** A lone router at the center: name above, the other lines below. */
-function centred(p, rad, n) {
+function centered(p, rad, n) {
   const ys = [p.y - (rad + 11)];
   for (let i = 1; i < n; i++) ys.push(p.y + rad + 19 + (i - 1) * 14);
   return { x: p.x, ys, anchor: "middle" };

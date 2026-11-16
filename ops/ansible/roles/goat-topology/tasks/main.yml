@@ -141,6 +141,25 @@
     - item is not skipped
     - not (item.stat.isreg | default(false))
 
+- name: goat-topology | read this host's mesh address (publish mode)
+  ansible.builtin.command:
+    argv: [netbird, status, --json]
+  register: goat_topology_netbird_status
+  changed_when: false
+  failed_when: false
+  when:
+    - "'publish' in goat_topology_modes"
+    - goat_topology_self_address | default('') | length == 0
+
+- name: goat-topology | the address the publisher states as its own
+  ansible.builtin.set_fact:
+    goat_topology_self_address_resolved: >-
+      {{ goat_topology_self_address if (goat_topology_self_address | default('') | length > 0)
+         else (((goat_topology_netbird_status.stdout | default('{}') | from_json).localPeerState | default({})).IP
+               | default('') | regex_replace('/.*', ''))
+         if (goat_topology_netbird_status.rc | default(1)) == 0 else '' }}
+  when: "'publish' in goat_topology_modes"
+
 - name: goat-topology | compose dir
   ansible.builtin.file:
     path: "{{ goat_topology_compose_dir }}"

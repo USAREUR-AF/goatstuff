@@ -412,7 +412,7 @@ fn gateway_config(r: &Known<'_>, out: &mut Vec<Finding>) {
                 .into(),
             impact: "Anyone reading the file to understand this router will reach the wrong \
                      conclusion. A restart — planned or from a crash — will change the routing \
-                     behaviour without anyone intending it."
+                     behavior without anyone intending it."
                 .into(),
             steps: steps(&[
                 "Decide which one is right: the file, or what is running.",
@@ -693,6 +693,19 @@ fn growth(routers: &[Known<'_>], out: &mut Vec<Finding>) {
 }
 
 /// Name a list of routers for a finding, with each one's reason, capped.
+/// The router names alone, sorted, at most 8 and a count.
+fn router_names(rs: &[(String, String)]) -> String {
+    let mut v: Vec<String> = rs.iter().map(|(n, _)| n.clone()).collect();
+    v.sort();
+    if v.len() > 8 {
+        let more = v.len() - 8;
+        v.truncate(8);
+        format!("{} and {more} more", v.join(", "))
+    } else {
+        v.join(", ")
+    }
+}
+
 fn router_list(rs: &[(String, String)]) -> String {
     let mut v: Vec<String> = rs
         .iter()
@@ -735,7 +748,9 @@ pub fn routers_without_owner(rs: &[(String, String)]) -> Option<Finding> {
         why: "Every machine on the mesh must trace to a responsible person and an organization \
               from the record: the portal's enrollment of a machine names its custodian, and a \
               person's slot names the person. These routers came in through a door that records \
-              neither, or before the rule existed."
+              neither, or before the rule existed. A router named only by the declared roster is \
+              counted here too: a roster match on its name is a lead, not a record, and the \
+              ownership reconcile counts it the same way."
             .into(),
         impact: "Nobody is on record as answering for what these routers carry or who they let \
                  in. If one misbehaves there is no one to ask and no organization to hold to it."
@@ -781,12 +796,57 @@ pub fn routers_under_owner_exception(rs: &[(String, String)]) -> Option<Finding>
 }
 
 /// T-015: routers whose owner could not be looked up. A warning of its own so
-/// a failed lookup never reads as "no owner" and never as "owned".
-pub fn router_owner_not_read(rs: &[(String, String)]) -> Option<Finding> {
+/// a failed lookup never reads as "no owner" and never as "owned". Each cause
+/// present gets its own words and its own step; a cause that is absent is not
+/// described. `rs` is (router, reason, cause) with the causes of
+/// `view::Graded::cause`.
+pub fn router_owner_not_read(rs: &[(String, String, &'static str)]) -> Option<Finding> {
     if rs.is_empty() {
         return None;
     }
     let n = rs.len();
+    // cause -> (what it means, what to do), in the order a reader acts on them.
+    const CAUSES: &[(&str, &str, &str)] = &[
+        ("no_directory",
+         "no peer directory is configured on this surface, so no owner can be looked up",
+         "Configure the surface with --peer-directory pointing at the relay-health writer's peer-names.json."),
+        ("directory_stale",
+         "the peer directory is older than its limit, so the relay-health writer has stopped and its owners are not trusted",
+         "Check `systemctl status relay-peer-names.timer` and the writer's journal on this host."),
+        ("lookup_failed",
+         "the relay-health writer could not read owners from the portal (a refused key, a portal that is down, or a portal that could not read its own sources)",
+         "Read the writer's journal (`journalctl -u relay-peer-names`) and check that the portal accepts relay_peer_names_portal_key."),
+        ("old_format",
+         "the peer directory carries no owners: its relay-health writer predates owner-from-record",
+         "Deploy the current relay-health role, whose writer carries each peer's owner from the record."),
+        ("unknown_source",
+         "the peer directory names an owner source this surface does not know, so the surface is older than its writer",
+         "Deploy the current topology surface."),
+        ("not_in_directory",
+         "the address the router connects from is not in the peer directory",
+         "Check that the router's host is a mesh peer; the writer lists every peer with a key."),
+        ("link_state_only",
+         "the router is known only through link state: no reporting router holds a session with it, so its address is not seen",
+         "Deploy the publisher on the router, or on a router it holds a session with, and give it --self-address."),
+    ];
+    let present: Vec<&(&str, &str, &str)> = CAUSES
+        .iter()
+        .filter(|(c, _, _)| rs.iter().any(|r| r.2 == *c))
+        .collect();
+    let why = present
+        .iter()
+        .map(|(c, means, _)| {
+            let names: Vec<(String, String)> = rs
+                .iter()
+                .filter(|r| r.2 == *c)
+                .map(|r| (r.0.clone(), r.1.clone()))
+                .collect();
+            format!("For {}: {means}.", router_names(&names))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut todo: Vec<&str> = present.iter().map(|(_, _, step)| *step).collect();
+    todo.insert(0, "Read the reason beside each router above.");
     Some(Finding {
         id: "T-015",
         severity: Severity::Warning,
@@ -795,19 +855,49 @@ pub fn router_owner_not_read(rs: &[(String, String)]) -> Option<Finding> {
             "The owner of {n} router{} could not be looked up.",
             if n == 1 { "" } else { "s" }
         ),
-        what: format!("No owner was read for: {}.", router_list(rs)),
-        why: "This page learns owners from the peer directory on its host, which the relay-health \
-              writer fills from the portal's owner resolver. A router known only through another \
-              router's map has no address to look up, and a writer the portal refuses carries no \
-              owners at all."
-            .into(),
+        what: format!(
+            "No owner was read for: {}.",
+            router_list(
+                &rs.iter()
+                    .map(|r| (r.0.clone(), r.1.clone()))
+                    .collect::<Vec<_>>()
+            )
+        ),
+        why,
         impact: "These routers may be owned or not; the page cannot say, so the T-014 check does \
                  not cover them."
             .into(),
+        steps: steps(&todo),
+    })
+}
+
+/// T-017: routers whose recorded owner is incomplete: the record names no
+/// organization, or the responsible person's identity is disabled. A warning:
+/// someone is on record, but the rule wants a person and an organization who
+/// can answer.
+pub fn routers_with_incomplete_owner(rs: &[(String, String)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    Some(Finding {
+        id: "T-017",
+        severity: Severity::Warning,
+        subject: "this environment".into(),
+        headline: format!(
+            "The recorded owner of {n} router{} is incomplete.",
+            if n == 1 { "" } else { "s" }
+        ),
+        what: format!("The record is incomplete for: {}.", router_list(rs)),
+        why: "The record names an owner for these routers, but without an organization, or with \
+              a responsible person whose identity is disabled. Every router must trace to a \
+              person and an organization who can answer for it."
+            .into(),
+        impact: "If one misbehaves, the person or organization on record may not be reachable."
+            .into(),
         steps: steps(&[
-            "Read the reason beside each router above.",
-            "If it says the lookup failed on this host, check that the portal accepts the relay-peer-names key.",
-            "If the router is known only through link state, deploy the publisher on a router it holds a session with.",
+            "Read the recorded reason beside each router above.",
+            "Record the organization on the responsible person's identity, or move custody to an active person.",
         ]),
     })
 }

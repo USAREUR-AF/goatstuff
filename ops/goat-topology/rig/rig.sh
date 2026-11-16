@@ -32,7 +32,7 @@ C="${RIG_CLIENT_BIN:-}"
 need() { [ -n "$IMG" ] || { echo "set RIG_IMAGE to the digest-pinned fleet router image (fleet-pins zenoh-router); unpatched upstream eclipse/zenoh:1.9.0 wedged on one start here (lock cycle, upstream PR 2635)"; exit 2; }
   [ -n "$T" ] || { echo "set GOAT_TOPOLOGY_BIN"; exit 2; }; }
 #        name             idx zid       connects  publish  subs pubs  peer name (for a router that sends no report)
-ROUTERS="alpha-core-1     1  a1a1a1a1  -         alpha    540  50  machine-ops-alpha-core-1
+ROUTERS="alpha-core-1     1  a1a1a1a1  -         alpha    130  20  machine-ops-alpha-core-1
 alpha-core-2     2  a2a2a2a2  1         alpha    0    0   machine-ops-alpha-core-2
 alpha-core-3     3  a3a3a3a3  1,2       alpha    3    2   machine-ops-alpha-core-3
 bravo-gateway    4  b1b1b1b1  1,2       bravo    0    0   machine-ops-bravo-gateway
@@ -84,6 +84,7 @@ endpoints() { case "$1" in
 start_pub() { # name idx site
   nohup "$T" publish --endpoint "$(endpoints "$1" "$2")" --site "$3" --node "$1" \
     --admin-addr "127.0.0.1:$((8100+$2))" --config-path "$D/conf/$1.json5" --interval-secs 5 \
+    --self-address "$(addr "$2")" \
     --declarations-interval-secs "${DECL_SECS:-20}" \
     > "$D/log/$1.publish.log" 2>&1 & echo $! > "$D/run/$1.publish.pid"; }
 start_client() { # name idx subs pubs
@@ -116,13 +117,16 @@ exc_json() { case "$1" in
   echo-1) echo ', "owner_exception": {"reason": "present before the owner rule", "granted_by": "ops-lead", "granted_on": "2026-01-05", "state": "stale"}';;
 esac; }
 identity() {
-  { echo '{"owner_read": {"state": "read", "at": 0}, "names": {'; local first=1
+  # Written with the current time: the surface treats a peer directory older
+  # than its limit (20 minutes) as not read, as it would a stopped writer.
+  local now; now=$(date +%s)
+  { echo "{\"owner_read\": {\"state\": \"read\", \"at\": $now}, \"names\": {"; local first=1
     echo "$ROUTERS" | while read n i z c p s q name; do
       [ "$name" = "-" ] && continue
       [ $first = 1 ] || printf ','; first=0
       printf '"sha-%s": {"name": "%s", "ip": "%s", "host": "%s-host", "aff": "ZAGROS-PARTNER,ZAGROS-OBSERVER", "owner": %s%s}\n' "$z" "$name" "$(addr "$i")" "$n" "$(owner_json "$n")" "$(exc_json "$n")"
     done
-    echo '}, "generated_at": 0}'; } > "$D/conf/peer-names.json"
+    echo "}, \"generated_at\": $now}"; } > "$D/conf/peer-names.json"
   cat > "$D/conf/roster.json" <<'EOF'
 {"orgs": [
   {"id": "org-anvil", "nation": "XAA", "display_name": "Anvil Works", "members": [

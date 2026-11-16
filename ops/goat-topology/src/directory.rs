@@ -61,8 +61,12 @@ pub struct OwnerException {
     pub granted_on: String,
     /// Set only by the operator; empty when not set.
     pub review_by: String,
-    /// `active`, or `stale` (the record now names an owner: remove it).
+    /// `active`, `stale` (the record now names an owner: remove it), or
+    /// `malformed` (the card's exception lacks a reason, grantor or date, or
+    /// carries a state this surface does not know): shown, never applied.
     pub state: String,
+    /// Why a malformed exception is malformed; empty otherwise.
+    pub problem: String,
 }
 
 impl OwnerException {
@@ -73,14 +77,38 @@ impl OwnerException {
                 .unwrap_or_default()
                 .to_string()
         };
-        let e = OwnerException {
+        v.as_object()?;
+        let mut e = OwnerException {
             reason: g("reason"),
             granted_by: g("granted_by"),
             granted_on: g("granted_on"),
             review_by: g("review_by"),
             state: g("state"),
+            problem: String::new(),
         };
-        (!e.reason.is_empty()).then_some(e)
+        let mut why: Vec<String> = ["reason", "granted_by", "granted_on"]
+            .iter()
+            .zip([&e.reason, &e.granted_by, &e.granted_on])
+            .filter(|(_, v)| v.is_empty())
+            .map(|(k, _)| format!("no {k}"))
+            .collect();
+        if !matches!(e.state.as_str(), "active" | "stale") {
+            why.push(if e.state.is_empty() {
+                "no state".to_string()
+            } else {
+                format!("unknown state {:?}", e.state)
+            });
+        }
+        if !why.is_empty() {
+            e.state = "malformed".into();
+            e.problem = why.join(", ");
+        }
+        Some(e)
+    }
+
+    /// Whether this exception applies: a well-formed active one.
+    pub fn applies(&self) -> bool {
+        self.state == "active"
     }
 }
 
@@ -97,13 +125,18 @@ pub struct RecordOwner {
     /// What the first hop matched on (`peer-name` today).
     pub matched_by: String,
     pub reason: String,
+    /// The responsible person's handle. Empty when the surface hides the
+    /// individual. The person's identity id is never carried to a browser.
     pub person_handle: String,
-    pub identity_id: String,
+    /// The record says the responsible person's identity is disabled.
+    pub person_disabled: bool,
     pub org_id: String,
     pub org_short_tag: String,
     /// The ORGANIZATION's nation.
     pub org_nation: String,
+    /// `recorded`, or why not (`missing`); with the record's reason.
     pub org_state: String,
+    pub org_reason: String,
     /// The PERSON's own nationality, and its state (`recorded`, `not_stamped`).
     pub nationality: String,
     pub nationality_state: String,
@@ -141,11 +174,15 @@ impl RecordOwner {
                 }
             },
             person_handle: s(person, "handle"),
-            identity_id: s(person, "identity_id"),
+            person_disabled: person
+                .and_then(|p| p.get("disabled"))
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
             org_id: s(org, "id"),
             org_short_tag: s(org, "short_tag"),
             org_nation: s(org, "nation"),
             org_state: s(org, "state"),
+            org_reason: s(org, "reason"),
             nationality: s(nat, "value"),
             nationality_state: s(nat, "state"),
             machine_unit: s(top, "machine_unit"),
@@ -192,6 +229,9 @@ struct RelayFile {
     names: BTreeMap<String, RelayCard>,
     #[serde(default)]
     owner_read: Option<serde_json::Value>,
+    /// Unix seconds when the writer generated the file.
+    #[serde(default)]
+    generated_at: Option<u64>,
 }
 #[derive(Debug, Deserialize)]
 struct RelayCard {
@@ -260,7 +300,7 @@ struct RosterMember {
     nationality: Option<String>,
 }
 
-/// Normalise an address as the directory and a session link spell it:
+/// Normalize an address as the directory and a session link spell it:
 /// `100.127.0.7`, `100.127.0.7/16`, `tls/100.127.0.7:41544`, `[fd00::1]:7447`.
 pub fn address_of(s: &str) -> Option<IpAddr> {
     let s = s.trim().trim_matches('"');
@@ -302,9 +342,39 @@ pub struct Directory {
     /// Whether the host writer could ask the portal for owners (the peer
     /// directory's `owner_read`). `None` when the file carries none.
     pub owner_read: Option<OwnerRead>,
+    /// When the writer generated the peer directory (Unix ms; 0 when the file
+    /// does not say).
+    pub peers_generated_ms: u64,
+    /// Past this age (ms) the owners in the peer directory are not trusted:
+    /// the writer runs every 5 minutes, so an older file means it stopped.
+    /// 0 turns the check off.
+    pub peers_max_age_ms: u64,
+    /// Whether the individual (person, their nationality, an exception's
+    /// grantor) is hidden on this surface.
+    pub individual_hidden: bool,
 }
 
 impl Directory {
+    /// When the peer directory was last written: the writer's own time when
+    /// the file states one, else the file's modification time. 0 when unknown.
+    pub fn peers_written_ms(&self) -> u64 {
+        let at = self.owner_read.as_ref().map_or(0, |r| r.at * 1000);
+        match self.peers_generated_ms.max(at) {
+            0 => self.peers_modified_ms,
+            stated => stated,
+        }
+    }
+
+    /// The peer directory's age when it is past its limit, else `None`.
+    pub fn peers_too_old(&self, now_ms: u64) -> Option<u64> {
+        let w = self.peers_written_ms();
+        if self.peers_max_age_ms == 0 || w == 0 {
+            return None;
+        }
+        let age = now_ms.saturating_sub(w);
+        (age > self.peers_max_age_ms).then_some(age)
+    }
+
     pub fn peer_at(&self, addr: &str) -> Option<&Peer> {
         self.peers.get(&address_of(addr)?)
     }
@@ -415,15 +485,31 @@ impl Directory {
     }
 }
 
-type Parsed = (BTreeMap<IpAddr, Peer>, Option<OwnerRead>);
+type Parsed = (BTreeMap<IpAddr, Peer>, Option<OwnerRead>, u64);
+
+/// Drop what names the individual, when the surface hides it.
+fn hide_individual(peers: &mut BTreeMap<IpAddr, Peer>) {
+    for p in peers.values_mut() {
+        if let Some(o) = p.owner.as_mut() {
+            o.person_handle.clear();
+            o.nationality.clear();
+            o.nationality_state.clear();
+        }
+        if let Some(e) = p.exception.as_mut() {
+            e.granted_by.clear();
+        }
+    }
+}
 
 fn parse_peers(body: &[u8]) -> Result<Parsed> {
     let v: serde_json::Value =
         serde_json::from_slice(body).context("peer directory is not JSON")?;
     let mut out = BTreeMap::new();
     let mut read = None;
+    let mut generated_ms = 0;
     if v.get("names").is_some() {
         let f: RelayFile = serde_json::from_value(v).context("peer-names shape")?;
+        generated_ms = f.generated_at.unwrap_or(0) * 1000;
         read = f.owner_read.as_ref().and_then(|r| {
             Some(OwnerRead {
                 state: r.get("state")?.as_str()?.to_string(),
@@ -484,7 +570,7 @@ fn parse_peers(body: &[u8]) -> Result<Parsed> {
     } else {
         anyhow::bail!("peer directory is neither a peer-names file nor a peer list");
     }
-    Ok((out, read))
+    Ok((out, read, generated_ms))
 }
 
 /// Where the inputs live, and their last-seen modification times, so a reload
@@ -495,6 +581,8 @@ pub struct Sources {
     pub roster: Option<PathBuf>,
     pub goatnet: String,
     pub show_individual: bool,
+    /// See [`Directory::peers_max_age_ms`].
+    pub peers_max_age_ms: u64,
     seen: (Option<SystemTime>, Option<SystemTime>),
     loaded: bool,
 }
@@ -511,6 +599,7 @@ impl Sources {
             roster,
             goatnet,
             show_individual,
+            peers_max_age_ms: 20 * 60 * 1000,
             seen: (None, None),
             loaded: false,
         }
@@ -546,6 +635,8 @@ impl Sources {
         let mut d = Directory {
             goatnet: self.goatnet.clone(),
             show_individual: self.show_individual,
+            individual_hidden: !self.show_individual,
+            peers_max_age_ms: self.peers_max_age_ms,
             peers_configured: self.peers.is_some(),
             roster_configured: self.roster.is_some(),
             ..Default::default()
@@ -555,9 +646,13 @@ impl Sources {
                 .with_context(|| format!("read {}", p.display()))
                 .and_then(|b| parse_peers(&b))
             {
-                Ok((m, read)) => {
+                Ok((mut m, read, generated_ms)) => {
+                    if !self.show_individual {
+                        hide_individual(&mut m);
+                    }
                     d.peers = m;
                     d.owner_read = read;
+                    d.peers_generated_ms = generated_ms;
                     d.peers_modified_ms = Self::mtime_ms(p);
                 }
                 Err(e) => d.errors.push(format!("peer directory not read: {e:#}")),
@@ -585,10 +680,16 @@ pub mod testing {
 
     /// A directory built from in-memory JSON, for the view tests.
     pub fn directory(peers: &str, roster: &str, show_individual: bool) -> Directory {
-        let (peers, owner_read) = parse_peers(peers.as_bytes()).unwrap();
+        let (mut peers, owner_read, peers_generated_ms) = parse_peers(peers.as_bytes()).unwrap();
+        if !show_individual {
+            hide_individual(&mut peers);
+        }
         Directory {
             peers,
             owner_read,
+            peers_generated_ms,
+            peers_max_age_ms: 20 * 60 * 1000,
+            individual_hidden: !show_individual,
             roster: serde_json::from_str(roster).unwrap(),
             goatnet: "zagros".into(),
             show_individual,
@@ -632,7 +733,7 @@ mod tests {
     }, "generated_at": 0, "count": 4}"#;
 
     #[test]
-    fn addresses_normalise_from_every_spelling() {
+    fn addresses_normalize_from_every_spelling() {
         let a: IpAddr = "100.127.0.7".parse().unwrap();
         for s in [
             "100.127.0.7",

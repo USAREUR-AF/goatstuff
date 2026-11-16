@@ -79,22 +79,26 @@ export function orgLine(x) {
   const r = x.peer && x.peer.owner;
   // The record first (ADR 1249). An owner the record does not hold, or could
   // not be read, is said in words: never a blank, never a gray "not recorded".
-  if (x.owner_state === "recorded" && r) {
-    return `${r.org_short_tag || r.org_id || "org " + NOT_RECORDED} · ${r.org_nation || "nation " + NOT_RECORDED}`;
+  switch (x.owner_state) {
+    case "recorded":
+      return r ? `${r.org_short_tag || r.org_id || "org " + NOT_RECORDED} · ${r.org_nation || "nation " + NOT_RECORDED}` : "recorded";
+    case "incomplete": return "OWNER RECORD INCOMPLETE";
+    case "no_record": return "NO RECORDED OWNER";
+    case "lead": return "NO RECORDED OWNER (lead only)";
+    case "excepted": return "owner exception";
+    case "not_read": return "owner not read";
+    default: return "";
   }
-  if (x.owner_state === "no_record") return "NO RECORDED OWNER";
-  if (x.owner_state === "excepted") return "owner exception";
-  if (x.owner_state === "not_read") return "owner not read";
-  const o = x.owner;
-  if (o) return `${o.org_display_name || o.org || "org " + NOT_RECORDED} · ${o.org_nation || "nation " + NOT_RECORDED} (lead)`;
-  if (x.peer) return "owner: a lead only";
-  return "";
 }
 
 /** The color an owner state is drawn in. */
-export const ownerTone = x => (x && x.owner_state === "no_record") ? "var(--status-err-fg)"
-  : (x && x.owner_state === "not_read") ? "var(--status-warn-fg)"
-  : (x && x.owner_state === "excepted") ? "var(--status-info-fg)" : "var(--fg-faint)";
+export const ownerTone = x => {
+  const s = x && x.owner_state;
+  if (s === "no_record" || s === "lead") return "var(--status-err-fg)";
+  if (s === "not_read" || s === "incomplete") return "var(--status-warn-fg)";
+  if (s === "excepted") return "var(--status-info-fg)";
+  return "var(--fg-faint)";
+};
 
 /** What a router carries, in one table cell's words. A reporting router: its
  *  own census. One that sends no report: what a reporter in its routing group

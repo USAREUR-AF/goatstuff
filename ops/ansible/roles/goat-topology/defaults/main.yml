@@ -93,6 +93,14 @@ goat_topology_goatnet: "{{ goatnet | default('') }}"
 # machine) and that person's nationality in the router detail. Organization and
 # its nation are shown either way.
 goat_topology_show_individual: true
+# Past this age the owners in the peer directory are shown as "not read": the
+# relay-health writer refreshes it every 5 minutes, so an older file means the
+# writer stopped. 0 turns the check off.
+goat_topology_peer_directory_max_age_secs: 1200
+# The mesh address this host connects from (publish mode). Empty: read from
+# `netbird status --json` on the host; when that fails, the publisher states
+# none and the surface finds the address only through another reporter.
+goat_topology_self_address: ""
 
 # --- zenoh transport -------------------------------------------------------
 # TWO endpoints, because the two halves sit in different network namespaces.

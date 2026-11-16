@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // One router, everything the page holds about it, in one place: identity,
-// declared mode beside running state, its neighbours, the findings that name
+// declared mode beside running state, its neighbors, the findings that name
 // it and the changes it made. Selecting a router opens this; nothing here
 // fetches — it is a second reading of the payload the page already has, so a
 // drill-down costs the fabric nothing (ADR 1123).
@@ -14,7 +14,7 @@ export function onDetailCarve(fn) { onCarve = fn; }
 const key = x => x.node || x.zid;
 
 /** Every link that touches `id`, read from this router's side. */
-function neighbours(d, id, self) {
+function neighbors(d, id, self) {
   const gateway = self && roleOf(self) === "gateway";
   return d.edges.filter(e => e.a === id || e.b === id).map(e => {
     const other = e.a === id ? e.b : e.a;
@@ -47,36 +47,48 @@ export function ownerFacts(x, d = {}, now = Date.now()) {
       <dt>Owner</dt><dd style="color:var(--status-warn-fg)">the owner lookup failed <span class="sub">— ${esc(x.owner_reason || x.name_note || "no reporting router sees its session")}</span></dd>`;
   }
   const p = x.peer, o = x.owner, r = p.owner;
+  const hidden = (d.directory || {}).individual_hidden;
+  const hid = `<span class="sub">hidden on this surface</span>`;
+  const person = s => (hidden ? hid : v(s));
   const state = {
     recorded: "from the record",
-    lead: "a lead, not the record",
+    incomplete: "from the record, incomplete",
+    lead: "no recorded owner: a lead only",
     not_read: "the owner lookup failed",
     no_record: "the record holds no owner for this router",
     excepted: "owner exception",
   }[x.owner_state] || "";
-  const tone = x.owner_state === "no_record" ? ' style="color:var(--status-err-fg)"'
-    : x.owner_state === "not_read" ? ' style="color:var(--status-warn-fg)"' : "";
+  const tone = (x.owner_state === "no_record" || x.owner_state === "lead") ? ' style="color:var(--status-err-fg)"'
+    : (x.owner_state === "not_read" || x.owner_state === "incomplete") ? ' style="color:var(--status-warn-fg)"' : "";
   let who = `<dt>Owner</dt><dd${tone}>${esc(state)}${x.owner_reason && x.owner_state !== "excepted" ? ` <span class="sub">— ${esc(x.owner_reason)}</span>` : ""}</dd>`;
   const ex = p.exception;
   if (ex) {
-    who += `<dt>Owner exception</dt><dd${ex.state === "stale" ? ' style="color:var(--status-warn-fg)"' : ""}>${esc(ex.reason)}${
-      ex.state === "stale" ? ` <span class="sub">— stale: the record now names an owner; remove the exception</span>` : ""}</dd>
-      <dt>Granted</dt><dd>by ${esc(ex.granted_by)} on ${esc(ex.granted_on)}${ex.review_by ? ` <span class="sub">review by ${esc(ex.review_by)}</span>` : ""}</dd>`;
+    const warn = ex.state === "stale" || ex.state === "malformed";
+    const note = ex.state === "stale" ? "stale: the record now names an owner; remove the exception"
+      : ex.state === "malformed" ? `malformed (${ex.problem}); it does not apply` : "";
+    who += `<dt>Owner exception</dt><dd${warn ? ' style="color:var(--status-warn-fg)"' : ""}>${v(ex.reason)}${
+      note ? ` <span class="sub">— ${esc(note)}</span>` : ""}</dd>
+      <dt>Granted</dt><dd>by ${person(ex.granted_by)} on ${v(ex.granted_on)}${ex.review_by ? ` <span class="sub">review by ${esc(ex.review_by)}</span>` : ""}</dd>`;
   }
-  if (x.owner_state === "recorded" && r) {
+  if ((x.owner_state === "recorded" || x.owner_state === "incomplete") && r) {
     const machine = r.via === "machine-custody";
-    who += `<dt>${machine ? "Custodian" : "Responsible person"}</dt><dd>${v(r.person_handle)}</dd>
-      <dt>Organization</dt><dd>${v(r.org_short_tag || r.org_id)}${r.org_short_tag && r.org_id ? ` <span class="sub">${esc(r.org_id)}</span>` : ""}</dd>
+    const nat = r.nationality ? esc(r.nationality)
+      : `${nr} <span class="sub">${r.nationality_state === "not_stamped" ? "— the identity record carries none yet" : ""}</span>`;
+    who += `<dt>${machine ? "Custodian" : "Responsible person"}</dt><dd>${person(r.person_handle)}${r.person_disabled ? ` <span class="sub">— identity disabled</span>` : ""}</dd>
+      <dt>Organization</dt><dd>${r.org_short_tag || r.org_id ? `${esc(r.org_short_tag || r.org_id)}${r.org_short_tag && r.org_id ? ` <span class="sub">${esc(r.org_id)}</span>` : ""}`
+        : `${nr}${r.org_reason ? ` <span class="sub">— ${esc(r.org_reason)}</span>` : ""}`}</dd>
       <dt>Organization nation</dt><dd>${v(r.org_nation)}</dd>
-      <dt>${machine ? "Their nationality" : "Nationality"}</dt><dd>${r.nationality ? esc(r.nationality)
-        : `${nr} <span class="sub">${r.nationality_state === "not_stamped" ? "— the identity record carries none yet" : ""}</span>`}</dd>
+      <dt>${machine ? "Their nationality" : "Nationality"}</dt><dd>${hidden ? hid : nat}</dd>
       ${machine && r.machine_unit ? `<dt>Machine unit</dt><dd>${esc(r.machine_unit)} <span class="sub">as recorded at enrollment</span></dd>` : ""}
       <dt>Found by</dt><dd><span class="sub">${esc(r.via)}; the first hop matched the ${esc(r.matched_by || "peer name")}, every later hop is a recorded link</span></dd>`;
-  } else if (o) {
+  } else if (x.owner_state === "not_read" && x.owner_cause === "old_format" && o) {
+    // Only where the peer directory carries no owner at all: the local
+    // roster file's match on the name, labeled as the lead it is.
     who += `<dt>Organization (lead)</dt><dd>${v(o.org_display_name || o.org)}</dd>
        <dt>Organization nation (lead)</dt><dd>${v(o.org_nation)}</dd>
-       <dt>${o.kind === "machine" ? "Enrolled by (lead)" : "Individual (lead)"}</dt><dd>${v(o.individual)}</dd>
-       <dt>Found by</dt><dd><span class="sub">the peer name led to roster handle ${esc(o.handle)}${rosterAge}; a lead, not the record</span></dd>`;
+       <dt>${o.kind === "machine" ? "Enrolled by (lead)" : "Individual (lead)"}</dt><dd>${person(o.individual)}</dd>
+       ${o.kind === "machine" ? "" : `<dt>Their nationality (lead)</dt><dd>${hidden ? hid : v(o.individual_nationality)}</dd>`}
+       <dt>Found by</dt><dd><span class="sub">the peer name led to roster handle ${esc(o.handle)}${rosterAge} on this host; a lead, not the record</span></dd>`;
   }
   return `${x.node ? "" : derived}
     <dt>Mesh peer</dt><dd>${esc(p.name)}</dd>
@@ -118,7 +130,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
   const box = $("#detail");
   if (!selected) {
     box.innerHTML = `<div class="quiet">Select a router in the graph or in the Routers table
-      to see its identity, neighbours, findings and changes together.</div>`;
+      to see its identity, neighbors, findings and changes together.</div>`;
     $("#detail-note").textContent = "nothing selected";
     return;
   }
@@ -127,7 +139,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
     // Known from another router's link table, never from its own report. The
     // server lists such a router with `reporting: false` and the reporters
     // whose maps name it; an older server leaves it out of `routers` entirely.
-    const ns = neighbours(d, selected, null);
+    const ns = neighbors(d, selected, null);
     const from = (x?.known_from || []).map(displayName);
     box.innerHTML = `<div class="d-head"><span class="d-name">${esc(x ? labelOf(x) : displayName(selected))}</span>
         <span class="chip chip--muted">not reporting</span></div>
@@ -146,7 +158,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
 
   const role = roleOf(x);
   const mism = x.route_successor_count !== x.route_successor_expected;
-  const ns = neighbours(d, selected, x);
+  const ns = neighbors(d, selected, x);
   const fs = d.findings.filter(f => names(f, selected));
   const cs = d.changes.filter(c => c.node === selected);
   const regions = (x.regions || []).map(r =>

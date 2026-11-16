@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Built and deployed, including not-reporting routers, publish fallback, router names and owners and what each router carries (§2.3 to §2.6). Owners from the record, owner exceptions and findings T-014, T-015 and T-016 (§2.5a) built, measured on a local rig, not deployed |
+| Status | Built and deployed, including not-reporting routers, publish fallback, router names and owners and what each router carries (§2.3 to §2.6). Owners from the record, owner exceptions and findings T-014 to T-017 (§2.5a) built, measured on a local rig, not deployed |
 | ADR | [1160](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1160-zenoh-topology-surface.md) |
 | Component | `ops/goat-topology` — one binary, two modes |
 | Evidence it rests on | M-111 (the fleet on `Auto`), M-112 (`Custom([...])` in a rig) |
@@ -298,7 +298,7 @@ roster handle, by the onboarding grammar the peerview surface already applies:
 |---|---|---|
 | `peer-<handle>[-<goatnet>]-<yyyy>-<mm>-<dd>-<host>` | everything before the date, minus the goatnet token (`--goatnet`) | the person, `<handle>` |
 | `machine-<handle>[-<host>]` | the longest roster handle the rest starts with | the custodian who enrolled the machine (roster `custody`) |
-| anything else | none | none; organization `not recorded` |
+| anything else | none | none: the page says the name leads to no roster handle |
 
 The handle is never decomposed further. Organization, organization nation and
 nationality are then read from the roster and never derived from the name, a
@@ -366,31 +366,66 @@ holds no owner for as a critical finding, never as a gray label.
 the roster"), and with the file-level `owner_read`. `serve` reads the block
 first. The roster join of §2.5 remains only as a labeled lead.
 
+**How a router's address is found.** A reporting router is looked up first by
+the mesh addresses its publisher states as its own (`self_addresses`,
+`--self-address`; the goat role reads the host's mesh address from `netbird
+status --json`), then, like any router, by the address another reporter sees
+its session come from. A reporter no other reporter holds a session with
+therefore still has an owner.
+
+**The grading, in order** (`view.rs` `owner_state`). The first rule that holds
+decides:
+
 | `owner_state` | When | Shown as |
 |---|---|---|
-| `recorded` | the block's `source` is `record` (machine custody or slot identity) or `declared` | `<organization> · <organization nation>` on the graph and in the table. The detail shows the custodian or responsible person, organization, organization nation, the person's own nationality with its state, a machine's recorded unit, and how the first hop matched (`peer-name` today) |
-| `lead` | `source: roster`, or no block and a roster match | `lead: <organization> · <nation>`; the detail says a lead, not the record |
-| `not_read` | `source: unread`, `owner_read.state: unread`, no address (link state only), not in the directory, or a writer older than the block | "owner not read" in the warning color, with the reason; finding **T-015** (warning) |
+| `not_read` | no peer for the router (no address seen, no peer directory configured, or the address is not in it); the peer directory is older than its limit; the card has no owner block (a writer older than owner-from-record); `source: unread`; or a source this surface does not know | "owner not read" in the warning color, with the reason. Each router carries `owner_cause` (`link_state_only`, `no_directory`, `not_in_directory`, `directory_stale`, `old_format`, `lookup_failed`, `unknown_source`). Finding **T-015** (warning) describes each cause present and gives its step, and no cause that is absent |
+| `recorded` | `source: record` (machine custody or slot identity) or `declared`, with the organization recorded and the person not disabled | `<organization> · <organization nation>` on the graph and in the table. The detail shows the custodian or responsible person, organization, organization nation, the person's own nationality with its state, a machine's recorded unit, and how the first hop matched (`peer-name` today). Any exception still on file is reported for removal |
+| `incomplete` | `source: record` or `declared`, but `org.state` is not `recorded` (with the record's `org.reason`) or `person.disabled` | "OWNER RECORD INCOMPLETE" in the warning color, with the recorded reason; finding **T-017** (warning) |
+| `excepted` | not recorded, and the card carries a well-formed active `owner_exception` the operator granted (goatcore ADR 1249 decision 7) | "owner exception" in the info color; the detail shows the reason, who granted it, when, and the review date if the operator set one; finding **T-016** (info). Never shown as recorded, never hidden, and not counted in T-014 |
+| `lead` | `source: roster`: the declared roster answered, not the record | "NO RECORDED OWNER (lead only)" in the critical color; in finding **T-014** (critical), as the ownership reconcile counts it |
 | `no_record` | `source: none` | "NO RECORDED OWNER" in the critical color, with the reason; finding **T-014** (critical) |
-| `excepted` | the card carries an active `owner_exception` the operator granted (goatcore ADR 1249 decision 7) | "owner exception" in the info color; the detail shows the reason, who granted it, when, and the review date if the operator set one; finding **T-016** (info) lists every such router. Never shown as recorded, never hidden, and not counted in T-014 |
 
 A failed lookup is never shown as "no owner", and a roster answer never as
-the record. A stale exception (the record now names an owner) leaves the
-router `recorded`, and its reason says to remove the exception.
+the record. An exception never outranks the record or an unread owner. An
+exception that lacks a reason, a grantor or a date, or carries a state this
+surface does not know, is shown as `malformed` with what is wrong, and never
+applies.
 
-Measured on the rig of §2.3. The synthetic peer-names file carries owner
-blocks and owner exceptions as the new writer writes them: 14 recorded (one of
-them with a stale exception), 2 roster leads, 1 with no record, 1 under an
-active exception, and 2 routers whose owner cannot be read. `rig.sh check`
-matched every router's `owner_state` and each recorded router's organization
-and its nation (0 mismatches). It also confirmed:
+**Where the local roster file still shows.** Only when the peer directory
+carries no owner at all (`owner_cause: old_format`), the detail shows the
+roster file's match on the peer name, labeled "(lead)" with the roster file's
+date. A `source: roster` card never shows the roster file's organization: the
+writer's own answer is the lead.
 
-- T-014 names exactly the router with no record and not the excepted one;
-- T-016 lists the excepted router;
-- the stale exception stays recorded with a note to remove it;
-- T-015 lists the not-read routers and no recorded one.
+**A stopped writer.** The writer rewrites `peer-names.json` every 5 minutes.
+When the file is older than `--peer-directory-max-age-secs` (role variable
+`goat_topology_peer_directory_max_age_secs`, default 1200 s), every owner reads
+`not_read` (`directory_stale`). The age comes from the file's `generated_at`,
+else `owner_read.at`, else its modification time. The reason names the limit,
+and the page shows the age from `directory.peers_generated_ms`, so the payload
+does not change while nothing happens; the refresh tick rebuilds once, when
+the file crosses the limit.
 
-The page loaded in headless Chromium with no label outside the picture.
+**What a browser never receives.** The person's identity id is never carried
+to the page. With `--hide-individual` (`goat_topology_show_individual: false`)
+the payload carries no person handle, no nationality and no exception grantor,
+and the page says "hidden on this surface". The organization and its nation
+are shown either way. A person's device is still named by its mesh peer name,
+which by the onboarding grammar contains the person's handle.
+
+**Measured** on the rig of §2.3, with every publisher given `--self-address`
+and a peer-names file stamped with the current time:
+- 14 routers recorded, one of them with a stale exception;
+- 2 roster leads, both named in T-014;
+- 1 router with no record, in T-014;
+- 1 router under an active exception, in T-016 and not in T-014;
+- 2 routers whose owner cannot be read, with causes `link_state_only` and
+  `not_in_directory`, in T-015.
+
+`rig.sh check` passed 82 checks with 0 mismatches. They include every
+reporter recorded through its own address, and no identity id in the payload.
+The page loaded in headless Chromium with no console error. The rules above
+are also unit-tested (`cargo test`; `node --test static/test/owner.test.mjs`).
 
 ### 2.6 What each router carries
 

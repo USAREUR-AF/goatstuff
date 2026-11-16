@@ -343,6 +343,12 @@ pub struct RouterTopologyV1 {
     /// Route-table entries per next hop, from the successor table.
     #[prost(message, repeated, tag = "16")]
     pub next_hops: Vec<NextHopV1>,
+    /// The mesh addresses this router's host connects from, as the publisher
+    /// was told them (`--self-address`). They let the surface look a reporting
+    /// router's owner up directly, rather than only through another reporter's
+    /// session with it. Empty from an older publisher.
+    #[prost(string, repeated, tag = "17")]
+    pub self_addresses: Vec<String>,
 }
 
 impl RouterTopologyV1 {

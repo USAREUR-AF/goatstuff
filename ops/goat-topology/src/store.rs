@@ -175,6 +175,9 @@ pub struct Store {
     /// Which routers were stale at the last rebuild. The refresh tick rebuilds
     /// ONLY when this set changes — see [`Store::refresh`].
     stale_set: std::collections::BTreeSet<String>,
+    /// Whether the peer directory was past its age limit at the last rebuild;
+    /// the refresh tick rebuilds when this flips, too.
+    directory_old: bool,
     /// Who each router belongs to, from files on this host (see
     /// [`crate::directory`]). Replaced whole when a file changes.
     directory: crate::directory::Directory,
@@ -261,6 +264,7 @@ impl Store {
             },
         );
         self.stale_set = self.compute_stale(now_ms);
+        self.directory_old = self.directory.peers_too_old(now_ms).is_some();
         true
     }
 
@@ -279,8 +283,10 @@ impl Store {
             return false;
         }
         let now_stale = self.compute_stale(now_ms);
-        if now_stale != self.stale_set {
+        let old = self.directory.peers_too_old(now_ms).is_some();
+        if now_stale != self.stale_set || old != self.directory_old {
             self.stale_set = now_stale;
+            self.directory_old = old;
             return true;
         }
         false

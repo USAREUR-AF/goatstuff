@@ -17,7 +17,7 @@ export function renderRouters(d, now = Date.now()) {
   // Organization and the ORGANIZATION's nation; the individual is only in the
   // detail a click opens.
   const org = x => orgLine(x)
-    ? `<span style="color:${x.owner_state === "recorded" || x.owner_state === "lead" ? "inherit" : ownerTone(x)}">${esc(orgLine(x))}</span>`
+    ? `<span style="color:${x.owner_state === "recorded" ? "inherit" : ownerTone(x)}">${esc(orgLine(x))}</span>`
       + (x.owner_reason ? `<div class="sub">${esc(x.owner_reason)}</div>` : "")
     : `<span class="sub">${esc(x.owner_reason || (x.reporting === false ? "not known" : NOT_RECORDED))}</span>`;
   const carries = x => { const c = carriesLine(x);
@@ -83,8 +83,9 @@ export function namesNote(d, now = Date.now()) {
   const parts = [];
   if (!dir.peers_configured) parts.push("No peer directory is configured, so routers that send no report keep names derived from their ZIDs.");
   else parts.push("Routers that send no report are named from the mesh peer their session comes from.");
-  if (!dir.roster_configured) parts.push("No roster is configured, so organization and nation are not shown.");
-  else parts.push("Organization, nation and the individual are read from the identity roster, found through the peer name.");
+  // Owners come from the record the peer directory carries; the roster file
+  // is a lead only, and only where the directory carries no owner at all.
+  if (dir.roster_configured) parts.push("A roster file is configured; it is used only as a lead where the peer directory carries no owner from the record.");
   if (dir.roster_modified_ms && days(dir.roster_modified_ms, now) >= ROSTER_OLD_DAYS) {
     parts.push(`The roster on this host was written ${days(dir.roster_modified_ms, now)} days ago `
       + `(${new Date(dir.roster_modified_ms).toISOString().slice(0, 10)}); anyone enrolled since has no entry, so their routers show a name and no owner.`);
@@ -92,6 +93,12 @@ export function namesNote(d, now = Date.now()) {
   if (dir.peers_modified_ms && days(dir.peers_modified_ms, now) >= PEERS_OLD_DAYS) {
     parts.push(`The peer directory was last written ${days(dir.peers_modified_ms, now)} days ago, so a peer added since is not named.`);
   }
+  const written = dir.peers_generated_ms || (dir.owner_read && dir.owner_read.at * 1000) || 0;
+  if (written && dir.peers_max_age_ms && now - written > dir.peers_max_age_ms) {
+    parts.push(`The peer directory was last written ${Math.round((now - written) / 60000)} min ago, past its `
+      + `${Math.round(dir.peers_max_age_ms / 60000)}-minute limit: its writer has stopped, so no owner on this page is trusted.`);
+  }
+  if (dir.individual_hidden) parts.push("The individual (person, their nationality, who granted an exception) is hidden on this surface.");
   const or = dir.owner_read;
   if (or && or.state === "unread") parts.push(`Owners could not be read on this host: ${or.reason}.`);
   else if (or && or.state === "read") parts.push("Owners are read from the identity record through the portal; a router whose owner the record does not hold is a critical finding.");

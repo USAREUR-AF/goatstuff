@@ -35,17 +35,21 @@ OWNER = {
 }
 NO_OWNER = {"echo-4", "echo-5"}
 # What the record says, as rig.sh `owner_json` writes it (ADR 1249 states).
+# Every reporting router states its own address (--self-address), so each is
+# looked up directly and is "recorded".
 STATE = {"echo-2": "lead", "echo-10": "lead", "echo-4": "no_record", "echo-5": "excepted",
          "delta-2": "not_read", "echo-11": "not_read"}
 RECORD_ORG = {"charlie-gateway": ("cedar", ""), "delta-1": ("birch", "XBB"), "echo-1": ("anvil", "XAA"),
               "echo-3": ("anvil", "XAA"), "echo-6": ("anvil", "XAA"), "echo-7": ("birch", "XBB"),
               "echo-8": ("birch", "XBB"), "echo-9": ("anvil", "XAA")}
+CAUSE = {"delta-2": "link_state_only", "echo-11": "not_in_directory"}
 LINK_STATE_ONLY = {"delta-2"}
 NOT_IN_DIRECTORY = {"echo-11"}
 # The serve process subscribes once, on alpha-core-1.
 EXTRA_SUBS = {"alpha-core-1": 1}
 
-d = json.load(urllib.request.urlopen(url))
+raw = urllib.request.urlopen(url).read().decode()
+d = json.loads(raw)
 by_zid = {x["zid"]: x for x in d["routers"]}
 bad = 0
 
@@ -66,6 +70,8 @@ for n, r in R.items():
         continue
     want_state = STATE.get(n, "recorded")
     ok(x.get("owner_state") == want_state, f"{n}: owner state {x.get('owner_state')!r}, rig declared {want_state!r} ({x.get('owner_reason')})")
+    if n in CAUSE:
+        ok(x.get("owner_cause") == CAUSE[n], f"{n}: not read because {x.get('owner_cause')!r}, rig {CAUSE[n]!r}")
     if n in RECORD_ORG:
         ro = (x.get("peer") or {}).get("owner") or {}
         ok((ro.get("org_short_tag"), ro.get("org_nation")) == RECORD_ORG[n],
@@ -101,6 +107,9 @@ t14 = fs.get("T-014")
 ok(t14 is not None and t14["severity"] == "critical"
    and R["echo-4"]["peer"] in t14["what"] and R["echo-5"]["peer"] not in t14["what"],
    "T-014 (critical) names the router with no recorded owner, and not the excepted one")
+ok(t14 is not None and R["echo-2"]["peer"] in t14["what"],
+   "T-014 counts a router named only by a roster lead, as the reconcile does")
+ok("identity_id" not in raw and "ory-" not in raw, "no identity id reaches the browser")
 t16 = fs.get("T-016")
 ok(t16 is not None and t16["severity"] == "info" and R["echo-5"]["peer"] in t16["what"],
    "T-016 (info) lists the router under an owner exception: shown, not hidden")
