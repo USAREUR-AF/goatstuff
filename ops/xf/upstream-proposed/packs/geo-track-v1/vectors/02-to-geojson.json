@@ -1,0 +1,7 @@
+{
+  "name": "to-geojson",
+  "from": "geo-track-v1",
+  "to": "geojson",
+  "input": "{\"schema\":\"goat.geo.track.v1\",\"id\":\"radar-a:4411\",\"label\":\"4411\",\"kind\":\"track\",\"source\":{\"sensor\":\"radar-a\",\"site\":\"site-a\",\"node\":\"node-a\",\"goatnet\":\"zagros\"},\"lat\":30.25,\"lon\":-85.5,\"alt_m\":120.5,\"course_deg\":90,\"speed_mps\":12.5,\"ce_m\":25.5,\"le_m\":40,\"cot_type\":\"a-f-A\",\"affiliation\":\"friend\",\"dimension\":\"air\",\"how\":\"m-g\",\"descriptor\":\"radar/radar-a:4411\",\"reported_at\":\"2021-02-27T20:00:00.250Z\",\"stale_at\":\"2021-02-27T20:03:00.250Z\",\"observed_at\":\"2021-02-27T20:00:01.000Z\",\"producer_anchor\":\"00112233445566778899aabbccddeeff\",\"synthetic\":true,\"org\":\"Example Org\"}",
+  "expect": "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[-85.5,30.25,120.5]},\"properties\":{\"type\":\"a-f-A\",\"time_ms\":1614456000250,\"how\":\"m-g\",\"ce\":25.5,\"le\":40,\"course\":90,\"speed_ms\":12.5},\"id\":\"4411\"}"
+}

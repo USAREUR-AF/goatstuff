@@ -1,0 +1,10 @@
+# The cotxml module: values of a Cursor on Target event as the sender wrote
+# them, where a consumer needs the text and not only its meaning, and one
+# member of the open `detail` element that no core key covers.
+module        cotxml
+version       0.1.0
+distribution  public
+source        "Cursor on Target event schema (MITRE, public release); `detail/uid/@Droid` is written by the public Android Tactical Assault Kit (github.com/deptofdefense/AndroidTacticalAssaultKit-CIV) and by sensor chains that follow it"
+key  time_text   string  -  "event/@time as written: the sender's clock, not parsed"
+key  stale_text  string  -  "event/@stale as written"
+key  uid_droid   string  -  "detail/uid/@Droid: the name the sender shows for the entity"

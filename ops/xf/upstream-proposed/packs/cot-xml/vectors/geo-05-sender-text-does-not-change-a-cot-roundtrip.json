@@ -1,0 +1,7 @@
+{
+  "name": "sender-text-does-not-change-a-cot-roundtrip",
+  "from": "cot-xml",
+  "to": "cot-xml",
+  "input": "<event version=\"2.0\" uid=\"4411\" time=\"2021-02-27T20:00:00Z\" start=\"2021-02-27T20:00:00Z\" stale=\"2021-02-27T20:03:00+00:00\" how=\"m-g\"><point lat=\"30.25\" lon=\"-85.5\" hae=\"120.5\" ce=\"25.5\" le=\"40\"/><detail><uid Droid=\"radar/radar-a:4411\"/></detail></event>",
+  "expect": "<event version=\"2.0\" uid=\"4411\" type=\"a-u-X\" time=\"2021-02-27T20:00:00.000Z\" start=\"2021-02-27T20:00:00.000Z\" stale=\"2021-02-27T20:03:00.000Z\" how=\"m-g\"><point lat=\"30.25\" lon=\"-85.5\" hae=\"120.5\" ce=\"25.5\" le=\"40\"/><detail><uid Droid=\"radar/radar-a:4411\"/></detail></event>"
+}

@@ -1,0 +1,68 @@
+{
+  "messages": {
+    "both_accept": 16,
+    "both_refuse": 9,
+    "disagree": [
+      {
+        "cause": "the built-in path publishes id `<sensor>:`, which the schema refuses; the packs refuse the event",
+        "input": "no-uid"
+      }
+    ],
+    "inputs": 26
+  },
+  "packs": {
+    "absent": 19,
+    "by_cause": {
+      "no absent-value sentinel; completed by complete_error_sentinel": 31,
+      "no function takes a token of the type; completed by complete_type_letters": 32,
+      "the json wire writes 65 where Python writes 65.0: one JSON number": 15,
+      "the json wire writes no member for an absent key; completed by complete_null_members": 19
+    },
+    "by_member": {
+      "affiliation": {
+        "different": 16
+      },
+      "ce_m": {
+        "different": 15
+      },
+      "course_deg": {
+        "absent": 1,
+        "form": 15
+      },
+      "descriptor": {
+        "absent": 1
+      },
+      "dimension": {
+        "different": 16
+      },
+      "le_m": {
+        "different": 16
+      },
+      "org": {
+        "absent": 16
+      },
+      "speed_mps": {
+        "absent": 1
+      }
+    },
+    "different": 63,
+    "equal": 271,
+    "form": 15,
+    "members": 368
+  },
+  "service": {
+    "absent": 0,
+    "by_cause": {
+      "the json wire writes 65 where Python writes 65.0: one JSON number": 15
+    },
+    "by_member": {
+      "course_deg": {
+        "form": 15
+      }
+    },
+    "different": 0,
+    "equal": 353,
+    "form": 15,
+    "members": 368
+  }
+}

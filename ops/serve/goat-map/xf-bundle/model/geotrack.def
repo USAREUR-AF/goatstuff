@@ -1,0 +1,24 @@
+# The geotrack module: what GeoTrackV1, the display track of the goat map
+# surface, holds beyond the core keys. The values are ones only the host that
+# republishes a track knows (which sensor chain it came from, when the bytes
+# arrived, which fabric identity vouches for them), so a conversion into
+# geo-track-v1 receives them as context.
+module        geotrack
+version       0.1.0
+distribution  public
+source        "USAREUR-AF/goatstuff ops/serve/goat-map/schemas/geo/track.v1.schema.json (Apache-2.0)"
+key  id               string  -  "identity unique across sensors on one fabric: the sensor family, a colon, the sensor's own identifier"
+key  kind             string  -  "track or alert; from the topic the message arrived on, not from the message"
+key  sensor           string  -  "sensor family that produced the report"
+key  site             string  -  "site label of the sensor"
+key  node             string  -  "edge node that produced the source message"
+key  goatnet          string  -  "goatnet the reading belongs to"
+key  observed_at      string  -  "time the republishing host received the bytes, ISO 8601 UTC text as the host wrote it"
+key  producer_anchor  string  -  "32 hexadecimal digits: the first chunk of the fabric key the track is published under"
+key  synthetic        int     -  "flag: the track is simulated"
+key  org              string  -  "display name of the producing organization"
+
+# The identity is the sensor family and the sensor's own identifier, joined by
+# a colon (engine-spec 0.6, derived keys). A message with no identifier gets no
+# identity, and the geo-track-v1 kind then refuses it.
+derive  geotrack.id  join::  geotrack.sensor  uid

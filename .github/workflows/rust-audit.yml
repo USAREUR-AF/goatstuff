@@ -86,6 +86,10 @@ jobs:
             # which has no patched release), so no webpki advisory remains;
             # only rsa (no upstream fix) is ignored.
             ignores: '--ignore RUSTSEC-2023-0071'
+          # transform-shim, on zenoh = 1.9.0: the same two Zenoh exceptions
+          # as the inspection-surface workspace below.
+          - path: ops/zenoh-shims/transform-shim
+            ignores: '--ignore RUSTSEC-2026-0041 --ignore RUSTSEC-2023-0071'
           - path: crates
             # The inspection-surface workspace. Only the F-082 Zenoh exceptions
             # remain: pinned

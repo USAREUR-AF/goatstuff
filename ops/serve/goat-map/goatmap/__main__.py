@@ -38,6 +38,7 @@ import zenoh
 from aiohttp import web
 
 from . import cot as cot_mod
+from . import cot_library
 from . import envhealth as envhealth_mod
 from . import adapters as adapters_mod
 from . import viewport as viewport_mod
@@ -66,6 +67,11 @@ WEB_ROOT = Path(_env("GOATMAP_WEB_ROOT", "/app/web"))
 INGEST_ENDPOINT = _env("GOATMAP_INGEST_ENDPOINT")
 INGEST_MODE = _env("GOATMAP_INGEST_MODE", "client")
 SUB_KEY = _env("GOATMAP_SUBSCRIBE_KEY", "sensor/cot/*")
+# builtin | library. Which code turns CoT into GeoTrackV1: goatmap/cot.py, or
+# the goat-transformers packs in xf-bundle/ (goatmap/cot_library.py). An
+# unknown value, or a bundle that does not load, stops the service here.
+COT_ENGINE = _env("GOATMAP_COT_ENGINE", "builtin")
+COT_PARSE = cot_library.parser_for(COT_ENGINE)
 
 # -- fabric leg (optional) ----------------------------------------------------
 FABRIC_ENDPOINT = _env("GOATMAP_FABRIC_ENDPOINT")
@@ -366,7 +372,7 @@ class Service:
         self.last_recv_at = time.monotonic()
         kind = key.rsplit("/", 1)[-1]
         org = self.orgs.get(INGEST_ANCHOR)
-        track = cot_mod.parse(
+        track = COT_PARSE(
             payload,
             kind=kind,
             source=SOURCE,
@@ -504,6 +510,8 @@ class Service:
             # Say plainly which leg the picture is coming from, and why, so a
             # degraded deployment is visible instead of merely quieter.
             "store_source": "fabric" if (STORE_FROM_FABRIC and self.fabric) else "ingest",
+            # Which code is turning CoT into GeoTrackV1 (GOATMAP_COT_ENGINE).
+            "cot_engine": COT_ENGINE,
             "fabric": "up" if self.fabric else ("failed" if FABRIC_ENABLED else "disabled"),
             "fabric_error": self.fabric_error,
             "ingest_error": self.ingest_error,

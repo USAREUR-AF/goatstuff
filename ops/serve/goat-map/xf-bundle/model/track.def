@@ -1,0 +1,50 @@
+# The track module: sensor-track facts beyond position. Aligned field for field
+# with the Canonical Track v2 contract of USAREUR-AF/open-billie, so a format
+# that maps these keys converts to and from that contract without loss.
+# Flags are int: 1 = the source states it, 0 = the source denies it, absent =
+# the source says nothing.
+module        track
+version       0.1.0
+distribution  public
+source        "USAREUR-AF/open-billie schemas/canonical-track-v2.schema.json (Apache-2.0)"
+key  source_id      string  -    "stable identifier of the sensor or source namespace"
+key  generation     string  -    "identifier of this lifetime of a source track id"
+key  scoped_id      string  -    "identifier of the track as the sending host scopes it: unique across senders, sources and track lifetimes"
+key  vel_east_ms    float   m/s  "velocity toward east"
+key  vel_north_ms   float   m/s  "velocity toward north"
+key  vel_up_ms      float   m/s  "velocity upward"
+key  class          string  -    "track class: unknown, fixed-wing-aircraft, rotary-wing-aircraft, uas, balloon, bird, vehicle, clutter, other"
+key  confidence     float   -    "confidence in [0,1]"
+key  sigma_east_m   float   m    "one-sigma position uncertainty toward east"
+key  sigma_north_m  float   m    "one-sigma position uncertainty toward north"
+key  sigma_up_m     float   m    "one-sigma position uncertainty upward"
+key  confirmed      int     -    "flag: the source states the track is confirmed"
+key  coasting       int     -    "flag: the track is coasting"
+key  simulated      int     -    "flag: the track is simulated"
+key  header_simulated  int  -    "flag: the source frame marks every track in it as simulated"
+key  test_data      int     -    "flag: the report is test data"
+key  final_update   int     -    "flag: this is the final update for the track"
+# The identifiers of the track in other systems (engine-spec 0.7, lists): one
+# item per identifier, each holding the scheme and the value.
+list identifiers             "identifiers of the track in other systems; each item holds id_scheme and id_value"
+key  id_scheme      string  -    "item of identifiers: the scheme the identifier belongs to (for example icao24)"
+key  id_value       string  -    "item of identifiers: the identifier in that scheme"
+
+# Derived keys (engine-spec 0.6): what follows from what, applied by `convert`
+# between decode and encode. Course and speed follow from the east and north
+# velocity; the horizontal and vertical error follow from the position sigmas;
+# and, for a format that reports course and speed only, the east and north
+# velocity follow from those.
+#
+# Both directions are stated and cannot oscillate: a line sets its target only
+# while the target is absent, and nothing removes or rewrites a key. An entity
+# that arrives with a velocity keeps it and gains course and speed; one that
+# arrives with course and speed keeps them and gains the velocity. A velocity
+# of exactly zero gives speed 0 and no course (`bearing` leaves it absent).
+# Every pass after the first sets nothing.
+derive  course              bearing   track.vel_east_ms  track.vel_north_ms
+derive  speed_ms            hypot     track.vel_east_ms  track.vel_north_ms
+derive  ce                  hypot     track.sigma_east_m track.sigma_north_m
+derive  le                  copy      track.sigma_up_m
+derive  track.vel_east_ms   east_of   speed_ms  course
+derive  track.vel_north_ms  north_of  speed_ms  course

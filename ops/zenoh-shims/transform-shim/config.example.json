@@ -1,0 +1,44 @@
+{
+  "instance": "xf-1",
+  "site": "zagros",
+  "key_prefix": "",
+  "routes": [
+    {
+      "name": "cot-to-geojson",
+      "subscribe": "telemetry/cot/zagros/*",
+      "from": "cot-xml",
+      "to": "geojson",
+      "strip_prefix": "telemetry/cot/",
+      "publish_prefix": "data/entity/observation/"
+    },
+    {
+      "name": "tak-protobuf-to-cot",
+      "subscribe": "telemetry/takproto/zagros/*",
+      "from": "cot-protobuf",
+      "to": "cot-xml",
+      "strip_prefix": "telemetry/takproto/",
+      "publish_prefix": "telemetry/cot-from-takproto/",
+      "set": {
+        "stale_ms": "4102444800000"
+      }
+    },
+    {
+      "name": "cot-to-geo-track",
+      "subscribe": "telemetry/sensor/*/cot/*",
+      "from": "cot-xml",
+      "to": "geo-track-v1",
+      "strip_prefix": "telemetry/sensor/",
+      "publish_prefix": "data/geo/track/v1/",
+      "set": {
+        "geotrack.kind": "{key.-1}",
+        "geotrack.sensor": "{capture.1}",
+        "geotrack.site": "zagros",
+        "geotrack.node": "xf-1",
+        "geotrack.observed_at": "{received_at}",
+        "geotrack.producer_anchor": "00112233445566778899aabbccddeeff",
+        "geotrack.synthetic": "0",
+        "geotrack.org": "{attachment.org}"
+      }
+    }
+  ]
+}
