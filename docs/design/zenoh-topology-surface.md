@@ -176,8 +176,22 @@ is recorded as such in `ops/scripts/zenoh-region-census.sh`; it is not a
 constraint on this design. Getting that distinction wrong would have designed a
 privileged container for no reason.
 
-The publisher **does** need an mTLS client cert — but only to *publish* onto the
-fabric, exactly like every other meter.
+The publisher **does** need a client identity on a goatnet — but only to
+*publish* onto the fabric, exactly like every other meter.
+
+**Built (TLS):** for a `tls/` or `quic/` endpoint both modes need `--root-ca`,
+against which the router's certificate is verified. `--cert` and `--key`
+together make it mutual TLS (what the goat role passes, unchanged); with
+neither, only the router is authenticated, for a fabric whose routers do not
+ask clients for a certificate; one without the other is refused.
+`--tls-verify-name` (`TOPOLOGY_TLS_VERIFY_NAME`, default off, as before) also
+checks the router's certificate against the host name in the endpoint. The
+TLS block is built as JSON, so a path containing a quote cannot break it.
+**Measured** 2026-11-16 against stock `eclipse/zenoh:1.9.0` with a test CA:
+server-only TLS connects with the CA alone; mutual TLS connects with a client
+certificate and is refused without one; with the name check, a connection by
+a name in the certificate succeeds and one by an address not in it is
+refused.
 
 ### 2.1a Reading a router must not be able to crash it
 
