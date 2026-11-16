@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // The owner text a browser shows (review of goatstuff#104, items 1, 5, 6, 7, 8).
-// Run: node --test ops/goat-topology/static/test/
+// Run: node --test ops/goat-topology/static/test/owner.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { orgLine, ownerTone } from "../lib.js";
