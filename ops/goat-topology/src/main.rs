@@ -19,6 +19,7 @@ mod declarations;
 mod directory;
 mod findings;
 mod gwconfig;
+mod keys;
 mod serve;
 mod store;
 mod view;
@@ -80,12 +81,18 @@ struct PublishArgs {
         required = true
     )]
     endpoint: Vec<String>,
-    /// `<site>` segment of ops/fabric/topology/<site>/<node>.
+    /// `<site>` chunk of the key `<prefix>/<site>/<node>`.
     #[arg(long, env = "TOPOLOGY_SITE")]
     site: String,
-    /// `<node>` segment — this host. Must be unique within the site.
+    /// `<node>` chunk — this router. Must be unique within the site.
     #[arg(long, env = "TOPOLOGY_NODE")]
     node: String,
+    /// Key prefix: snapshots are published on `<prefix>/<site>/<node>`, and
+    /// `serve` subscribes to `<prefix>/**`. Publishers and the surface must
+    /// use the same value. With access control on, the publisher needs `put`
+    /// and the surface `declare_subscriber` on `<prefix>/**`.
+    #[arg(long, env = "TOPOLOGY_KEY_PREFIX", default_value = keys::DEFAULT_PREFIX)]
+    key_prefix: String,
 
     /// The local router's adminspace REST address. Loopback by default: the
     /// router publishes 8000/tcp to 127.0.0.1, so no netns entry is needed.
@@ -141,6 +148,12 @@ struct ServeArgs {
     /// subscription can see.
     #[arg(long, env = "TOPOLOGY_SITE")]
     site: Option<String>,
+    /// Key prefix: snapshots are published on `<prefix>/<site>/<node>`, and
+    /// `serve` subscribes to `<prefix>/**`. Publishers and the surface must
+    /// use the same value. With access control on, the publisher needs `put`
+    /// and the surface `declare_subscriber` on `<prefix>/**`.
+    #[arg(long, env = "TOPOLOGY_KEY_PREFIX", default_value = keys::DEFAULT_PREFIX)]
+    key_prefix: String,
     #[arg(long, env = "TOPOLOGY_BIND", default_value = "0.0.0.0:8080")]
     bind: String,
 
@@ -365,9 +378,12 @@ async fn run_publish(a: PublishArgs) -> Result<()> {
             );
         }
     }
+    keys::check_prefix(&a.key_prefix)?;
+    keys::check_chunk("--site", &a.site)?;
+    keys::check_chunk("--node", &a.node)?;
     let (session, via) = open_first(&a).await?;
 
-    let key = format!("ops/fabric/topology/{}/{}", a.site, a.node);
+    let key = keys::router_key(&a.key_prefix, &a.site, &a.node);
     tracing::info!(key = %key, admin = %a.admin_addr, via = %via, "publishing router topology");
 
     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(a.interval_secs));
@@ -423,6 +439,7 @@ async fn main() -> Result<()> {
                 endpoint: vec![],
                 site: "-".into(),
                 node: "-".into(),
+                key_prefix: keys::DEFAULT_PREFIX.into(),
                 admin_addr: if a.config_only {
                     String::new()
                 } else {
@@ -447,6 +464,10 @@ async fn main() -> Result<()> {
             // queries a router, so a page view can never become fabric load
             // (ADR 1123) — the routers it draws but cannot hear from are drawn
             // from OTHER routers' link-state, already in their snapshots.
+            keys::check_prefix(&a.key_prefix)?;
+            if let Some(s) = &a.site {
+                keys::check_chunk("--site", s)?;
+            }
             let session = open_session(Tls {
                 endpoint: &a.endpoint,
                 cert: a.cert.as_ref(),
@@ -456,7 +477,7 @@ async fn main() -> Result<()> {
             .await?;
             let sources =
                 directory::Sources::new(a.peer_directory, a.roster, a.goatnet, !a.hide_individual);
-            serve::run(session, a.site, &a.bind, sources).await
+            serve::run(session, &a.key_prefix, a.site, &a.bind, sources).await
         }
     }
 }
