@@ -454,11 +454,39 @@ async fn run_publish(a: PublishArgs) -> Result<()> {
                     tracing::warn!("publish {key}: {e}");
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
+            _ = shutdown_signal() => {
                 tracing::info!("shutting down");
                 return Ok(());
             }
         }
+    }
+}
+
+/// Resolves on Ctrl-C (SIGINT) or, on Unix, SIGTERM.
+///
+/// SIGTERM is what `docker stop`, `docker compose down`, systemd and
+/// Kubernetes send. Waiting only for SIGINT left every stop to run out its
+/// grace period (10 s by default in docker) and end in SIGKILL.
+pub(crate) async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            Err(e) => {
+                tracing::warn!("cannot listen for SIGTERM ({e}); only Ctrl-C stops this process");
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
     }
 }
 
