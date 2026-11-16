@@ -193,4 +193,10 @@ message RouterTopologyV1 {
   // an older publisher or one run with the census off.
   DeclarationsV1 declarations = 15;
   repeated NextHopV1 next_hops = 16;
+
+  // Empty when the route table was read this cycle. Otherwise why it was not
+  // (the --route-table setting, or the routing map changing during the read);
+  // route_successor_count and next_hops are then unknown, not zero. Empty from
+  // a publisher older than this field, which always read it.
+  string route_table_note = 17;
 }

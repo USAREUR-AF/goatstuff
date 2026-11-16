@@ -43,7 +43,8 @@ export function renderRouters(d, now = Date.now()) {
       + (r.link_state_e ? "" : ` <span class="dead">· no links, carries no routes</span>`)
       + `</div>`).join("") || `<span class="sub">—</span>`;
 
-    const mism = x.route_successor_count !== x.route_successor_expected;
+    const unread = Boolean(x.route_table_note);
+    const mism = !unread && x.route_successor_count !== x.route_successor_expected;
     const errs = [x.observe_error, x.gateway_read_error].filter(Boolean)
       .map(e => `<div class="sub" style="color:var(--status-err-fg)">${esc(e)}</div>`).join("");
     const age = ageSecs(x.received_ms, now);
@@ -55,8 +56,9 @@ export function renderRouters(d, now = Date.now()) {
       <td>${modeChip(x)}</td>
       ${carries(x)}
       <td>${regions}</td>
-      <td class="num"${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${x.route_successor_count}${
-        mism ? `<div class="sub">pred ${x.route_successor_expected}</div>` : ""}</td>
+      <td class="num"${mism ? ' style="color:var(--status-warn-fg)"' : ""}>${unread
+        ? `<span class="sub" title="${esc(x.route_table_note)}">not read</span>`
+        : `${x.route_successor_count}${mism ? `<div class="sub">pred ${x.route_successor_expected}</div>` : ""}`}</td>
       <td class="num"${x.stale ? ' style="color:var(--status-err-fg)"' : ""}>${age}s</td>
     </tr>`;
   }).join("") + "</tbody>";

@@ -179,6 +179,42 @@ privileged container for no reason.
 The publisher **does** need an mTLS client cert — but only to *publish* onto the
 fabric, exactly like every other meter.
 
+### 2.1a Reading a router must not be able to crash it
+
+**Measured, 2026-11-16, on stock `eclipse/zenoh:1.9.0`:** in the crate's
+three-router compose example, one router panicked on every one of three clean
+starts, at `index out of bounds: the len is N but the index is N`. This is
+upstream issue
+[eclipse-zenoh/zenoh#2831](https://github.com/eclipse-zenoh/zenoh/issues/2831)
+(open): a query on `@/<zid>/router/route/successor/**` that arrives after a
+router joins or leaves, but before the routing trees are recomputed (100 ms
+later by default), indexes past the end of a routing tree. A release build
+aborts the whole `zenohd` process. The publisher reads that key every cycle,
+and a fabric whose membership is changing is exactly when every publisher is
+reading.
+
+**Built:** `--route-table always|settled|off` (`TOPOLOGY_ROUTE_TABLE`),
+default `settled`, with `--route-table-settle-ms` (default 1000).
+
+| Mode | What the publisher does |
+|---|---|
+| `always` | Reads the route table every cycle, as before the setting existed. For a router build with a fix for #2831. |
+| `settled` | Reads the link-state graphs, waits the settle time, reads them again, and reads the route table only if the two agree (compared as sets of members and links per region, not as DOT text). Otherwise it skips the read for this cycle and says why. This narrows the window in which the read can land; it does not close it. |
+| `off` | Never reads it. |
+
+When the table is not read, `route_table_note` (wire field 17) says why, the
+page shows route entries as `not read` with that reason, and `T-005` does not
+run: an unread table is unknown, not zero. The goat role passes `always`, so a
+goatnet's behaviour is unchanged.
+
+**Measured:** see the run table below (filled from the compose example).
+
+**Also seen on stock 1.9.0, not fixed here:** in a 22-router rig, 2 routers
+stopped answering at start (no CPU, the REST plugin never replies, nothing
+logged) while publishers were reading them; a restart cleared both. A
+publisher cannot report a router in that state, because it publishes through
+the same router, so the page shows it as not reporting.
+
 ### 2.2 Why self-publish rather than have the surface ask
 
 Three independent reasons, any one of which would be sufficient:
@@ -469,6 +505,7 @@ interval. Shape:
 | `sessions[]` | Per session: peer ZID, `whatami`, assigned region, link endpoints. |
 | `declarations` | The declarations census, from its own slower cycle (§2.6). Absent from an older publisher or one with the census off. |
 | `next_hops[]` | Route-table entries per next-hop neighbour (§2.6). |
+| `route_table_note` | Empty when the route table was read this cycle; otherwise why not, and `route_successor_count` and `next_hops` are then unknown (§2.1a). Empty from an older publisher, which always read it. |
 | `client_admission` | `admitted` \| `refused` \| `unspecified`. From the declared `gateway` block: whether any Custom subregion can match a default client (§2.4). `unspecified` under `auto`, `unreadable`, or from an older publisher, and then no finding fires. |
 
 ### 3.1 Two sources, because neither one is enough
