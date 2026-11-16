@@ -9,10 +9,19 @@
 //! bundle uncacheable: a one-word copy edit re-sent the design system too.
 //!
 //! Split, each asset has its own lifetime and its own ETag. The design system in
-//! particular is bytes this surface does not own — it belongs to
-//! `docs/design-system/`, is `include_str!`d from there rather than vendored,
-//! and is served at its own URL exactly as `design-system.md` §"How consumers
-//! receive the CSS bytes" describes.
+//! particular is bytes this surface does not own — its canonical home is
+//! `docs/design-system/` in this repository — and it is served at its own URL.
+//!
+//! # Why the design system is copied into the crate
+//!
+//! The crate has to build from its own directory alone: `cargo install --git`,
+//! or `cargo build` in a copy of `ops/goat-topology/`. An `include_str!` that
+//! reaches outside the crate breaks both. So the two
+//! files are copied to `static/design-system/`, and the copy is held to the
+//! canonical bytes by `the_design_system_copy_matches_its_canonical_home`
+//! (run whenever the repository is present) and by
+//! `tools/sync-design-system.sh --check` in CI. A change to the canonical
+//! files fails both until `tools/sync-design-system.sh` is run.
 //!
 //! # Caching
 //!
@@ -96,10 +105,10 @@ const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
 const JS: &str = "text/javascript; charset=utf-8";
 
-/// The design system, from its canonical home. Not vendored — a change there
-/// reaches this surface on the next image build.
-const DS_TOKENS: &str = include_str!("../../../docs/design-system/colors_and_type.css");
-const DS_COMPONENTS: &str = include_str!("../../../docs/design-system/components.css");
+/// The design system: a byte-identical copy of `docs/design-system/` (see the
+/// module header for why it is a copy, and what keeps it identical).
+const DS_TOKENS: &str = include_str!("../static/design-system/colors_and_type.css");
+const DS_COMPONENTS: &str = include_str!("../static/design-system/components.css");
 
 fn table() -> &'static HashMap<&'static str, Asset> {
     static T: OnceLock<HashMap<&'static str, Asset>> = OnceLock::new();
@@ -207,6 +216,35 @@ mod tests {
             ds.contains(".chip"),
             "components must be in the served asset"
         );
+    }
+
+    /// The copy in `static/design-system/` must be the canonical bytes. The
+    /// canonical files exist only inside the repository; built from a copy of
+    /// this directory alone there is nothing to compare against, and the test
+    /// says so instead of failing.
+    #[test]
+    fn the_design_system_copy_matches_its_canonical_home() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let canon = crate_dir.join("../../docs/design-system");
+        if !canon.is_dir() {
+            eprintln!(
+                "skipped: {} is not present (built outside the repository)",
+                canon.display()
+            );
+            return;
+        }
+        for (name, copy) in [
+            ("colors_and_type.css", DS_TOKENS),
+            ("components.css", DS_COMPONENTS),
+        ] {
+            let want = std::fs::read_to_string(canon.join(name))
+                .unwrap_or_else(|e| panic!("read canonical {name}: {e}"));
+            assert!(
+                want == copy,
+                "static/design-system/{name} differs from docs/design-system/{name}; \
+                 run ops/goat-topology/tools/sync-design-system.sh"
+            );
+        }
     }
 
     #[test]

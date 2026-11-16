@@ -674,14 +674,24 @@ because they are load-bearing here:
 
 ## 6a. The surface is born in the design system
 
-It carries no palette of its own. `src/serve.rs` `include_str!`s
+It carries no palette of its own. It serves
 [`docs/design-system/colors_and_type.css`](../design-system/colors_and_type.css)
-and `components.css` and splices them ahead of the page's own rules — the same
-way flashlight consumes them, so there is one source of truth for the bytes and
-a design-system change reaches this surface on the next image build rather than
-drifting in a vendored copy ([`design-system.md`](https://github.com/usareur-af/goatdocs/blob/main/docs/design/design-system.md)
-§"How consumers receive the CSS bytes"). The Dockerfile therefore builds from
-the **repo root**, not from the crate directory.
+and `components.css` at `/assets/design-system.css`, ahead of the page's own
+rules.
+
+**Built:** the crate carries a byte-identical copy of the two files in
+`ops/goat-topology/static/design-system/`, and `src/assets.rs` `include_str!`s
+the copy. The copy is what lets the crate build from its own directory alone
+(`cargo install --git`, `cargo build` in a copied directory), which a reader
+outside this repository needs. `docs/design-system/` stays the
+one source of truth: the test
+`the_design_system_copy_matches_its_canonical_home` and
+`ops/goat-topology/tools/sync-design-system.sh --check` (in the image
+workflow's test job) both fail when the copy differs, and
+`tools/sync-design-system.sh` with no argument updates it. The image is still
+built with the repository root as its Docker context (**designed, not built:**
+the crate directory as the context, so `docker build ops/goat-topology` works
+from a copy too).
 
 Two properties are asserted by tests rather than left to review:
 
@@ -833,7 +843,7 @@ exists.
 
 | Piece | Where |
 |---|---|
-| Image | `ghcr.io/<org>/goat-topology`, built by `.github/workflows/goat-topology-image.yml` **from the repo-root context** (the design-system `include_str!` needs it), digest-pinned in `ops/pins/fleet-pins.yaml` |
+| Image | `ghcr.io/<org>/goat-topology`, built by `.github/workflows/goat-topology-image.yml` from the repository-root context (§6a), anonymously pullable, digest-pinned in `ops/pins/fleet-pins.yaml` |
 | Role | `roles/goat-topology`, one role with two modes; `goat_topology_modes` per group_vars. **Publish runs on every host whose router serves the adminspace REST plugin** — core, standby and pod routers alike; a router host without it shows as not reporting (§2.3). A peering edge (`goat-zenoh-edge`) loads no REST plugin, by design: its in-process session presents no certificate and matches no ACL subject. Edges are therefore always drawn not reporting, from the core router's map. `goat_topology_publish_fallback_endpoints` for a router that refuses clients (§2.4). Serve mode: `goat_topology_peer_directory_path`, `goat_topology_roster_path`, `goat_topology_goatnet`, `goat_topology_show_individual` (§2.5), mounted read-only and only when the file exists, passed as environment so an older pinned image ignores them |
 | Playbook | `ops/ansible/topology-deploy.yml -e target=<group>` |
 | Zenoh ACL | rule `infra-w-topology` + subject `infra-topology` in `roles/goat-zenoh/templates/config.json5.j2` |
