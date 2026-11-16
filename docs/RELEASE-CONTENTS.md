@@ -12,6 +12,7 @@ This repository, `goatstuff`, holds the surfaces, demos and example applications
 | panoscope web interface | `ops/panoscope/frontend/` | Tested in CI | `panoscope-frontend-test.yml` |
 | Map surface | `ops/serve/goat-map/` | Tested in CI | `ci.yml` runs `tests-public/` |
 | Peer view | `ops/peerview/` | Tested in CI | `ci.yml` |
+| Coordination without a station, a worked example for the gym | `ops/zenoh-trial-peers/coordinate-without-a-station/` | Tested in CI | `ci.yml` runs its tests, one of them against Zenoh on loopback; nothing runs it on a goatnet |
 | Browser playground, trust sandbox, dataflows | `ops/serve/` | Built | image workflows |
 | Topology, trashgoat, synthetic vendors, health publishers | `ops/goat-topology/`, `ops/goat-trashgoat/`, `ops/zenoh-trial-peers/` | Built | image workflows |
 | Gym training surface | `ops/gym/` | Not run | |

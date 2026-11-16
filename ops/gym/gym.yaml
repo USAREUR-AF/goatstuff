@@ -4547,19 +4547,81 @@ modules:
   title: Let autonomous systems coordinate when no central station is reachable
   level: mastery
   minutes: 90
-  status: planned
-  frontier: true
-  summary: >-
-    Systems that lose their link back to a central station keep exchanging what each one knows
-    directly with the others in reach, and agree on who does what, with nothing in the middle. The
-    mesh links peers directly and the fabric has no broker, so the transport is built. A worked
-    example of systems coordinating this way, and a drill that cuts the central link, are not
-    written. This module opens with both.
+  quirks:
+  - claim: Presence is best-effort advisory. A router without the liveliness grant for your slot
+      denies your token silently, so the other systems never see you and nothing tells you so.
+    evidence: goatcore crates/panoscope-core/src/presence.rs, declare_presence_token ("treat presence as best-effort advisory"); ADR 1040
+    so: Take no task until your own token appears in your own watch; otherwise refuse and say why, as
+      the example does. A system whose token is denied then covers nothing, and the systems that are
+      seen cover all of its tasks, so no task is left without cover.
+  - claim: The routers are edge-local, so systems that share their site's router keep publishing,
+      subscribing and seeing each other's presence when the station or the link to it is gone. With
+      no router in reach they cannot coordinate this way at all; router-less peer continuity is
+      designed, not built (ADR 1095), and with no IP path the bearer is Reticulum (ADR 1050).
+    evidence: docs/design/zenoh-data-fabric.md
+    so: Promise coordination without the station, not without the router. Where a system must keep
+      working with no router, that is the frontier; plan for it as unbuilt.
+  - claim: Each task goes to the live member with the highest hash of task and member. Views that
+      agree give the same answer with no message exchanged, a member leaving moves only its own tasks,
+      and one joining takes only the tasks it now wins.
+    evidence: ops/zenoh-trial-peers/coordinate-without-a-station/test_coordinate.py
+    so: Agree by computing, not by voting. Nothing extra is needed to settle who covers what once every
+      system sees the same live set.
+  - claim: In a partition each side covers every task itself, so a task may be covered twice. It is
+      never covered by nobody, and the duplicates drop once the sides see each other again.
+    evidence: ops/zenoh-trial-peers/coordinate-without-a-station/test_coordinate.py
+    so: Use this rule only for tasks where double coverage is safe. A task that must have exactly one
+      owner needs a majority to decide, and a cut-off minority then stops; that is a different design.
+  - claim: Anyone can publish an assignment under their own slot. The per-slot write rule makes the
+      slot in a key an identity, not the key's wording.
+    evidence: docs/design/zenoh-volatile-class.md
+    so: Accept an assignment only from the slot that holds the station's token, and ignore the rest.
+  drill:
+    do: Run three systems and a station as clients of one site router, each under its own slot. Watch
+      them follow the station, then stop the station and watch them keep every task covered.
+    run: goat sub '*/coord/line-3/*/covering/v1'
+    pass: Before the stop, every system reports mode station and the covering lists together hold each
+      task once. Within ten seconds of stopping the station, every system reports mode self, each
+      shows three systems live, and the covering lists together still hold each task once.
+    safety: writes
+    needs: mesh
   deeper:
+  - doc: ops/zenoh-trial-peers/coordinate-without-a-station/README.md
+    why: The worked example, its rule, what it promises and what it does not, and how to run it.
   - doc: docs/design/zenoh-brokerless-consequences.md
     why: What a fabric with no broker gives you, and what it will never do for you.
   - doc: docs/design/zenoh-data-fabric.md
-    why: How peers find what the others publish without asking a center.
+    why: Why routers sit at each site, and what router-less peers would still need.
+  - doc: docs/adr/1095-zenoh-per-entity-mode-and-peer-edge-continuity.md
+    why: The three things systems need before they can keep coordinating with no router in reach.
+  status: written
+  summary: >-
+    Systems that lose their central station keep every task covered with nothing in the middle. Each
+    one watches who is alive and computes the same assignment over that set, so they agree without a
+    vote. A worked example runs a station and its systems on one site router; with no router in reach
+    at all, which is not built, the frontier begins.
+  walkthrough:
+  - do: Get the worked example and read its rule.
+    note: The example is coordinate-without-a-station in the goatstuff repository; its page is linked
+      below. Run the commands here from its folder. It needs the Zenoh client library, because no goat
+      verb declares a presence token.
+  - do: See the rule decide, offline.
+    run: python3 coordinate.py plan --tasks north,east,south,west --live s1/alpha,s2/bravo,s3/charlie
+    note: Remove a member from --live and run it again. Only that member's tasks move.
+  - do: Start three systems, each with its own slot's bundle, against the same site router.
+    run: python3 coordinate.py system --bundle <bundle> --endpoint tls/<site-router>:7447 --group line-3 --system alpha --tasks north,east,south,west
+    note: Each waits for its own token to appear before it takes a task. One that never sees it exits
+      and says why.
+  - do: Start the station.
+    run: python3 coordinate.py station --bundle <station-bundle> --endpoint tls/<site-router>:7447 --group line-3 --tasks north,east,south,west
+    note: The systems switch to mode station and cover what it hands out.
+  - do: Watch presence and coverage from any enrolled machine.
+    run: goat presence --watch --key '*/presence/coord/line-3/**'
+  - do: Stop the station.
+    note: Its token goes. Every system switches to mode self and the four tasks stay covered. Start it
+      again and they follow it again.
+  - do: Stop one system.
+    note: Only its tasks move to the others. Start it again and it takes back only the tasks it wins.
 - id: enrich-a-shared-picture-across-sovereigns
   title: Fill in one shared picture from two sovereigns, with no loops
   level: mastery
