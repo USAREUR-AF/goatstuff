@@ -17,6 +17,12 @@ export const terms = (v, e) => (e === 0 ? 0 : v * (v - 1));
 
 /** The server sends absolute receipt times, not ages, so its payload does not
  *  churn while nothing happens. Ages are a render-time concern. */
+/** A time as the routers' and publishers' logs write it: UTC, with the zone
+ *  named, so two operators in different time zones quote the same time and it
+ *  matches the logs. Every absolute time on the page goes through these. */
+export const utcTime = ms => new Date(ms).toISOString().slice(11, 19) + " UTC";
+export const utcDateTime = ms => new Date(ms).toISOString().slice(0, 19).replace("T", " ") + " UTC";
+
 export const ageSecs = (receivedMs, nowMs = Date.now()) =>
   Math.max(0, Math.round((nowMs - receivedMs) / 1000));
 
