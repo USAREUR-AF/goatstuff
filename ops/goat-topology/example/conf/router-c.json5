@@ -1,0 +1,15 @@
+// router-c: a stock zenohd router as the README describes it.
+{
+  mode: "router",
+  listen: { endpoints: ["tcp/0.0.0.0:7447"] },
+  connect: { endpoints: ["tcp/router-a:7447", "tcp/router-b:7447"] },
+  scouting: { multicast: { enabled: false } },
+  // The REST plugin. On a real host, bind it to loopback ("127.0.0.1:8000")
+  // and run the publisher on the same host. In this example it listens on the
+  // compose network, which only these containers share (the port is not
+  // published), so publish-c reads it as router-c:8000 and keeps working
+  // when docker restarts the router (see compose.yaml).
+  plugins_loading: { enabled: true },
+  plugins: { rest: { http_port: "0.0.0.0:8000" } },
+  adminspace: { enabled: true, permissions: { read: true, write: false } },
+}

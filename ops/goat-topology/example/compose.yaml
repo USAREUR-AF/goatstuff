@@ -1,0 +1,86 @@
+# goat-topology on three stock zenohd routers: the README's quick start.
+#
+#   docker compose up -d          # from this directory
+#   open http://127.0.0.1:8080/
+#   ./check.sh                    # the page shows 3 routers, 3 links
+#   docker compose down
+#
+# Each router runs the upstream eclipse/zenoh image unchanged. Each publisher
+# reads ONE router: its adminspace through the REST plugin (router-x:8000) and
+# its config file, and publishes one snapshot every 10 s through that router.
+# `serve` subscribes through router-a and draws the page.
+#
+# On a real host the REST plugin binds to loopback and the publisher runs on
+# the same host. Here the plugin listens on the compose network instead (the
+# port is not published to the host). A publisher that shared the router's
+# network namespace would keep a dead namespace after docker restarts the
+# router, and stock zenohd 1.9.0 can need that restart (README, "Known
+# issues"). Plain TCP, no access
+# control, no TLS; the README says what to add for each.
+#
+# GOAT_TOPOLOGY_IMAGE overrides the goat-topology image, for example with one
+# built from this directory (CI does this, so the example runs the code it
+# ships with).
+
+x-router: &router
+  # eclipse/zenoh 1.9.0, pinned by the digest of its multi-arch index.
+  image: eclipse/zenoh:1.9.0@sha256:157965d71e0bfd0a044d76a985ff0e5c306ad3968929168fb9678cd2a7fec23f
+  restart: unless-stopped
+  # zenohd runs as PID 1 in this image and does not stop on SIGTERM; with a
+  # small init in front it does, so `docker compose down` takes about a second
+  # instead of the 10 s grace period per router.
+  init: true
+  volumes:
+    - ./conf:/conf:ro
+  healthcheck:
+    # The router answers its own adminspace. A router that is running but
+    # stopped answering (see the README, "Known issues") turns unhealthy.
+    test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:8000/@/local/router"]
+    interval: 5s
+    timeout: 5s
+    retries: 3
+    start_period: 5s
+
+x-publish: &publish
+  image: ${GOAT_TOPOLOGY_IMAGE:-ghcr.io/usareur-af/goat-topology:latest}
+  restart: unless-stopped
+  volumes:
+    - ./conf:/conf:ro
+
+services:
+  router-a:
+    <<: *router
+    command: ["-c", "/conf/router-a.json5"]
+  router-b:
+    <<: *router
+    command: ["-c", "/conf/router-b.json5"]
+    depends_on: [router-a]
+  router-c:
+    <<: *router
+    command: ["-c", "/conf/router-c.json5"]
+    depends_on: [router-a, router-b]
+
+  publish-a:
+    <<: *publish
+    depends_on: [router-a]
+    command: [publish, --endpoint, tcp/router-a:7447, --site, example, --node, router-a,
+              --admin-addr, router-a:8000, --config-path, /conf/router-a.json5, --interval-secs, "10"]
+  publish-b:
+    <<: *publish
+    depends_on: [router-b]
+    command: [publish, --endpoint, tcp/router-b:7447, --site, example, --node, router-b,
+              --admin-addr, router-b:8000, --config-path, /conf/router-b.json5, --interval-secs, "10"]
+  publish-c:
+    <<: *publish
+    depends_on: [router-c]
+    command: [publish, --endpoint, tcp/router-c:7447, --site, example, --node, router-c,
+              --admin-addr, router-c:8000, --config-path, /conf/router-c.json5, --interval-secs, "10"]
+
+  serve:
+    image: ${GOAT_TOPOLOGY_IMAGE:-ghcr.io/usareur-af/goat-topology:latest}
+    restart: unless-stopped
+    depends_on: [router-a]
+    command: [serve, --endpoint, tcp/router-a:7447, --bind, 0.0.0.0:8080]
+    ports:
+      # Loopback only: the page has no login of its own.
+      - "127.0.0.1:${TOPOLOGY_PORT:-8080}:8080"

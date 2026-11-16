@@ -892,6 +892,29 @@ exists.
 | Certificate | a `goat-topology` row in the site cert manifest, minted by `ops/scripts/mint-site-certs.sh` |
 | DNS + catalogue | an `isitup_services` row per goatnet; the mesh zone is **generated** from it |
 
+### 7.0 Running it outside goat
+
+**Built:** the crate's `README.md` tells a reader with stock `zenohd` and the
+REST plugin, and no goat component, how to run `publish` on each router and
+`serve` once: the router config lines, the binary (published image,
+`cargo install --git`, or `cargo build`), every setting, access control, TLS,
+and the known zenoh 1.9.0 issues (§2.1a). Its quick start is
+`ops/goat-topology/example/`: three `eclipse/zenoh:1.9.0` routers pinned by
+digest, one publisher per router, one `serve`, plain TCP, no access control,
+and `check.sh`, which fails unless the page shows the three routers, all
+reporting, three links, no read error and no critical or warning finding.
+
+**Built:** `.github/workflows/goat-topology-stock-zenoh.yml` builds the image
+from the tree, runs that example with it and runs `check.sh`, on every change
+under `ops/goat-topology/`. The README's commands are therefore the commands
+CI runs.
+
+In the example each router's REST plugin listens on the compose network (the
+port is not published) and each publisher reads it by service name. A
+publisher that shared the router's network namespace instead, as on a real
+host, would keep a dead namespace after docker restarts the router, and stock
+1.9.0 can need that restart (§2.1a).
+
 ### 7.1 Two prerequisites that fail silently if skipped
 
 **The ACL grant.** The publisher writes `ops/fabric/topology/**`, which nothing
