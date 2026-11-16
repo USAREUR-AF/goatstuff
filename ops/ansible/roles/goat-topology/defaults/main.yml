@@ -48,6 +48,21 @@ goat_topology_config_path: "/etc/{{ zenoh_stack | default('goat-zenoh') }}/confi
 
 goat_topology_interval_secs: 30
 
+# The declarations census (what each router carries): the subscriber and
+# publisher tables, read on their own cycle. 300 s: these are the large part of
+# a busy router's adminspace (hundreds of entries), what they count changes as
+# applications start and stop rather than second to second, and the page shows
+# the time each census was read. 0 turns the census off.
+goat_topology_declarations_interval_secs: 300
+# Budget for the two census reads together; a read that runs out is published
+# as "not read", never as zeros.
+goat_topology_declarations_timeout_secs: 10
+# Entries counted per table; past it the census is marked capped.
+goat_topology_declarations_max_entries: 20000
+# Key expressions sampled per router (cardinality budget: counts plus at most
+# this many names, never the full list). 0 = counts only.
+goat_topology_declarations_top_keys: 5
+
 # --- serve mode ------------------------------------------------------------
 goat_topology_bind: "0.0.0.0:8080"
 # HOST-side port. NOT 8080: the ntp-admit sidecar can already hold 127.0.0.1:8080.

@@ -19,8 +19,10 @@ function neighbours(d, id, self) {
   return d.edges.filter(e => e.a === id || e.b === id).map(e => {
     const other = e.a === id ? e.b : e.a;
     const routed = e.region === "north";
+    const hop = ((self && self.next_hops) || []).find(h => h.to === other);
     return {
       other,
+      routes: hop ? hop.routes : null,
       label: labelFor(d, other),
       reporting: d.routers.some(r => key(r) === other && r.reporting !== false),
       kind: routed ? "routed" : "terminated",
@@ -60,6 +62,31 @@ export function ownerFacts(x, d = {}, now = Date.now()) {
     ${who}`;
 }
 
+/** What a router carries: its own census, or what a reporter attributes to it. */
+export function carriesFacts(x, now = Date.now()) {
+  const keys = (ks, more) => ks && ks.length
+    ? `<div class="sub">${ks.map(esc).join("<br>")}${more ? "<br>…" : ""}</div>` : "";
+  const c = x.census;
+  let out = "";
+  if (c && c.read_error) {
+    out += `<dt>Declarations</dt><dd style="color:var(--status-err-fg)">${esc(c.read_error)}</dd>`;
+  } else if (c) {
+    const age = Math.max(0, Math.round((now - c.read_unix_ms) / 1000));
+    out += `<dt>Subscriptions</dt><dd>${c.session_subscriptions} by its applications, on ${c.session_subscribed_keys} keys</dd>
+      <dt>Publishers</dt><dd>${c.session_publishers} by its applications, on ${c.session_published_keys} keys</dd>
+      <dt>Topics</dt><dd>${c.topics}${c.capped ? " or more (entry cap hit)" : ""} <span class="sub">distinct key expressions, including other routers'</span>${keys(c.sample_keys, c.sample_truncated)}</dd>
+      <dt>Router itself</dt><dd>${c.own_process_subscribed_keys} keys <span class="sub">its own adminspace and plugins</span></dd>
+      <dt>Census</dt><dd>read ${age}s ago in ${c.read_ms} ms · every ${c.interval_secs}s</dd>`;
+  }
+  if (x.held && !(c && !c.read_error)) {
+    out += `<dt>Held, as ${esc(x.held.by)} sees it</dt><dd>${x.held.subscribed_keys} subscribed keys
+      <span class="sub">its applications', and anything below it; its publishers are not visible from another router</span>${keys(x.held.sample_keys, x.held.sample_truncated)}</dd>`;
+  }
+  if (!out) out = `<dt>Declarations</dt><dd><span class="sub">${x.reporting === false
+    ? "no reporting router in its routing group has a census" : "this publisher sends no census"}</span></dd>`;
+  return out;
+}
+
 /** A finding names one router, a pair ("a ↔ b"), or the environment. */
 const names = (f, id) => String(f.subject || "").split(" ↔ ").map(s => s.trim()).includes(id);
 
@@ -85,6 +112,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
         : `It is known only because ${ns.length} reporting router${ns.length === 1 ? "" : "s"} list${ns.length === 1 ? "s" : ""} a link to it.`}</p>
       <dl class="d-facts"><dt>ZID</dt><dd>${esc(selected)}</dd>
         ${x ? ownerFacts(x, d, now) : ""}
+        ${x ? carriesFacts(x, now) : ""}
         ${x?.stale ? `<dt>State</dt><dd style="color:var(--status-err-fg)">every router that lists it has gone quiet</dd>` : ""}</dl>
       ${linkList(ns)}`;
     wire(box);
@@ -127,6 +155,7 @@ export function renderDetail(d, selected, picks = new Set(), now = Date.now()) {
             mism ? ` (predicted ${x.route_successor_expected})` : ""}</dd>
           <dt>Routing groups</dt><dd>${regions}</dd>
           ${x.peer ? ownerFacts(x, d, now) : ""}
+          ${carriesFacts(x, now)}
         </dl>${errs}
       </div>
       <div>
@@ -152,7 +181,8 @@ function linkList(ns) {
   return ns.map(n => `<div class="d-row">
       <i class="${n.kind === "routed" ? "k-north" : "k-south"}"></i>
       <a href="#detail" class="d-link" data-select="${esc(n.other)}">${esc(n.label)}</a>
-      <span class="sub">${esc(n.kind)} · ${esc(n.reads)}${n.reporting ? "" : " · not reporting"}</span>
+      <span class="sub">${esc(n.kind)} · ${esc(n.reads)}${n.reporting ? "" : " · not reporting"}${
+        n.routes != null ? ` · ${n.routes} route entr${n.routes === 1 ? "y" : "ies"} via it` : ""}</span>
     </div>`).join("");
 }
 

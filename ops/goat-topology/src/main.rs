@@ -15,6 +15,7 @@
 
 mod adminspace;
 mod assets;
+mod declarations;
 mod directory;
 mod findings;
 mod gwconfig;
@@ -97,6 +98,31 @@ struct PublishArgs {
 
     #[arg(long, env = "TOPOLOGY_INTERVAL_SECS", default_value_t = 30)]
     interval_secs: u64,
+
+    /// How often to read the subscriber and publisher tables for the
+    /// declarations census. 0 turns the census off. Slower than the snapshot
+    /// on purpose: these are the large tables, and what they count changes as
+    /// applications start and stop, not second to second.
+    #[arg(
+        long,
+        env = "TOPOLOGY_DECLARATIONS_INTERVAL_SECS",
+        default_value_t = 300
+    )]
+    declarations_interval_secs: u64,
+    /// Time budget for the two census reads together. A read that runs out
+    /// publishes "not read", never zeros.
+    #[arg(long, env = "TOPOLOGY_DECLARATIONS_TIMEOUT_SECS", default_value_t = 10)]
+    declarations_timeout_secs: u64,
+    /// Entries counted per table; past it the census is marked capped.
+    #[arg(
+        long,
+        env = "TOPOLOGY_DECLARATIONS_MAX_ENTRIES",
+        default_value_t = 20000
+    )]
+    declarations_max_entries: usize,
+    /// Key expressions sampled per router (0 = counts only).
+    #[arg(long, env = "TOPOLOGY_DECLARATIONS_TOP_KEYS", default_value_t = 5)]
+    declarations_top_keys: usize,
 
     /// Leaf X.509 cert (PEM) for mTLS. Required for a `tls/` endpoint.
     #[arg(long, env = "TOPOLOGY_CERT")]
@@ -227,20 +253,53 @@ async fn snapshot(a: &PublishArgs) -> RouterTopologyV1 {
         snap.observe_error = "adminspace not read (--config-only)".into();
         return snap;
     }
-    match adminspace::fetch(&a.admin_addr, 10).await {
+    match adminspace::fetch_snapshot(&a.admin_addr, 10).await {
         Err(e) => snap.observe_error = format!("{e:#}"),
-        Ok(raw) => match adminspace::split_response(&raw) {
+        Ok(body) => match adminspace::parse(&body) {
             Err(e) => snap.observe_error = format!("{e:#}"),
-            Ok((status, _)) if status != 200 => {
-                snap.observe_error = format!("adminspace returned HTTP {status}");
-            }
-            Ok((_, body)) => match adminspace::parse(body) {
-                Err(e) => snap.observe_error = format!("{e:#}"),
-                Ok(obs) => adminspace::apply(&mut snap, obs),
-            },
+            Ok(obs) => adminspace::apply(&mut snap, obs),
         },
     }
     snap
+}
+
+/// Read this router's subscriber and publisher tables once and count them.
+///
+/// Never returns `Err`: a census that could not be read is published as
+/// `read_error` with no counts, so the page says "not read" rather than zero.
+async fn census(a: &PublishArgs) -> wire::DeclarationsV1 {
+    let started = std::time::Instant::now();
+    let read = async {
+        let t = a.declarations_timeout_secs;
+        let subs = adminspace::get_body(&a.admin_addr, "@/local/router/subscriber/**", t).await?;
+        let pubs = adminspace::get_body(&a.admin_addr, "@/local/router/publisher/**", t).await?;
+        Ok::<_, anyhow::Error>((subs, pubs))
+    };
+    let budget = std::time::Duration::from_secs(a.declarations_timeout_secs);
+    let result = match tokio::time::timeout(budget, read).await {
+        Err(_) => Err(anyhow::anyhow!(
+            "census read timed out after {}s",
+            a.declarations_timeout_secs
+        )),
+        Ok(r) => r.and_then(|(subs, pubs)| {
+            declarations::census(
+                &subs,
+                &pubs,
+                declarations::Limits {
+                    max_entries: a.declarations_max_entries,
+                    top_keys: a.declarations_top_keys,
+                },
+            )
+        }),
+    };
+    let mut d = result.unwrap_or_else(|e| wire::DeclarationsV1 {
+        read_error: format!("not read: {e:#}"),
+        ..Default::default()
+    });
+    d.read_unix_ms = now_ms();
+    d.interval_secs = a.declarations_interval_secs as u32;
+    d.read_ms = started.elapsed().as_millis().min(u32::MAX as u128) as u32;
+    d
 }
 
 /// Say what a refusal means, so the log line is the diagnosis.
@@ -312,10 +371,27 @@ async fn run_publish(a: PublishArgs) -> Result<()> {
     tracing::info!(key = %key, admin = %a.admin_addr, via = %via, "publishing router topology");
 
     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(a.interval_secs));
+    // The census runs on the first tick and then every
+    // `--declarations-interval-secs`; between reads every snapshot carries the
+    // last one, with the time it was read.
+    let mut decl: Option<wire::DeclarationsV1> = None;
+    let mut next_census = tokio::time::Instant::now();
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                let snap = snapshot(&a).await;
+                let mut snap = snapshot(&a).await;
+                if a.declarations_interval_secs > 0 && tokio::time::Instant::now() >= next_census {
+                    let d = census(&a).await;
+                    if d.read_error.is_empty() {
+                        tracing::info!(read_ms = d.read_ms, topics = d.topics, routers = d.routers.len(), capped = d.capped, "declarations census read");
+                    } else {
+                        tracing::warn!(err = %d.read_error, read_ms = d.read_ms, "declarations census not read");
+                    }
+                    decl = Some(d);
+                    next_census = tokio::time::Instant::now()
+                        + std::time::Duration::from_secs(a.declarations_interval_secs);
+                }
+                snap.declarations = decl.clone();
                 if !snap.observe_error.is_empty() {
                     tracing::warn!(err = %snap.observe_error, "adminspace read failed; publishing the failure");
                 }
@@ -354,6 +430,10 @@ async fn main() -> Result<()> {
                 },
                 config_path: a.config_path,
                 interval_secs: 0,
+                declarations_interval_secs: 0,
+                declarations_timeout_secs: 10,
+                declarations_max_entries: 20000,
+                declarations_top_keys: 5,
                 cert: None,
                 key: None,
                 root_ca: None,

@@ -28,6 +28,14 @@ services:
 {% endif %}
     environment:
       RUST_LOG: "{{ goat_topology_rust_log }}"
+      # The declarations census. Settings added after the first image are
+      # passed as environment, not flags: an older image pinned on another
+      # goatnet ignores a variable it does not know, where it would refuse an
+      # unknown flag and stop publishing.
+      TOPOLOGY_DECLARATIONS_INTERVAL_SECS: "{{ goat_topology_declarations_interval_secs }}"
+      TOPOLOGY_DECLARATIONS_TIMEOUT_SECS: "{{ goat_topology_declarations_timeout_secs }}"
+      TOPOLOGY_DECLARATIONS_MAX_ENTRIES: "{{ goat_topology_declarations_max_entries }}"
+      TOPOLOGY_DECLARATIONS_TOP_KEYS: "{{ goat_topology_declarations_top_keys }}"
     # The adminspace binds to the HOST's loopback, so this half shares the host
     # network namespace to read it — and therefore has no docker DNS, which is
     # why it dials the router by mesh IP rather than container name.
@@ -61,9 +69,8 @@ services:
 {% endif %}
     environment:
       RUST_LOG: "{{ goat_topology_rust_log }}"
-      # Who each router belongs to. Environment, not flags: an older image
-      # pinned on another goatnet ignores a variable it does not know, where it
-      # would refuse an unknown flag and stop serving.
+      # Who each router belongs to; environment rather than flags for the same
+      # reason as the census settings above.
 {% if goat_topology_peer_directory_mounted | default(false) | bool %}
       TOPOLOGY_PEER_DIRECTORY: /identity/peer-directory.json
 {% endif %}

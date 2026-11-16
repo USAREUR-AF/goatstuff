@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::directory::{Owner, Peer};
 use crate::findings::{self, Finding, Known, Silent};
 use crate::store::{Change, Store};
-use crate::wire::{is_router_region, RegionV1};
+use crate::wire::{is_router_region, DeclarationsV1, RegionV1};
 
 /// One region, as the page shows it.
 #[derive(Serialize)]
@@ -77,6 +77,32 @@ pub struct RouterView<'a> {
     pub owner: Option<Owner>,
     /// Why there is no peer name, when there is none. Empty when there is.
     pub name_note: &'static str,
+    /// This router's own declarations census. Reporting routers only; `None`
+    /// from a publisher older than the census or run with it off.
+    pub census: Option<&'a DeclarationsV1>,
+    /// What a reporting router in the same routing group attributes to this
+    /// one. `None` when no such reporter has a census.
+    pub held: Option<HeldView<'a>>,
+    /// Route-table entries per neighbour, keyed as edges are (node name or
+    /// ZID). Reporting routers only.
+    pub next_hops: Vec<HopView<'a>>,
+}
+
+/// The share of a reporter's subscriber table attributed to one router.
+#[derive(Serialize)]
+pub struct HeldView<'a> {
+    /// The reporter whose census this is.
+    pub by: &'a str,
+    pub read_unix_ms: u64,
+    pub subscribed_keys: u32,
+    pub sample_keys: &'a [String],
+    pub sample_truncated: bool,
+}
+
+#[derive(Serialize)]
+pub struct HopView<'a> {
+    pub to: &'a str,
+    pub routes: u32,
 }
 
 /// What the page needs to say about the two identity inputs, once.
@@ -239,6 +265,39 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
         }
     };
 
+    // zid -> what the freshest readable census among the reporters that list it
+    // attributes to it. Only a reporter in the same routing group sees its
+    // declarations, so a reporter that does not list a router says nothing
+    // about it — not zero.
+    let held = |z: &'a str| -> Option<HeldView<'a>> {
+        let lists = |k: &Known<'a>| {
+            k.snap
+                .regions
+                .iter()
+                .filter(|r| is_router_region(&r.name))
+                .any(|r| r.member_zids.iter().any(|m| m == z))
+                || k.snap.sessions.iter().any(|s| s.peer_zid == z)
+        };
+        known
+            .iter()
+            .filter(|k| k.snap.zid != z && lists(k))
+            .filter_map(|k| {
+                let d = k.snap.declarations.as_ref()?;
+                (d.read_error.is_empty() && d.read_unix_ms > 0).then_some((k, d))
+            })
+            .max_by_key(|(_, d)| d.read_unix_ms)
+            .map(|(k, d)| {
+                let r = d.routers.iter().find(|r| r.zid == z);
+                HeldView {
+                    by: display_name(&k.snap.node, &k.snap.zid),
+                    read_unix_ms: d.read_unix_ms,
+                    subscribed_keys: r.map_or(0, |r| r.subscribed_keys),
+                    sample_keys: r.map_or(&[][..], |r| &r.sample_keys[..]),
+                    sample_truncated: r.is_some_and(|r| r.sample_truncated),
+                }
+            })
+    };
+
     // --- routers known from link-state that send no snapshot ---------------
     // zid -> (reporters that list it, whether any of those is fresh)
     let mut silent: BTreeMap<&'a str, (BTreeSet<&'a str>, bool)> = BTreeMap::new();
@@ -372,6 +431,17 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             peer: None,
             owner: None,
             name_note: "",
+            census: k.snap.declarations.as_ref(),
+            held: held(&k.snap.zid),
+            next_hops: k
+                .snap
+                .next_hops
+                .iter()
+                .map(|h| HopView {
+                    to: name_of(&h.zid),
+                    routes: h.routes,
+                })
+                .collect(),
         })
         .collect();
     // A reporting router is named by its own node name; the peer it connects
@@ -407,6 +477,9 @@ pub fn project<'a>(store: &'a Store, now_ms: u64) -> Snapshot<'a> {
             peer,
             owner,
             name_note,
+            census: None,
+            held: held(z),
+            next_hops: vec![],
         }
     }));
 
@@ -722,6 +795,69 @@ mod tests {
             .unwrap()
             .contains("only through link state"));
         assert_eq!(v["directory"]["peers_configured"], true);
+    }
+
+    /// Per-router counts come from the census of a reporter in the same
+    /// routing group; a reporter whose census failed contributes nothing, and
+    /// a router no census covers has no counts rather than zeros.
+    #[test]
+    fn what_each_router_carries_comes_from_a_readable_census() {
+        use crate::wire::{DeclarationsV1, NextHopV1, RouterDeclarationsV1};
+        let mut st = Store::new(0);
+        let mut r = with_clients("hub", "aa00", 0);
+        r.regions = vec![region("north", &["aa00", "bb11"], &[("aa00", "bb11")])];
+        r.sessions = vec![router_session("bb11", "north")];
+        r.next_hops = vec![NextHopV1 {
+            zid: "bb11".into(),
+            routes: 2,
+        }];
+        r.declarations = Some(DeclarationsV1 {
+            read_unix_ms: 900,
+            session_subscriptions: 4,
+            topics: 7,
+            routers: vec![RouterDeclarationsV1 {
+                zid: "bb11".into(),
+                subscribed_keys: 3,
+                sample_keys: vec!["rig/b/sub/0".into()],
+                sample_truncated: true,
+            }],
+            ..Default::default()
+        });
+        ingest(&mut st, "s/hub".into(), r, 1_000);
+        // A second reporter, outside bb11's group, whose census failed.
+        let mut lone = with_clients("lone", "ee44", 0);
+        lone.declarations = Some(DeclarationsV1 {
+            read_unix_ms: 950,
+            read_error: "not read: census read timed out after 10s".into(),
+            ..Default::default()
+        });
+        ingest(&mut st, "s/lone".into(), lone, 1_000);
+        let v = json(&st);
+        let by = |z: &str| {
+            v["routers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["zid"] == z)
+                .unwrap()
+                .clone()
+        };
+        let b = by("bb11");
+        assert_eq!(b["held"]["by"], "hub");
+        assert_eq!(b["held"]["subscribed_keys"], 3);
+        let hub = by("aa00");
+        assert_eq!(hub["census"]["session_subscriptions"], 4);
+        assert_eq!(hub["census"]["topics"], 7);
+        assert_eq!(hub["next_hops"][0]["routes"], 2);
+        let lone = by("ee44");
+        assert!(
+            lone["held"].is_null(),
+            "no census covers it: absent, not zero"
+        );
+        assert!(lone["census"]["read_error"]
+            .as_str()
+            .unwrap()
+            .starts_with("not read"));
     }
 }
 

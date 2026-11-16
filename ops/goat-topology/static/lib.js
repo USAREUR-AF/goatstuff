@@ -80,3 +80,19 @@ export function orgLine(x) {
   if (x && x.peer) return "org " + NOT_RECORDED;
   return "";
 }
+
+/** What a router carries, in one table cell's words. A reporting router: its
+ *  own census. One that sends no report: what a reporter in its routing group
+ *  attributes to it. Absent is "—", a failed read is "not read"; neither is 0. */
+export function carriesLine(x) {
+  const c = x.census;
+  if (c) {
+    if (c.read_error) return { text: "not read", sub: c.read_error, err: true };
+    return {
+      text: `${c.session_subscriptions} subs · ${c.session_publishers} pubs · ${c.topics} topics${c.capped ? "+" : ""}`,
+      sub: `its applications; ${c.own_process_subscribed_keys} more held by the router itself`,
+    };
+  }
+  if (x.held) return { text: `${x.held.subscribed_keys} subscribed keys`, sub: `as ${x.held.by} sees it; publishers not visible` };
+  return { text: "—", sub: x.reporting === false ? "no reporter in its routing group has a census" : "no census from this publisher" };
+}

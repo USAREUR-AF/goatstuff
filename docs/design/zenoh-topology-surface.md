@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Built and deployed, including not-reporting routers and publish fallback (§2.3, §2.4). Router names and owners (§2.5) built, measured on a local rig, not deployed |
+| Status | Built and deployed, including not-reporting routers and publish fallback (§2.3, §2.4). Router names and owners (§2.5) built, measured on a local rig, not deployed. What each router carries (§2.6) built, measured on a local rig, not deployed |
 | ADR | [1160](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1160-zenoh-topology-surface.md) |
 | Component | `ops/goat-topology` — one binary, two modes |
 | Evidence it rests on | M-111 (the fleet on `Auto`), M-112 (`Custom([...])` in a rig) |
@@ -353,6 +353,104 @@ derived name and reason, and a router absent from the directory with its reason.
 The page loaded in headless Chromium had no label outside the picture and no
 two labels overlapping.
 
+### 2.6 What each router carries
+
+The page shows, for every router, how many subscriptions and publishers it
+holds and how many distinct key expressions (topics) it carries. The counts
+are declarations read from each reporting router's own tables. They are not
+traffic: this router build counts no messages or bytes. Each publisher reads
+its own router over loopback on a cycle of its own, so a page view still costs
+nothing (§5).
+
+**What zenoh 1.9.0 attributes, and to whom.** Each entry of
+`@/<zid>/router/subscriber/**` is one key expression and the sources that
+declared it, as `{clients:[], peers:[], routers:[]}`
+(`net/runtime/adminspace.rs`, `resources_data`). Measured on the rig
+(`rig-client` declaring known keys on seven routers) and matched against a
+live router's 539-entry table:
+
+| List | Holds | Attributable to |
+|---|---|---|
+| `clients`, `peers` | the ZIDs of this router's own sessions that declared the key; the router's own process appears under its own ZID (`hat/broker/pubsub.rs:195`) | each of this router's clients and peers |
+| `routers` | every other router in the north routing group that holds the key (`hat/router/pubsub.rs:278`), plus this router's own ZID for anything declared south of it (`dispatcher/tables.rs:339`) | the router whose application declared it, including a router two hops away; a declaration below another gateway is attributed to that gateway |
+
+The publisher table (`router/publisher/**`) lists only this router's own
+sessions. The router hat keeps no publishers (`hat/router/pubsub.rs:301`). So
+the number of publishers that **another** router holds cannot be known from
+here, and the page says "publishers not visible" for every router that sends no
+report.
+
+**What is published.** `RouterTopologyV1.declarations` (`DeclarationsV1`):
+
+- This router's own totals: subscriptions and publishers declared by its
+  sessions (per session, so two clients on one key count two), the keys those
+  cover, keys held only by the router's own process (its adminspace and
+  plugins, reported apart so they do not read as application load), and
+  `topics`, the distinct key expressions across both tables.
+- For each other router the subscriber table names, the number of subscribed
+  keys attributed to it.
+- At most `--declarations-top-keys` (default 5) key expressions per router and
+  for the router itself, most-declared first, each clipped at 160 characters.
+  This is a sample for recognition, not a ranking by traffic. Counts plus a
+  capped sample, never the full list (cardinality budget, M-091).
+- `read_unix_ms`, `read_ms`, `interval_secs`, `capped` (the
+  `--declarations-max-entries` cap of 20 000 entries per table was hit, so
+  counts are lower bounds) and `read_error`.
+
+**Route entries per neighbour.** `next_hops` counts, from the successor table
+the snapshot already reads, how many `src/<a>/dst/<b>` entries name each
+neighbour as the next hop. That is how many destinations this router reaches
+through each link. The detail lists it beside each neighbour.
+
+**The surface.** A reporting router shows its own census. A router that sends
+no report shows what the freshest readable census of a reporter in its routing
+group attributes to it, and says which reporter. A reporter outside its group
+sees none of its declarations, so it says nothing rather than zero. A census
+that failed shows `not read`. A router no census covers shows `—`.
+
+**Two cycles.** The 30 s snapshot used to read `@/local/**`, which in zenoh
+1.9.0 also returns every subscriber, publisher, queryable, querier, token and
+transport entry. It now reads only the four keys it uses: `@/local/router`,
+`@/local/router/linkstate/*`, `@/local/router/route/successor/**` and
+`@/local/router/status/plugins/rest/version`. The subscriber and publisher
+tables are read on their own cycle:
+
+| Setting | Flag / role variable | Default | Why |
+|---|---|---|---|
+| Interval | `--declarations-interval-secs` / `goat_topology_declarations_interval_secs` | 300 s | These are the large tables (hundreds of entries on a busy router), and what they count changes as applications start and stop. Ten snapshots per census. The page shows the read time. `0` turns the census off. |
+| Time budget | `--declarations-timeout-secs` / `goat_topology_declarations_timeout_secs` | 10 s | Both reads together. A read that runs out publishes `not read`, never zeros. |
+| Entry cap | `--declarations-max-entries` / `goat_topology_declarations_max_entries` | 20 000 | Past it the census is marked capped. A body over 32 MiB is refused, not truncated. |
+| Sample | `--declarations-top-keys` / `goat_topology_declarations_top_keys` | 5 | Key expressions per router; `0` publishes counts only. |
+
+Measured on the rig with one router holding 541 subscriptions and 50
+publishers, 22 routers in its group, 100 reads each:
+
+| Read | Bytes | Median | p95 |
+|---|---|---|---|
+| `@/local/**` (the old 30 s snapshot) | 177 764 | 5.1 ms | 6.4 ms |
+| the four snapshot keys (new 30 s snapshot) | 46 447 | 3.3 ms | 4.6 ms |
+| subscriber + publisher tables (census, every 300 s) | 123 222 | 4.4 ms | 5.3 ms |
+
+Over 300 s that is 10 × 177 764 bytes read before, against 10 × 46 447 +
+123 222 bytes after: 1.78 MB down to 0.59 MB.
+
+Also measured on the rig: `rig.sh check` matched every router's count with
+what its rig client declared, 0 mismatches. That covered a gateway's own
+declarations plus those of its silent pod, a router two hops out, and each
+reporter's own subscriptions and publishers.
+
+**Not built.**
+
+- **Messages and bytes per router, and traffic between two routers.** These
+  need a router built with zenoh's `stats` feature. The fleet build's
+  `router/metrics` holds only `zenoh_build_info`. Tracked in
+  `docs/project/backlog.md`.
+- **Traffic between two routers that both send no report.** This is not
+  knowable from any reporter, whatever the build. The page says so once,
+  above the routers table.
+- **Publishers held by another router.** Not exposed by zenoh 1.9.0's router
+  hat (above).
+
 ## 3. The envelope — `RouterTopologyV1`
 
 Published to `ops/fabric/topology/<site>/<node>`, protobuf, canonical schema at
@@ -369,6 +467,8 @@ interval. Shape:
 | `regions[]` | Per region: name, link-state `V` and `E`, member ZIDs, the session count by `whatami`, and `links[]` — every edge of the region's link-state graph as a ZID pair, capped at 1024 with `links_truncated` set when hit. |
 | `route_successor_count` | Observed, for the Σ V(V−1) cross-check. |
 | `sessions[]` | Per session: peer ZID, `whatami`, assigned region, link endpoints. |
+| `declarations` | The declarations census, from its own slower cycle (§2.6). Absent from an older publisher or one with the census off. |
+| `next_hops[]` | Route-table entries per next-hop neighbour (§2.6). |
 | `client_admission` | `admitted` \| `refused` \| `unspecified`. From the declared `gateway` block: whether any Custom subregion can match a default client (§2.4). `unspecified` under `auto`, `unreadable`, or from an older publisher, and then no finding fires. |
 
 ### 3.1 Two sources, because neither one is enough
@@ -494,7 +594,8 @@ advisory says so on its face.
 
 Nothing on the fabric. The surface answers from memory. The only fabric traffic
 this component generates is one small publish per router per interval — a
-constant, independent of how many people have the page open.
+constant, independent of how many people have the page open. The router reads
+behind it run on each publisher's own cycles (§2.6), never on a request.
 
 This is the property to protect in review. Any future change that makes the
 surface fetch on request converts it into the shape ADR 1123 exists to forbid.
