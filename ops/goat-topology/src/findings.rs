@@ -412,7 +412,7 @@ fn gateway_config(r: &Known<'_>, out: &mut Vec<Finding>) {
                 .into(),
             impact: "Anyone reading the file to understand this router will reach the wrong \
                      conclusion. A restart — planned or from a crash — will change the routing \
-                     behaviour without anyone intending it."
+                     behavior without anyone intending it."
                 .into(),
             steps: steps(&[
                 "Decide which one is right: the file, or what is running.",
@@ -690,6 +690,216 @@ fn growth(routers: &[Known<'_>], out: &mut Vec<Finding>) {
             "Treat the planner as a projection: the arithmetic comes from a measurement taken at two groups of three routers on one host, and it counts routing state only — it predicts nothing about speed.",
         ]),
     });
+}
+
+/// Name a list of routers for a finding, with each one's reason, capped.
+/// The router names alone, sorted, at most 8 and a count.
+fn router_names(rs: &[(String, String)]) -> String {
+    let mut v: Vec<String> = rs.iter().map(|(n, _)| n.clone()).collect();
+    v.sort();
+    if v.len() > 8 {
+        let more = v.len() - 8;
+        v.truncate(8);
+        format!("{} and {more} more", v.join(", "))
+    } else {
+        v.join(", ")
+    }
+}
+
+fn router_list(rs: &[(String, String)]) -> String {
+    let mut v: Vec<String> = rs
+        .iter()
+        .map(|(n, why)| {
+            if why.is_empty() {
+                n.clone()
+            } else {
+                format!("{n} ({why})")
+            }
+        })
+        .collect();
+    v.sort();
+    if v.len() > 8 {
+        let more = v.len() - 8;
+        v.truncate(8);
+        format!("{} and {more} more", v.join("; "))
+    } else {
+        v.join("; ")
+    }
+}
+
+/// T-014: routers in the fabric whose owner the record does not hold (ADR
+/// 1249). Critical: a router carries other parties' traffic, and one nobody
+/// is recorded as answering for is the case the rule exists to exclude.
+pub fn routers_without_owner(rs: &[(String, String)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    Some(Finding {
+        id: "T-014",
+        severity: Severity::Critical,
+        subject: "this environment".into(),
+        headline: format!(
+            "{n} router{} in the fabric {} no recorded responsible person or organization.",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "has" } else { "have" }
+        ),
+        what: format!("The identity record holds no owner for: {}.", router_list(rs)),
+        why: "Every machine on the mesh must trace to a responsible person and an organization \
+              from the record: the portal's enrollment of a machine names its custodian, and a \
+              person's slot names the person. These routers came in through a door that records \
+              neither, or before the rule existed. A router named only by the declared roster is \
+              counted here too: a roster match on its name is a lead, not a record, and the \
+              ownership reconcile counts it the same way."
+            .into(),
+        impact: "Nobody is on record as answering for what these routers carry or who they let \
+                 in. If one misbehaves there is no one to ask and no organization to hold to it."
+            .into(),
+        steps: steps(&[
+            "If the router is ours, declare its owner in the goatnet's declared-owner registry (ADR 1249 decision 2).",
+            "If it belongs to a partner or a person, record the owner through the portal's machine enrollment or onboarding.",
+            "If nobody claims it, decide with the operator whether its access stays; nothing is removed automatically.",
+        ]),
+    })
+}
+
+/// T-016: routers under an owner exception (goatcore ADR 1249 decision 7).
+/// Info: the operator decided these stay for now, with a reason. Listed so an
+/// exception is always visible, never a silent gap in T-014.
+pub fn routers_under_owner_exception(rs: &[(String, String)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    Some(Finding {
+        id: "T-016",
+        severity: Severity::Info,
+        subject: "this environment".into(),
+        headline: format!(
+            "{n} router{} {} in the fabric under an owner exception.",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "is" } else { "are" }
+        ),
+        what: format!("Owner exceptions on file for: {}.", router_list(rs)),
+        why: "The rule is that every router has a recorded responsible person and organization. \
+              The operator has excepted these for now, each with a reason, in the goatnet's \
+              owner exceptions file."
+            .into(),
+        impact: "They do not raise T-014 or page, so they stay here until an owner is recorded \
+                 or the operator decides otherwise."
+            .into(),
+        steps: steps(&[
+            "Record the owner through enrollment or onboarding, or declare it if the router is ours; the exception then reports itself stale.",
+            "Remove the entry from the owner exceptions file once it is stale.",
+        ]),
+    })
+}
+
+/// T-015: routers whose owner could not be looked up. A warning of its own so
+/// a failed lookup never reads as "no owner" and never as "owned". Each cause
+/// present gets its own words and its own step; a cause that is absent is not
+/// described. `rs` is (router, reason, cause) with the causes of
+/// `view::Graded::cause`.
+pub fn router_owner_not_read(rs: &[(String, String, &'static str)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    // cause -> (what it means, what to do), in the order a reader acts on them.
+    const CAUSES: &[(&str, &str, &str)] = &[
+        ("no_directory",
+         "no peer directory is configured on this surface, so no owner can be looked up",
+         "Configure the surface with --peer-directory pointing at the relay-health writer's peer-names.json."),
+        ("directory_stale",
+         "the peer directory is older than its limit, so the relay-health writer has stopped and its owners are not trusted",
+         "Check `systemctl status relay-peer-names.timer` and the writer's journal on this host."),
+        ("lookup_failed",
+         "the relay-health writer could not read owners from the portal (a refused key, a portal that is down, or a portal that could not read its own sources)",
+         "Read the writer's journal (`journalctl -u relay-peer-names`) and check that the portal accepts relay_peer_names_portal_key."),
+        ("old_format",
+         "the peer directory carries no owners: its relay-health writer predates owner-from-record",
+         "Deploy the current relay-health role, whose writer carries each peer's owner from the record."),
+        ("unknown_source",
+         "the peer directory names an owner source this surface does not know, so the surface is older than its writer",
+         "Deploy the current topology surface."),
+        ("not_in_directory",
+         "the address the router connects from is not in the peer directory",
+         "Check that the router's host is a mesh peer; the writer lists every peer with a key."),
+        ("link_state_only",
+         "the router is known only through link state: no reporting router holds a session with it, so its address is not seen",
+         "Deploy the publisher on the router, or on a router it holds a session with, and give it --self-address."),
+    ];
+    let present: Vec<&(&str, &str, &str)> = CAUSES
+        .iter()
+        .filter(|(c, _, _)| rs.iter().any(|r| r.2 == *c))
+        .collect();
+    let why = present
+        .iter()
+        .map(|(c, means, _)| {
+            let names: Vec<(String, String)> = rs
+                .iter()
+                .filter(|r| r.2 == *c)
+                .map(|r| (r.0.clone(), r.1.clone()))
+                .collect();
+            format!("For {}: {means}.", router_names(&names))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut todo: Vec<&str> = present.iter().map(|(_, _, step)| *step).collect();
+    todo.insert(0, "Read the reason beside each router above.");
+    Some(Finding {
+        id: "T-015",
+        severity: Severity::Warning,
+        subject: "this environment".into(),
+        headline: format!(
+            "The owner of {n} router{} could not be looked up.",
+            if n == 1 { "" } else { "s" }
+        ),
+        what: format!(
+            "No owner was read for: {}.",
+            router_list(
+                &rs.iter()
+                    .map(|r| (r.0.clone(), r.1.clone()))
+                    .collect::<Vec<_>>()
+            )
+        ),
+        why,
+        impact: "These routers may be owned or not; the page cannot say, so the T-014 check does \
+                 not cover them."
+            .into(),
+        steps: steps(&todo),
+    })
+}
+
+/// T-017: routers whose recorded owner is incomplete: the record names no
+/// organization, or the responsible person's identity is disabled. A warning:
+/// someone is on record, but the rule wants a person and an organization who
+/// can answer.
+pub fn routers_with_incomplete_owner(rs: &[(String, String)]) -> Option<Finding> {
+    if rs.is_empty() {
+        return None;
+    }
+    let n = rs.len();
+    Some(Finding {
+        id: "T-017",
+        severity: Severity::Warning,
+        subject: "this environment".into(),
+        headline: format!(
+            "The recorded owner of {n} router{} is incomplete.",
+            if n == 1 { "" } else { "s" }
+        ),
+        what: format!("The record is incomplete for: {}.", router_list(rs)),
+        why: "The record names an owner for these routers, but without an organization, or with \
+              a responsible person whose identity is disabled. Every router must trace to a \
+              person and an organization who can answer for it."
+            .into(),
+        impact: "If one misbehaves, the person or organization on record may not be reachable."
+            .into(),
+        steps: steps(&[
+            "Read the recorded reason beside each router above.",
+            "Record the organization on the responsible person's identity, or move custody to an active person.",
+        ]),
+    })
 }
 
 #[cfg(test)]

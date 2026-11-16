@@ -99,6 +99,13 @@ struct PublishArgs {
     #[arg(long, env = "TOPOLOGY_INTERVAL_SECS", default_value_t = 30)]
     interval_secs: u64,
 
+    /// The mesh address(es) this router's host connects from. Published with
+    /// the snapshot so the surface can look this router's owner up directly,
+    /// even when no other reporter holds a session with it. Comma-separated;
+    /// omit and the surface finds the address only through another reporter.
+    #[arg(long, env = "TOPOLOGY_SELF_ADDRESS", value_delimiter = ',')]
+    self_address: Vec<String>,
+
     /// How often to read the subscriber and publisher tables for the
     /// declarations census. 0 turns the census off. Slower than the snapshot
     /// on purpose: these are the large tables, and what they count changes as
@@ -151,7 +158,7 @@ struct ServeArgs {
     #[arg(long, env = "TOPOLOGY_PEER_DIRECTORY")]
     peer_directory: Option<std::path::PathBuf>,
     /// The identity registry's public-safe roster (`roster.json`): the
-    /// organisation, organisation nation and individual for a peer whose name
+    /// organization, organization nation and individual for a peer whose name
     /// leads to a roster handle.
     #[arg(long, env = "TOPOLOGY_ROSTER")]
     roster: Option<std::path::PathBuf>,
@@ -161,9 +168,18 @@ struct ServeArgs {
     #[arg(long, env = "TOPOLOGY_GOATNET", default_value = "")]
     goatnet: String,
     /// Leave the individual (and their nationality) out of the payload. The
-    /// organisation and its nation are still shown.
+    /// organization and its nation are still shown.
     #[arg(long, env = "TOPOLOGY_HIDE_INDIVIDUAL", default_value_t = false)]
     hide_individual: bool,
+    /// Past this age the owners in the peer directory are read as "not
+    /// read": its writer runs every 5 minutes, so an older file means it has
+    /// stopped. 0 turns the check off.
+    #[arg(
+        long,
+        env = "TOPOLOGY_PEER_DIRECTORY_MAX_AGE_SECS",
+        default_value_t = 1200
+    )]
+    peer_directory_max_age_secs: u64,
 
     #[arg(long, env = "TOPOLOGY_CERT")]
     cert: Option<String>,
@@ -227,6 +243,12 @@ async fn snapshot(a: &PublishArgs) -> RouterTopologyV1 {
         node: a.node.clone(),
         ts_unix_ms: now_ms(),
         interval_secs: a.interval_secs as u32,
+        self_addresses: a
+            .self_address
+            .iter()
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect(),
         ..Default::default()
     };
 
@@ -420,6 +442,7 @@ async fn main() -> Result<()> {
         Cmd::Publish(a) => run_publish(a).await,
         Cmd::Inspect(a) => {
             let snap = snapshot(&PublishArgs {
+                self_address: vec![],
                 endpoint: vec![],
                 site: "-".into(),
                 node: "-".into(),
@@ -454,8 +477,9 @@ async fn main() -> Result<()> {
                 root_ca: a.root_ca.as_ref(),
             })
             .await?;
-            let sources =
+            let mut sources =
                 directory::Sources::new(a.peer_directory, a.roster, a.goatnet, !a.hide_individual);
+            sources.peers_max_age_ms = a.peer_directory_max_age_secs * 1000;
             serve::run(session, a.site, &a.bind, sources).await
         }
     }

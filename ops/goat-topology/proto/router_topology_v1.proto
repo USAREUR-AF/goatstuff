@@ -193,4 +193,11 @@ message RouterTopologyV1 {
   // an older publisher or one run with the census off.
   DeclarationsV1 declarations = 15;
   repeated NextHopV1 next_hops = 16;
+
+  // The mesh addresses this router's host connects from, as the publisher was
+  // told them (--self-address). The surface looks a reporting router's owner up
+  // by these, so a router no other reporter holds a session with still has an
+  // owner. Empty from an older publisher.
+  // 17 (route_table_note) and 18 (shape_notes) are taken by other changes.
+  repeated string self_addresses = 19;
 }

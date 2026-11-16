@@ -32,12 +32,12 @@ C="${RIG_CLIENT_BIN:-}"
 need() { [ -n "$IMG" ] || { echo "set RIG_IMAGE to the digest-pinned fleet router image (fleet-pins zenoh-router); unpatched upstream eclipse/zenoh:1.9.0 wedged on one start here (lock cycle, upstream PR 2635)"; exit 2; }
   [ -n "$T" ] || { echo "set GOAT_TOPOLOGY_BIN"; exit 2; }; }
 #        name             idx zid       connects  publish  subs pubs  peer name (for a router that sends no report)
-ROUTERS="alpha-core-1     1  a1a1a1a1  -         alpha    540  50  -
-alpha-core-2     2  a2a2a2a2  1         alpha    0    0   -
-alpha-core-3     3  a3a3a3a3  1,2       alpha    3    2   -
-bravo-gateway    4  b1b1b1b1  1,2       bravo    0    0   -
-bravo-pod-1      5  b2b2b2b2  4         bravo    0    0   -
-bravo-pod-2      6  b3b3b3b3  4         bravo    0    0   -
+ROUTERS="alpha-core-1     1  a1a1a1a1  -         alpha    130  20  machine-ops-alpha-core-1
+alpha-core-2     2  a2a2a2a2  1         alpha    0    0   machine-ops-alpha-core-2
+alpha-core-3     3  a3a3a3a3  1,2       alpha    3    2   machine-ops-alpha-core-3
+bravo-gateway    4  b1b1b1b1  1,2       bravo    0    0   machine-ops-bravo-gateway
+bravo-pod-1      5  b2b2b2b2  4         bravo    0    0   machine-ops-bravo-pod-1
+bravo-pod-2      6  b3b3b3b3  4         bravo    0    0   machine-ops-bravo-pod-2
 charlie-gateway  7  c1c1c1c1  2,3       -        4    1   machine-charlie-gw-forward-relay-rack-b
 charlie-pod-1    8  c2c2c2c2  7         -        2    1   -
 charlie-pod-2    9  c3c3c3c3  7         -        0    0   -
@@ -84,6 +84,7 @@ endpoints() { case "$1" in
 start_pub() { # name idx site
   nohup "$T" publish --endpoint "$(endpoints "$1" "$2")" --site "$3" --node "$1" \
     --admin-addr "127.0.0.1:$((8100+$2))" --config-path "$D/conf/$1.json5" --interval-secs 5 \
+    --self-address "$(addr "$2")" \
     --declarations-interval-secs "${DECL_SECS:-20}" \
     > "$D/log/$1.publish.log" 2>&1 & echo $! > "$D/run/$1.publish.pid"; }
 start_client() { # name idx subs pubs
@@ -92,14 +93,40 @@ start_client() { # name idx subs pubs
   nohup "$C" "tcp/$(addr "$2"):$((7450+$2))" "$1" "$3" "$4" > "$D/log/$1.client.log" 2>&1 & echo $! > "$D/run/$1.client.pid"; }
 # The synthetic identity inputs: a peer-names file keyed as relay-health keys
 # its own, and a roster in the identity registry's public-safe shape.
+# What the relay-health writer carries from the portal's owner resolver, per
+# router (goatcore peer-identity-resolution.md): recorded by machine custody or
+# slot identity, a roster lead, or no record at all. Synthetic identities.
+rec() { # via handle org short nation nationality unit
+  printf '{"source": "record", "via": "%s", "matched_by": "peer-name", "person": {"handle": "%s", "identity_id": "ory-%s"}, "org": {"id": "%s", "short_tag": "%s", "nation": "%s", "state": "recorded"}, "nationality": {"value": "%s", "state": "%s"}, "machine_unit": "%s"}' \
+    "$1" "$2" "$2" "$3" "$4" "$5" "$6" "$([ -n "$6" ] && echo recorded || echo not_stamped)" "$7"; }
+owner_json() { case "$1" in
+  alpha-*|bravo-*) rec machine-custody ops-lead org-ops ops XAA "" "Fabric Ops";;
+  charlie-gateway) rec machine-custody rivera-j org-cedar cedar "" "" "Cedar Relay Cell";;
+  delta-1)         rec slot-identity okafor-n org-birch birch XBB "" "";;
+  echo-1|echo-6|echo-9) rec machine-custody rivera-j org-anvil anvil XAA "" "1st Anvil Bn";;
+  echo-3)          rec slot-identity rivera-j org-anvil anvil XAA XCC "";;
+  echo-7|echo-8)   rec machine-custody okafor-n org-birch birch XBB "" "Birch North";;
+  echo-2|echo-10)  echo '{"source": "roster", "note": "answered from the declared roster: a lead, not the recorded link"}';;
+  *)               echo '{"source": "none", "reason": "no enrolled machine and no slot handle matches this peer name"}';;
+esac; }
+# Owner exceptions the operator granted (goatcore ADR 1249 decision 7), as the
+# writer puts them on a card: echo-5 is excepted; echo-1's exception is stale,
+# because the record now names its owner.
+exc_json() { case "$1" in
+  echo-5) echo ', "owner_exception": {"reason": "present before the owner rule; owner to be found", "granted_by": "ops-lead", "granted_on": "2026-01-05", "state": "active"}';;
+  echo-1) echo ', "owner_exception": {"reason": "present before the owner rule", "granted_by": "ops-lead", "granted_on": "2026-01-05", "state": "stale"}';;
+esac; }
 identity() {
-  { echo '{"names": {'; local first=1
+  # Written with the current time: the surface treats a peer directory older
+  # than its limit (20 minutes) as not read, as it would a stopped writer.
+  local now; now=$(date +%s)
+  { echo "{\"owner_read\": {\"state\": \"read\", \"at\": $now}, \"names\": {"; local first=1
     echo "$ROUTERS" | while read n i z c p s q name; do
       [ "$name" = "-" ] && continue
       [ $first = 1 ] || printf ','; first=0
-      printf '"sha-%s": {"name": "%s", "ip": "%s", "host": "%s-host", "aff": "ZAGROS-PARTNER,ZAGROS-OBSERVER"}\n' "$z" "$name" "$(addr "$i")" "$n"
+      printf '"sha-%s": {"name": "%s", "ip": "%s", "host": "%s-host", "aff": "ZAGROS-PARTNER,ZAGROS-OBSERVER", "owner": %s%s}\n' "$z" "$name" "$(addr "$i")" "$n" "$(owner_json "$n")" "$(exc_json "$n")"
     done
-    echo '}, "generated_at": 0}'; } > "$D/conf/peer-names.json"
+    echo "}, \"generated_at\": $now}"; } > "$D/conf/peer-names.json"
   cat > "$D/conf/roster.json" <<'EOF'
 {"orgs": [
   {"id": "org-anvil", "nation": "XAA", "display_name": "Anvil Works", "members": [

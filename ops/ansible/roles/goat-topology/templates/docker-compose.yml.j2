@@ -36,6 +36,9 @@ services:
       TOPOLOGY_DECLARATIONS_TIMEOUT_SECS: "{{ goat_topology_declarations_timeout_secs }}"
       TOPOLOGY_DECLARATIONS_MAX_ENTRIES: "{{ goat_topology_declarations_max_entries }}"
       TOPOLOGY_DECLARATIONS_TOP_KEYS: "{{ goat_topology_declarations_top_keys }}"
+      # The mesh address this host connects from, so the surface looks this
+      # router's owner up directly (empty when it could not be found).
+      TOPOLOGY_SELF_ADDRESS: "{{ goat_topology_self_address_resolved | default('') }}"
     # The adminspace binds to the HOST's loopback, so this half shares the host
     # network namespace to read it — and therefore has no docker DNS, which is
     # why it dials the router by mesh IP rather than container name.
@@ -79,6 +82,7 @@ services:
 {% endif %}
       TOPOLOGY_GOATNET: "{{ goat_topology_goatnet }}"
       TOPOLOGY_HIDE_INDIVIDUAL: "{{ 'false' if goat_topology_show_individual | bool else 'true' }}"
+      TOPOLOGY_PEER_DIRECTORY_MAX_AGE_SECS: "{{ goat_topology_peer_directory_max_age_secs }}"
     networks:
       # `zenoh` — reaches the router by container name to subscribe.
       - zenoh

@@ -250,7 +250,7 @@ pub fn parse(body: &[u8]) -> Result<Observed> {
         .collect();
     let route_successor_count = successors.len() as u32;
     // Route entries per next hop: the value of `src/<a>/dst/<b>` is the
-    // neighbour this router forwards a-to-b traffic to.
+    // neighbor this router forwards a-to-b traffic to.
     let mut hops: BTreeMap<String, u32> = BTreeMap::new();
     for e in &successors {
         if let Some(z) = e.value.as_str().filter(|z| !z.is_empty() && *z != zid) {
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(obs.route_successor_count, 6);
         assert_eq!(north.successor_terms(), 6);
         // Route entries per next hop: three destinations' worth each, through
-        // the two neighbours; none names this router itself.
+        // the two neighbors; none names this router itself.
         let hops: Vec<(&str, u32)> = obs
             .next_hops
             .iter()

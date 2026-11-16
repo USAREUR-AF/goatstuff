@@ -28,8 +28,8 @@
 //!
 //! # Load
 //!
-//! These two tables are the large part of a busy router's adminspace (539 and
-//! 50 entries on one live router). They are read on their own cycle
+//! These two tables are the large part of a busy router's adminspace (hundreds
+//! of entries). They are read on their own cycle
 //! (`--declarations-interval-secs`, 300 s by default), with their own timeout
 //! and an entry cap. A failed read publishes `read_error` and no counts, never
 //! zeros.
@@ -96,7 +96,7 @@ fn clip(k: &str) -> String {
 }
 
 /// The first `n` keys by number of declaring sources, then by name. A sample
-/// for an operator to recognise, not a ranking by traffic: no traffic is known.
+/// for an operator to recognize, not a ranking by traffic: no traffic is known.
 fn sample(mut keys: Vec<(&str, usize)>, n: usize) -> (Vec<String>, bool) {
     keys.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
     let truncated = keys.len() > n;
@@ -204,7 +204,7 @@ mod tests {
     };
 
     /// Shaped from a live router's tables, with synthetic ZIDs: this router's
-    /// own process (`aa00`), two of its clients, a neighbour router `bb11`
+    /// own process (`aa00`), two of its clients, a neighbor router `bb11`
     /// whose application subscribes, and one router two hops away (`cc22`).
     fn subs() -> String {
         serde_json::json!([
@@ -249,7 +249,7 @@ mod tests {
         );
         assert!(
             d.routers.iter().all(|r| r.zid != "aa00"),
-            "self is not a neighbour"
+            "self is not a neighbor"
         );
         assert!(!d.capped);
     }
