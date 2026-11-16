@@ -205,7 +205,7 @@ default `settled`, with `--route-table-settle-ms` (default 1000).
 When the table is not read, `route_table_note` (wire field 17) says why, the
 page shows route entries as `not read` with that reason, and `T-005` does not
 run: an unread table is unknown, not zero. The goat role passes `always`, so a
-goatnet's behaviour is unchanged.
+goatnet's behavior is unchanged.
 
 **Measured** 2026-11-16, the crate's compose example (three stock
 `eclipse/zenoh:1.9.0` routers, one publisher each, 10 s interval), 10 clean
