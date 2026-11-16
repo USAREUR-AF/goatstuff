@@ -285,6 +285,13 @@ async fn open_session(t: Tls<'_>) -> Result<zenoh::Session> {
             &serde_json::to_string(&[t.endpoint]).expect("a string list serializes"),
         )
         .map_err(|e| anyhow::anyhow!("config connect/endpoints: {e}"))?;
+    // One session to one named router is all either mode needs. Multicast
+    // scouting would also make this process listen on 224.0.0.224:7446 and
+    // answer scouts on the host's network (the publisher runs with the host's
+    // network on a router host), which is traffic and exposure for nothing.
+    config
+        .insert_json5("scouting/multicast/enabled", "false")
+        .map_err(|e| anyhow::anyhow!("config scouting/multicast/enabled: {e}"))?;
     if let Some(block) = link_tls(&t)? {
         config
             .insert_json5("transport/link/tls", &block.to_string())

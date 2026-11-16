@@ -241,6 +241,13 @@ logged) while publishers were reading them; a restart cleared both. A
 publisher cannot report a router in that state, because it publishes through
 the same router, so the page shows it as not reporting.
 
+**Built:** both modes open their client session with multicast scouting
+off. They connect to the router named in `--endpoint` and nothing else; with
+scouting on, each process also bound `224.0.0.224:7446` and answered scouts on
+whatever network it ran in, which for the publisher is the router host's own.
+**Measured** 2026-11-16: the publisher held one 7446/udp socket before and
+none after, and published in both cases.
+
 ### 2.2 Why self-publish rather than have the surface ask
 
 Three independent reasons, any one of which would be sufficient:
