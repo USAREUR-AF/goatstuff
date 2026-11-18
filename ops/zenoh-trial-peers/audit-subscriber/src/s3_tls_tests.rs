@@ -1,6 +1,8 @@
-//! Exercise the application's S3 factory and default HTTPS connector in child
-//! processes. Each child gets its own trust-store environment before startup.
+//! Exercise the application's S3 factory and HTTPS connector in child
+//! processes. Each child trusts only the CA bundle named by SSL_CERT_FILE.
 use super::*;
+use crate::writer::{client as build_s3_client, Target};
+use aws_sdk_s3::primitives::ByteStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::process::Command;
@@ -14,23 +16,20 @@ fn request_child() {
         return;
     };
     let expected = std::env::var("GOAT_S3_TLS_TEST_EXPECT").unwrap();
-    let args = WriterArgs {
-        s3_endpoint: Some(endpoint),
-        s3_bucket: "audit-fixture".into(),
-        s3_region: "us-east-1".into(),
-        s3_access_key: Some("fixture-access".into()),
-        s3_secret_key: Some("fixture-secret".into()),
-        audit_subscriber_id: "fixture-subscriber".into(),
-        batch_events: 1,
-        batch_interval: Duration::from_secs(1),
-        local_ndjson_dir: None,
+    let args = Target {
+        endpoint,
+        ca_bundle: Some(std::env::var("SSL_CERT_FILE").unwrap().into()),
+        bucket: "audit-fixture".into(),
+        region: "us-east-1".into(),
+        access: "fixture-access".into(),
+        secret: "fixture-secret".into(),
     };
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(async {
-            let client = build_s3_client(&args).await.unwrap().unwrap();
+            let client = build_s3_client(Some(&args)).await.unwrap().unwrap();
             // One connection per fixture: retain the certificate error instead
             // of retrying against a listener that has already refused TLS.
             let client = aws_sdk_s3::Client::from_conf(
@@ -42,7 +41,7 @@ fn request_child() {
             );
             let result = client
                 .put_object()
-                .bucket(&args.s3_bucket)
+                .bucket(&args.bucket)
                 .key("fixture.ndjson")
                 .content_type("application/x-ndjson")
                 .body(ByteStream::from_static(PAYLOAD.as_bytes()))

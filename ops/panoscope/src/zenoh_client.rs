@@ -1382,25 +1382,11 @@ fn apply_schema_declaration(
 ///     regression that survived the first replay
 ///     fix until this follow-up landed.
 ///
-/// Identity preference (matches data_tail):
-///   1. `src_zid` if non-empty (audit-subscriber preserves whatever
-///      Zenoh's `SourceInfo` carried at the time the sample was seen)
-///   2. topic-prefix fallback (`<vendor>/<system>`) when src_zid is empty
-///
-/// **`src_zid` IS ASSERTED BY THE PUBLISHER AND VERIFIED BY NOTHING.**
-/// It is `ext_sinfo` off the wire; a forwarding hop rewrites only
-/// `wire_expr` and `ext_nodeid`, so it crosses a federation boundary
-/// verbatim, and no code in zenoh compares it to the transport peer. A
-/// peered party can claim any ZID, including one of ours. That is tolerable
-/// inside one trust domain, where every publisher is ours; it is NOT a basis
-/// for attributing anything that arrived across a trust boundary. For that,
-/// use the ingress key prefix and the peering certificate CN, which are the
-/// only authenticated facts available.
-/// See `docs/design/cross-sovereign-federation.md` §6 and ADR 1152.
-///
-/// Marks the peer with `attest_source = "audit_replay"` only if no
-/// stronger source has tagged it already. A later live sample or
-/// schema-decl can promote the attest_source value.
+/// SourceInfo is a publisher assertion, not an authenticated actor. Audit
+/// observations use separate peer IDs so a claimed ZID cannot alter a peer
+/// discovered through the live topology. Namespace labels are observations;
+/// this record carries no independently verified ingress certificate.
+/// See ADR 1152 and `docs/design/cross-sovereign-federation.md` §6.
 pub fn apply_audit_event(
     topology: &mut crate::model::Topology,
     flow: &mut crate::model::FlowState,
@@ -1409,12 +1395,18 @@ pub fn apply_audit_event(
     src_zid: &str,
     now_ms: u64,
 ) {
+    // Audit SourceInfo is forgeable, even when it names a real local peer.
+    // Keep these observations in a disjoint namespace instead of merging
+    // them into an independently discovered/authenticated node.
+    let namespace = key_expr.split('/').take(2).collect::<Vec<_>>().join("/");
     let peer_id = if !src_zid.is_empty() {
-        Some(src_zid.to_string())
+        format!("audit-claim:{namespace}:{src_zid}")
     } else {
-        peer_id_from_topic(key_expr)
+        let Some(label) = peer_id_from_topic(key_expr) else {
+            return;
+        };
+        format!("audit-namespace:{label}")
     };
-    let Some(peer_id) = peer_id else { return };
 
     {
         let p = topology.upsert_peer(peer_id.clone(), now_ms);
@@ -1625,6 +1617,23 @@ fn extract_locator(json: &serde_json::Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_source_claim_cannot_merge_with_discovered_peer() {
+        let mut topology = crate::model::Topology::default();
+        let mut flow = crate::model::FlowState::default();
+        let peer = topology.upsert_peer("trusted-zid".into(), 10);
+        peer.vendor = Some("trusted".into());
+        peer.attest_source = Some("admin".into());
+        apply_audit_event(&mut topology, &mut flow, "foreign", "foreign/topic", "trusted-zid", 20);
+        let peer = topology.upsert_peer("trusted-zid".into(), 10);
+        assert_eq!(peer.vendor.as_deref(), Some("trusted"));
+        assert_eq!(peer.attest_source.as_deref(), Some("admin"));
+        let claim = topology.upsert_peer("audit-claim:foreign/topic:trusted-zid".into(), 20);
+        assert_eq!(claim.vendor.as_deref(), Some("foreign"));
+        assert_eq!(claim.attest_source.as_deref(), Some("audit_replay"));
+    }
+
 
     // ── stale-recall key guard ──────────────────────────────────────────────
 

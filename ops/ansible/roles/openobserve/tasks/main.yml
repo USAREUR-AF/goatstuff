@@ -11,6 +11,34 @@
 
 # 1. Pre-flight
 
+- name: Prepare public storage trust directory
+  ansible.builtin.file:
+    path: "{{ minio_client_ca_path | default('/etc/goat/storage-ca/ca.crt') | dirname }}"
+    state: directory
+    mode: "0755"
+  when: minio_tls_enabled | default(false) | bool
+
+- name: Install organization storage trust on this consumer
+  ansible.builtin.copy:
+    src: "{{ minio_tls_ca_src }}"
+    dest: "{{ minio_client_ca_path | default('/etc/goat/storage-ca/ca.crt') }}"
+    mode: "0644"
+  when: minio_tls_enabled | default(false) | bool
+
+# This process also calls OIDC/JWKS HTTPS endpoints. Preserve host public roots.
+- name: Read host public trust bundle
+  ansible.builtin.slurp:
+    src: /etc/ssl/certs/ca-certificates.crt
+  register: _openobserve_public_roots
+  when: minio_tls_enabled | default(false) | bool
+
+- name: Install combined OpenObserve public and organization trust
+  ansible.builtin.copy:
+    content: "{{ _openobserve_public_roots.content | b64decode }}\n{{ lookup('ansible.builtin.file', minio_tls_ca_src) }}\n"
+    dest: "{{ minio_client_ca_path }}.combined"
+    mode: '0644'
+  when: minio_tls_enabled | default(false) | bool
+
 - name: Pre-flight — root creds set
   ansible.builtin.assert:
     that:
@@ -34,7 +62,9 @@
 
 - name: Pre-flight — telemetry-otlp bucket present in MinIO
   ansible.builtin.uri:
-    url: "http://localhost:9000/{{ openobserve_s3_bucket }}/"
+    url: "{{ minio_s3_endpoint if minio_tls_enabled | default(false) | bool else 'http://localhost:9000' }}/{{ openobserve_s3_bucket }}/"
+    ca_path: "{{ minio_client_ca_path if minio_tls_enabled | default(false) | bool else omit }}"
+    validate_certs: true
     method: GET
     # Anonymous request — MinIO returns 403 for known-existing buckets
     # without auth, 404 for non-existent. Either confirms reachability;

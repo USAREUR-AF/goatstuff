@@ -1,0 +1,67 @@
+[
+  {
+    "key": "a/hello/v1",
+    "body": "hello from a at 123.456",
+    "hello": true
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "  hello from a at 123.4\n",
+    "hello": true
+  },
+  {
+    "key": "a/data/v1",
+    "body": "hello from a at 123.456",
+    "hello": false
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "hello from b at 123.456",
+    "hello": false
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "hello from a at 123",
+    "hello": false
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "hello from a at .123",
+    "hello": false
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "hello from a at 123.",
+    "hello": false
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "hello from a at 123.4.5",
+    "hello": false
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "hello from a at １２３.45",
+    "hello": false
+  },
+  {
+    "key": "a_b/hello/v1",
+    "body": "hello from a_b at 123.45",
+    "hello": false
+  },
+  {
+    "key": "a-1/hello/v1",
+    "body": "hello from a-1 at 123.45",
+    "hello": true
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "hello from a at -123.45",
+    "hello": false
+  },
+  {
+    "key": "a/hello/v1",
+    "body": "",
+    "hello": false
+  }
+]

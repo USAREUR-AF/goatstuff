@@ -105,6 +105,8 @@ impl Config {
             std::env::var("STETHOSCOPE_SITE_LABEL").unwrap_or_else(|_| "trial".into());
 
         let audit = AuditTailConfig {
+            portal_url: portal_base_url.clone(),
+            portal_api_key: portal_api_key.clone(),
             enabled: std::env::var("STETHOSCOPE_AUDIT_ENABLED")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
@@ -177,9 +179,8 @@ pub fn audit_env_gaps(audit: &AuditTailConfig) -> Vec<&'static str> {
         return Vec::new();
     }
     [
-        ("STETHOSCOPE_AUDIT_ENDPOINT", audit.endpoint.is_empty()),
-        ("STETHOSCOPE_AUDIT_ACCESS_KEY", audit.access_key.is_empty()),
-        ("STETHOSCOPE_AUDIT_SECRET_KEY", audit.secret_key.is_empty()),
+        ("STETHOSCOPE_PORTAL_URL", audit.portal_url.is_empty()),
+        ("STETHOSCOPE_PORTAL_API_KEY", audit.portal_api_key.is_empty()),
     ]
     .into_iter()
     .filter_map(|(name, empty)| empty.then_some(name))
@@ -191,6 +192,29 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::disallowed_methods)]
+    fn portal_only_enabled_configuration_loads_in_isolated_process() {
+        if std::env::var_os("STETHOSCOPE_CONFIG_FIXTURE").is_some() {
+            let config = Config::from_env().unwrap();
+            assert!(config.audit.enabled);
+            assert!(config.audit.access_key.is_empty() && config.audit.secret_key.is_empty());
+            assert!(panoscope_core::audit_tail::AuditTail::new(config.audit).is_ok());
+            return;
+        }
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "config::tests::portal_only_enabled_configuration_loads_in_isolated_process"])
+            .env("STETHOSCOPE_CONFIG_FIXTURE", "1")
+            .env("STETHOSCOPE_BIND", "127.0.0.1:0")
+            .env("STETHOSCOPE_AUDIT_ENABLED", "true")
+            .env("STETHOSCOPE_PORTAL_URL", "https://portal.invalid")
+            .env("STETHOSCOPE_PORTAL_API_KEY", "fixture")
+            .env_remove("STETHOSCOPE_AUDIT_ACCESS_KEY")
+            .env_remove("STETHOSCOPE_AUDIT_SECRET_KEY")
+            .output().unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    }
+
+    #[test]
     fn a_disabled_tail_has_no_gaps_whatever_is_empty() {
         assert!(audit_env_gaps(&AuditTailConfig::default()).is_empty());
     }
@@ -199,16 +223,18 @@ mod tests {
     fn an_enabled_tail_names_each_missing_env_var() {
         let audit = AuditTailConfig {
             enabled: true,
-            endpoint: "http://127.0.0.1:9000".into(),
-            access_key: "reader".into(),
+            portal_url: "https://portal.invalid".into(),
             ..AuditTailConfig::default()
         };
-        assert_eq!(audit_env_gaps(&audit), vec!["STETHOSCOPE_AUDIT_SECRET_KEY"]);
+        assert_eq!(audit_env_gaps(&audit), vec!["STETHOSCOPE_PORTAL_API_KEY"]);
         let bare = AuditTailConfig {
             enabled: true,
             ..AuditTailConfig::default()
         };
-        assert_eq!(audit_env_gaps(&bare).len(), 3);
+        assert_eq!(audit_env_gaps(&bare).len(), 2);
+        let ready = AuditTailConfig { portal_api_key: "fixture".into(), ..audit };
+        assert!(audit_env_gaps(&ready).is_empty());
+        assert!(panoscope_core::audit_tail::AuditTail::new(ready).is_ok());
     }
 
     #[test]

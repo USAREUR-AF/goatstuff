@@ -21,9 +21,14 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs && cargo fetch && rm -rf src
 COPY src/ ./src/
+COPY fixtures/ ./fixtures/
 RUN cargo build --release --locked
 
 FROM ${BASE_RUNTIME_CC}
+# A metadata-only writer: it needs --receiving-site and --state-dir. The
+# goatcore audit-subscriber role reads this label and refuses the image unless
+# audit_subscriber_v2_enabled is true (docs/operations/audit-replay-cutover.md).
+LABEL io.goat.audit-subscriber.cutover="v2"
 WORKDIR /
 COPY --from=rust-builder /build/target/release/goat-audit-subscriber /usr/local/bin/goat-audit-subscriber
 EXPOSE 9303

@@ -1,12 +1,6 @@
-//! Operator-action audit presence (design source S1, F-207): the
-//! `ops/audit/operator/<actor>` stream, read from the same MinIO
-//! audit-integrity tier the fabric adapter uses. The payload is
-//! age-encrypted to the operator roster — this adapter deliberately does
-//! NOT decrypt (the service holds no roster age identity; key custody
-//! stays with operators). What the ciphertext record still proves, with
-//! strong attribution from the key path: WHO took an admin action and
-//! WHEN. The detail line points at `goat audit ops` for the decrypted
-//! what. Folding decrypted detail in is the named F-207 follow-on.
+//! Operator namespace observations through authenticated metadata projection.
+//! The key names an asserted actor; it does not authenticate an administrative
+//! action. No body is fetched or decrypted. Attribution remains coarse.
 
 use async_trait::async_trait;
 use panoscope_core::AuditEvent;
@@ -38,18 +32,20 @@ fn offer_operator(rows: &mut NewestRows, keys: &[String], r: AuditEvent) {
     rows.offer(crate::timefmt::canonical_str(&r.ts), move |ts| TimelineEvent {
         ts,
         source: SOURCE,
-        action: "operator-action".into(),
+        action: "operator-namespace-observed".into(),
         actor: actor.clone(),
         target: None,
         summary: format!(
-            "operator action recorded ({} B age-encrypted — decrypt: goat audit ops --actor {})",
-            r.payload_len, actor
+            "observed {} in operator namespace for {} ({} B; actor unverified)",
+            if r.sample_kind.is_empty() { "unknown kind" } else { &r.sample_kind },
+            actor,
+            r.payload_len
         ),
         kind: crate::event::EventKind::Admin,
         outcome: crate::event::Outcome::Unrecorded,
         direction: crate::event::Direction::BySubject,
         detail: None,
-        attribution: Attribution::Strong,
+        attribution: Attribution::Coarse,
         raw: serde_json::to_value(&r).ok(),
     });
 }
@@ -62,9 +58,9 @@ impl SourceAdapter for OperatorAudit {
 
     async fn collect(&self, cfg: &Config, spine: &EntitySpine) -> AdapterOutput {
         let tail = match tail_from(cfg) {
-            Ok(Some(t)) => t,
-            Ok(None) => return AdapterOutput::skipped(SOURCE, "MICROSCOPE_AUDIT_* unset"),
-            Err(e) => return AdapterOutput::error(SOURCE, e),
+            Ok(Some(tail)) => tail,
+            Ok(None) => return AdapterOutput::skipped(SOURCE, "portal history unconfigured"),
+            Err(error) => return AdapterOutput::error(SOURCE, error),
         };
         // The stream's first key segment is `ops`, so one vendor-filtered
         // walk narrows to the ops namespace before the prefix match. Rows are
@@ -94,7 +90,7 @@ impl SourceAdapter for OperatorAudit {
         AdapterOutput::ok(
             SOURCE,
             &format!(
-                "ciphertext presence from audit-integrity, {coverage}; decrypted detail stays operator-side (goat audit ops)"
+                "operator namespace observations from audit-integrity, {coverage}; actor and operation are not verified by this metadata"
             ),
             events,
         )
@@ -141,6 +137,8 @@ mod tests {
         assert_eq!((events.len(), seen), (1, 1));
         assert_eq!(events[0].actor, "maintainer");
         assert_eq!(events[0].target, None);
-        assert!(events[0].summary.contains("goat audit ops --actor maintainer"));
+        assert!(events[0].summary.contains("observed put in operator namespace for maintainer"));
+        assert!(events[0].summary.contains("actor unverified"));
+        assert_eq!(events[0].attribution, Attribution::Coarse);
     }
 }

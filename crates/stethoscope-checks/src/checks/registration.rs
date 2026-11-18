@@ -148,11 +148,21 @@ async fn run_vendor(ctx: &CheckCtx, target: &Target) -> CheckOutcome {
         // Folded as the tail streams: only undeclared keys are kept, and at
         // most MAX_UNDECLARED_KEYS of them.
         let mut undeclared = UndeclaredKeys::new(declared, MAX_UNDECLARED_KEYS);
+        // Publications only: an unknown operation kind means the publication
+        // history is incomplete, and no finding is drawn from it.
+        let mut unknown_kind = false;
         match ctx
             .audit
-            .stream_recent_events(1, Some(vendor), |e| undeclared.observe(e.key_expr))
+            .stream_recent_events(1, Some(vendor), |e| match e.sample_kind.as_str() {
+                "put" => undeclared.observe(e.key_expr),
+                "delete" => {}
+                _ => unknown_kind = true,
+            })
             .await
         {
+            Ok(_stats) if unknown_kind => {
+                debug!("registration: {}", "audit history contains unknown operation kinds; publication history is incomplete");
+            }
             Ok(_stats) => {
                 if let Some(finding) = undeclared.finding(&org_t) {
                     outcome = outcome.with_finding(finding);

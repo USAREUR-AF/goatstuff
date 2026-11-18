@@ -31,7 +31,7 @@
 // Phase B (Wave 2). This module owns the apply-to-topology logic
 // specific to panoscope's data model.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -49,6 +49,8 @@ use crate::zenoh_client::apply_audit_event;
 #[derive(Debug, Clone)]
 pub struct MinioReplayConfig {
     pub enabled: bool,
+    pub portal_url: String,
+    pub portal_api_key: String,
     /// S3 endpoint URL (e.g. `http://198.18.0.X:9000` on-mesh).
     pub endpoint: String,
     /// AWS region label — MinIO ignores the value but the signer requires one.
@@ -92,6 +94,8 @@ impl Default for MinioReplayConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            portal_url: String::new(),
+            portal_api_key: String::new(),
             endpoint: String::new(),
             region: "us-east-1".into(),
             bucket: "audit-integrity".into(),
@@ -111,9 +115,11 @@ impl MinioReplayConfig {
     /// Build the panoscope-core walker config from panoscope's config.
     /// The walker doesn't know about `vendor_blocklist` (that's applied
     /// post-read on the panoscope side) — everything else maps 1:1.
-    fn to_audit_tail_config(&self) -> AuditTailConfig {
+    pub(crate) fn to_audit_tail_config(&self) -> AuditTailConfig {
         AuditTailConfig {
             enabled: self.enabled,
+            portal_url: self.portal_url.clone(),
+            portal_api_key: self.portal_api_key.clone(),
             endpoint: self.endpoint.clone(),
             region: self.region.clone(),
             bucket: self.bucket.clone(),
@@ -152,8 +158,8 @@ pub async fn replay_into_topology(
         info!("minio_replay: disabled (PANOSCOPE_MINIO_REPLAY_ENABLED!=true)");
         return;
     }
-    if cfg.access_key.is_empty() || cfg.secret_key.is_empty() {
-        warn!("minio_replay: enabled but no credentials — skipping (set PANOSCOPE_MINIO_ACCESS_KEY + PANOSCOPE_MINIO_SECRET_KEY)");
+    if cfg.portal_url.is_empty() || cfg.portal_api_key.is_empty() {
+        warn!("minio_replay: enabled but missing portal URL or operator token");
         return;
     }
 
@@ -224,9 +230,8 @@ async fn do_replay(
     // acquisition. Peak memory becomes O(unique tuples) rather
     // than O(window).
     //
-    // ORDERING IS UNCHANGED, which matters because first-occurrence-wins is
-    // what stamps a peer's last_seen. The walker yields events in exactly the
-    // same order as before; we simply stop buffering them.
+    // Portal pagination is chronological. Fold the newest timestamp per tuple
+    // so last_seen remains correct regardless of traversal order.
     let mut stats = ReplayStats::default();
     let mut seen_tuples: HashSet<(String, String)> = HashSet::new();
     let mut seen_peers: HashSet<String> = HashSet::new();
@@ -234,7 +239,7 @@ async fn do_replay(
 
     // One entry per admitted tuple. Bounded by the fabric's distinct
     // (peer, topic) count, NOT by the audit volume behind it.
-    let mut admitted: Vec<AdmittedEvent> = Vec::new();
+    let mut admitted = HashMap::new();
 
     let walker_stats = tail
         .stream_recent_events(cfg.window_hours, None, |ev| {
@@ -247,7 +252,7 @@ async fn do_replay(
                 now,
                 &mut stats,
             ) {
-                admitted.push(a);
+                fold_latest(&mut admitted, a);
             }
         })
         .await?;
@@ -264,16 +269,7 @@ async fn do_replay(
     {
         let mut topology = topology.write().await;
         let mut flow = flow.write().await;
-        for a in &admitted {
-            apply_audit_event(
-                &mut topology,
-                &mut flow,
-                &a.vendor,
-                &a.key_expr,
-                &a.src_zid,
-                a.event_ms,
-            );
-        }
+        apply_admitted(&mut topology, &mut flow, admitted);
     }
 
     stats.unique_tuples = seen_tuples.len();
@@ -291,12 +287,29 @@ struct AdmittedEvent {
     event_ms: u64,
 }
 
+fn fold_latest(admitted: &mut HashMap<(String, String), AdmittedEvent>, event: AdmittedEvent) {
+    let peer = if event.src_zid.is_empty() { &event.key_expr } else { &event.src_zid };
+    let key = (peer.clone(), event.key_expr.clone());
+    admitted.entry(key).and_modify(|current| {
+        current.event_ms = current.event_ms.max(event.event_ms);
+    }).or_insert(event);
+}
+
+fn apply_admitted(topology: &mut Topology, flow: &mut FlowState, admitted: HashMap<(String, String), AdmittedEvent>) {
+    let mut events: Vec<_> = admitted.into_values().collect();
+    // A peer may occur on multiple topics. Apply oldest to newest so the
+    // topology's last_seen assignment finishes at that peer's latest event.
+    events.sort_unstable_by_key(|event| event.event_ms);
+    for event in events {
+        apply_audit_event(topology, flow, &event.vendor, &event.key_expr, &event.src_zid, event.event_ms);
+    }
+}
+
 /// Decide whether an event contributes anything, WITHOUT touching topology or
 /// flow — so this can run inside the walker callback with no locks held.
 ///
-/// Returns `Some` only for the FIRST event of each (peer, key_expr) tuple.
-/// Everything after that is a repeat and contributes nothing, which is why the
-/// replay can stream: almost no events reach the apply pass.
+/// Returns metadata for each eligible event; fold_latest retains only one
+/// newest timestamp per tuple, keeping memory bounded by distinct tuples.
 #[allow(clippy::too_many_arguments)]
 fn admit(
     ev: &AuditEvent,
@@ -307,6 +320,9 @@ fn admit(
     now_ms: u64,
     stats: &mut ReplayStats,
 ) -> Option<AdmittedEvent> {
+    if ev.sample_kind != "put" {
+        return None;
+    }
     if vendor_blocklist.contains(&ev.vendor) {
         stats.events_blocked += 1;
         return None;
@@ -320,9 +336,7 @@ fn admit(
     } else {
         ev.src_zid.clone()
     };
-    if !seen_tuples.insert((peer_key.clone(), ev.key_expr.clone())) {
-        return None;
-    }
+    seen_tuples.insert((peer_key.clone(), ev.key_expr.clone()));
     seen_peers.insert(peer_key);
     // Stamp the peer's last_seen with the event's REAL publish time, not the
     // replay wall-clock — otherwise every replayed peer looks "just seen" and
@@ -349,6 +363,7 @@ mod tests {
 
     fn ev(vendor: &str, key_expr: &str, src_zid: &str, ts: &str) -> AuditEvent {
         AuditEvent {
+            sample_kind: "put".into(),
             vendor: vendor.to_string(),
             key_expr: key_expr.to_string(),
             ts: ts.to_string(),
@@ -357,6 +372,7 @@ mod tests {
             payload_len: 0,
             payload_bytes_b64: None,
             audit_subscriber_id: "test".to_string(),
+            ..Default::default()
         }
     }
 
@@ -366,7 +382,8 @@ mod tests {
         let mut stats = ReplayStats::default();
         let blocked: HashSet<String> = HashSet::new();
         let now = 4_000_000_000_000u64; // far future, so nothing clamps
-        let out = events
+        let mut out = HashMap::new();
+        for event in events
             .iter()
             .filter_map(|e| {
                 admit(
@@ -378,9 +395,10 @@ mod tests {
                     now,
                     &mut stats,
                 )
-            })
-            .collect();
-        (out, stats)
+            }) {
+                fold_latest(&mut out, event);
+            }
+        (out.into_values().collect(), stats)
     }
 
     /// THE PROPERTY THE STREAMING FIX RESTS ON: a repeat of an
@@ -396,22 +414,34 @@ mod tests {
             ev("acme", "acme/telemetry", "zidA", "2026-08-19T12:00:00.000Z"),
         ];
         let (admitted, _) = admit_all(&events);
-        assert_eq!(admitted.len(), 1, "a repeated tuple must admit exactly once");
+        assert_eq!(
+            admitted.len(),
+            1,
+            "a repeated tuple must admit exactly once"
+        );
     }
 
-    /// FIRST OCCURRENCE WINS, and that is what stamps a peer's last_seen — so
-    /// the walker's ordering is load-bearing. Streaming preserves that order;
-    /// this pins the semantic so a future "optimisation" that reorders the walk
-    /// fails here rather than silently ageing every peer wrongly.
+    /// Chronological and reverse pagination must preserve the newest timestamp.
     #[test]
-    fn admitted_timestamp_comes_from_the_first_event_not_the_last() {
-        let events = vec![
+    fn admitted_timestamp_is_latest_independent_of_walk_order() {
+        let mut events = vec![
             ev("acme", "acme/telemetry", "zidA", "2026-08-19T10:00:00.000Z"),
             ev("acme", "acme/telemetry", "zidA", "2026-08-19T12:00:00.000Z"),
         ];
         let (admitted, _) = admit_all(&events);
-        let first_ms = events[0].ts_unix_ms().unwrap() as u64;
-        assert_eq!(admitted[0].event_ms, first_ms);
+        let newest_ms = events[1].ts_unix_ms().unwrap() as u64;
+        assert_eq!(admitted[0].event_ms, newest_ms);
+        events.reverse();
+        assert_eq!(admit_all(&events).0[0].event_ms, newest_ms);
+        let mut folded = HashMap::new();
+        for event in admit_all(&events).0 {
+            fold_latest(&mut folded, event);
+        }
+        fold_latest(&mut folded, AdmittedEvent { vendor: "acme".into(), key_expr: "acme/telemetry/other".into(), src_zid: "zidA".into(), event_ms: newest_ms - 1_000 });
+        let mut topology = Topology::default();
+        let mut flow = FlowState::default();
+        apply_admitted(&mut topology, &mut flow, folded);
+        assert_eq!(topology.peers["audit-claim:acme/telemetry:zidA"].last_seen_ms, newest_ms);
     }
 
     #[test]
@@ -457,8 +487,19 @@ mod tests {
         let mut blocked = HashSet::new();
         blocked.insert("acme".to_string());
         let e = ev("acme", "acme/a", "zidA", "2026-08-19T10:00:00.000Z");
-        admit(&e, &mut seen_tuples, &mut seen_peers, &blocked, &[], 4_000_000_000_000, &mut stats);
-        assert!(seen_tuples.is_empty(), "a blocked event must not mark the tuple seen");
+        admit(
+            &e,
+            &mut seen_tuples,
+            &mut seen_peers,
+            &blocked,
+            &[],
+            4_000_000_000_000,
+            &mut stats,
+        );
+        assert!(
+            seen_tuples.is_empty(),
+            "a blocked event must not mark the tuple seen"
+        );
     }
 
     /// An empty src_zid falls back to the key_expr as the peer key — pinned
@@ -484,8 +525,16 @@ mod tests {
         let blocked = HashSet::new();
         let now = 1_000_000_000_000u64;
         let e = ev("acme", "acme/a", "zidA", "2099-01-01T00:00:00.000Z");
-        let got = admit(&e, &mut seen_tuples, &mut seen_peers, &blocked, &[], now, &mut stats)
-            .expect("should admit");
+        let got = admit(
+            &e,
+            &mut seen_tuples,
+            &mut seen_peers,
+            &blocked,
+            &[],
+            now,
+            &mut stats,
+        )
+        .expect("should admit");
         assert_eq!(got.event_ms, now, "a future ts must clamp to now");
     }
 
@@ -499,8 +548,16 @@ mod tests {
         let blocked = HashSet::new();
         let now = 1_000_000_000_000u64;
         let e = ev("acme", "acme/a", "zidA", "not-a-timestamp");
-        let got = admit(&e, &mut seen_tuples, &mut seen_peers, &blocked, &[], now, &mut stats)
-            .expect("should still admit");
+        let got = admit(
+            &e,
+            &mut seen_tuples,
+            &mut seen_peers,
+            &blocked,
+            &[],
+            now,
+            &mut stats,
+        )
+        .expect("should still admit");
         assert_eq!(got.event_ms, now);
     }
 }

@@ -5,9 +5,10 @@
     chdir: "{{ openobserve_compose_dir }}"
   changed_when: true
 
+# SIGHUP to the obs-host's Prometheus container: its HTTP /-/reload is off
+# by default (obs-host obs_prometheus_web_lifecycle).
 - name: prometheus reload from openobserve role
-  ansible.builtin.uri:
-    url: http://localhost:9090/-/reload
-    method: POST
-    status_code: 200
+  ansible.builtin.command:
+    argv: [docker, kill, --signal, HUP, prometheus]
+  changed_when: true
   failed_when: false

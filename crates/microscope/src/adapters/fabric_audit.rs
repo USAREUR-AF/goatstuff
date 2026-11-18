@@ -1,8 +1,8 @@
 //! Zenoh fabric audit (design source S4): every routed publish, read from
 //! the MinIO `audit-integrity` tier (30d GOVERNANCE) via panoscope-core's
 //! audit tail — the same read stethoscope's flow-rate check uses. The
-//! record's `vendor` field IS the enforced write-anchor (ADR 1025
-//! tri-binding), so attribution is strong. Window-bounded; the detail line
+//! record's `vendor` field labels the observed namespace. It does not
+//! authenticate the publisher. Window-bounded; the detail line
 //! names the window so "n=0" is never read as "never published".
 //!
 //! Events are folded as the tail streams them and only the newest
@@ -28,18 +28,25 @@ const SOURCE: &str = "fabric-audit";
 
 /// Offer one publish record, attributed to `anchor`, to the bounded rows.
 fn offer_publish(rows: &mut NewestRows, anchor: &str, r: AuditEvent) {
+    let action = match r.sample_kind.as_str() {
+        "put" => "publish",
+        "delete" => "delete",
+        _ => "observed",
+    };
     rows.offer(crate::timefmt::canonical_str(&r.ts), move |ts| TimelineEvent {
         ts,
         source: SOURCE,
-        action: "publish".into(),
+        action: action.into(),
         actor: anchor.to_string(),
         target: Some(r.key_expr.clone()),
-        summary: format!("published {} ({} B)", r.key_expr, r.payload_len),
-        kind: crate::event::EventKind::classify("fabric.publish"),
+        summary: format!("{} {} ({} B)", action, r.key_expr, r.payload_len),
+        kind: crate::event::EventKind::classify(&format!("fabric.{action}")),
         outcome: crate::event::Outcome::Unrecorded,
         direction: crate::event::Direction::BySubject,
-        detail: None,
-        attribution: Attribution::Strong,
+        detail: Some(
+            "Namespace activity; publisher identity is not authenticated by the audit subscriber.".into(),
+        ),
+        attribution: Attribution::Coarse,
         raw: serde_json::to_value(&r).ok(),
     });
 }
@@ -52,9 +59,9 @@ impl SourceAdapter for FabricAudit {
 
     async fn collect(&self, cfg: &Config, spine: &EntitySpine) -> AdapterOutput {
         let tail = match tail_from(cfg) {
-            Ok(Some(t)) => t,
-            Ok(None) => return AdapterOutput::skipped(SOURCE, "MICROSCOPE_AUDIT_* unset"),
-            Err(e) => return AdapterOutput::error(SOURCE, e),
+            Ok(Some(tail)) => tail,
+            Ok(None) => return AdapterOutput::skipped(SOURCE, "portal history unconfigured"),
+            Err(error) => return AdapterOutput::error(SOURCE, error),
         };
         if spine.anchors.is_empty() {
             return AdapterOutput::ok(
@@ -83,7 +90,10 @@ impl SourceAdapter for FabricAudit {
                 cfg.audit_window_hours
             )
         } else {
-            format!("audit-integrity tier, last {}h window", cfg.audit_window_hours)
+            format!(
+                "audit-integrity tier, last {}h window",
+                cfg.audit_window_hours
+            )
         };
         if let Some(c) = rows_clause(events.len(), seen) {
             detail.push_str("; ");
@@ -126,7 +136,8 @@ mod tests {
         }
         let (events, seen) = rows.finish();
         assert_eq!((events.len(), seen), (3, 3));
-        assert_eq!(events[0].summary, "published vendor-a/t/v1 (8 B)");
+        assert_eq!(events[0].summary, "publish vendor-a/t/v1 (8 B)");
+        assert_eq!(events[0].attribution, Attribution::Coarse);
         assert_eq!(events[0].target.as_deref(), Some("vendor-a/t/v1"));
         assert!(events[0].raw.is_some());
         assert_eq!(rows_clause(events.len(), seen), None);

@@ -290,8 +290,9 @@ impl Config {
             c.portal_api_key = v;
         }
         if let Ok(v) = std::env::var("PANOSCOPE_SAMPLING_PER_TOPIC_EPS") {
-            c.sampling_per_topic_eps =
-                v.parse().context("PANOSCOPE_SAMPLING_PER_TOPIC_EPS parse")?;
+            c.sampling_per_topic_eps = v
+                .parse()
+                .context("PANOSCOPE_SAMPLING_PER_TOPIC_EPS parse")?;
         }
         if let Ok(v) = std::env::var("PANOSCOPE_WS_COALESCE_MS") {
             c.ws_coalesce_ms = v.parse().context("PANOSCOPE_WS_COALESCE_MS parse")?;
@@ -338,8 +339,7 @@ impl Config {
                 v.parse().context("PANOSCOPE_MINIO_WINDOW_HOURS parse")?;
         }
         if let Ok(v) = std::env::var("PANOSCOPE_MINIO_MAX_OBJECTS") {
-            c.minio_replay.max_objects =
-                v.parse().context("PANOSCOPE_MINIO_MAX_OBJECTS parse")?;
+            c.minio_replay.max_objects = v.parse().context("PANOSCOPE_MINIO_MAX_OBJECTS parse")?;
         }
         if let Ok(v) = std::env::var("PANOSCOPE_MINIO_FETCH_CONCURRENCY") {
             c.minio_replay.fetch_concurrency =
@@ -356,15 +356,14 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .collect();
         }
+        c.minio_replay.portal_url = c.portal_base_url();
+        c.minio_replay.portal_api_key = c.portal_api_key.clone();
         if c.minio_replay.enabled {
             anyhow::ensure!(
-                !c.minio_replay.endpoint.is_empty(),
-                "PANOSCOPE_MINIO_REPLAY_ENABLED=true requires PANOSCOPE_MINIO_ENDPOINT"
+                !c.minio_replay.portal_url.is_empty() && !c.minio_replay.portal_api_key.is_empty(),
+                "PANOSCOPE_MINIO_REPLAY_ENABLED=true requires portal URL and operator API key"
             );
-            // Credentials may be empty here when the operator hasn't
-            // wired the secret yet — replay_into_topology() detects
-            // that case and skips with a warning instead of failing
-            // boot.
+            panoscope_core::audit_tail::AuditTail::new(c.minio_replay.to_audit_tail_config())?;
         }
 
         // Sibling-surface deep-link contract (Block 94). Each URL is
@@ -435,18 +434,14 @@ impl Config {
     /// from `portal_schemas_url`. Stethoscope and flashlight only
     /// appear when explicitly configured.
     pub fn resolved_siblings(&self) -> SiblingUrls {
-        let portal = self
-            .siblings
-            .portal
-            .clone()
-            .or_else(|| {
-                let derived = self.portal_base_url();
-                if derived.is_empty() {
-                    None
-                } else {
-                    Some(derived)
-                }
-            });
+        let portal = self.siblings.portal.clone().or_else(|| {
+            let derived = self.portal_base_url();
+            if derived.is_empty() {
+                None
+            } else {
+                Some(derived)
+            }
+        });
         SiblingUrls {
             stethoscope: self.siblings.stethoscope.clone(),
             flashlight: self.siblings.flashlight.clone(),
