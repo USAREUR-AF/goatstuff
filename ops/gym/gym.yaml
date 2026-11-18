@@ -2981,8 +2981,8 @@ modules:
   - claim: An operator key is not a larger portal key. It is the whole goatnet's administration on both
       the portal and the identity console, logins, invites, the org registry and every slot, and there is
       no read-only or single-org operator key.
-    so: Never issue one to unblock a single task. Find the narrower path first; an operator key belongs
-      to platform administrators and named services only.
+    so: Never issue one to unblock a single task. Only identity and platform administrators may request
+      one, a second administrator approves it, and it is revoked when its holder's job no longer needs it.
     evidence: docs/design/operator-action-audit.md
   - claim: A topic under a slot can be created by that slot's own portal key or by an operator key, and by
       nothing else. An enrolled machine gets its own slot and its own portal key in its bundle; the person
