@@ -216,17 +216,19 @@ lanes:
   title: Beyond the ladder
   audience: Someone who has climbed the ten rungs of the learner ladder and runs a goatnet. Nothing here is
     needed to finish the ladder.
-  outcome: You run a goatnet well, changing network access from code, hosting an outside service, using
+  outcome: You run a goatnet well, giving each person the least role their job needs, changing network
+    access from code, hosting an outside service, using
     direct peer links and finding a quality-of-service fault. You prove its value on real work, a model at a
     site that publishes what it sees and is updated in place, machines that coordinate with no central
     station, and two sovereigns that fill in one shared picture. Then you reach the frontier, where the
     tooling is not built yet, a site that keeps working when it is cut off, a hub that overrules and severs,
     and a pod, a site and an environment rebuilt from nothing.
   headings:
-    change-network-access-warrant-way: Run it well
+    give-the-least-role: Run it well
     publish-events-from-a-model-at-the-edge: Prove its value
     fail-over-to-island-mode: The frontier
   modules:
+  - give-the-least-role
   - change-network-access-warrant-way
   - host-an-external-service
   - p2p-graduation
@@ -2951,6 +2953,86 @@ modules:
   - do: Treat a loose rule as an information problem.
     note: A rule granting every protocol is usually what gets written when nobody could prove what narrowing
       it would break — the fix is evidence, not discipline.
+- id: give-the-least-role
+  title: Give each person the least role that does their job
+  level: working
+  minutes: 30
+  walkthrough:
+  - do: Name the job before the role.
+    note: 'Write down what the person must do, as verbs on things: "publish this device''s events",
+      "onboard people from my org", "deploy to the goatnet". The role follows from the verbs, not from
+      the person''s seniority or from what they held before.'
+  - do: Match the job to the role that already exists for it.
+    note: '**Developer**: publish and subscribe on their own slot, and the developer web surfaces.
+      **Browse**: read-only web surfaces, no data slot. **Machine custodian**: enroll their own gear,
+      each machine with its own slot and key. **Org data lead** (`data.govern.org:<org>`): the org''s
+      shared multi-publisher topics, inside that org only. **Identity administrator** (IAM-ADMIN):
+      onboard, rotate and revoke people, and read diagnostics, with no deploy rights. **Platform
+      administrator**: deploy, change the network, hold an operator key. Read access to data is a
+      separate role (`data.view.*`) granted beside any of these.'
+  - do: Prefer a key that belongs to the thing over a role that belongs to the person.
+    note: A device, a service or a pipeline that publishes has its own slot and key. Work done for it is
+      done with its key, so the audit names the device and nobody's role grows to cover it.
+  - do: Grant through the normal path and check the result.
+    note: People get roles through onboarding and `goat admin role set`, which is attributed and emailed
+      to the person. Afterwards, ask the person to run the task once and confirm it works, rather than
+      reading the role back and assuming.
+  quirks:
+  - claim: An operator key is not a larger portal key. It is the whole goatnet's administration on both
+      the portal and the identity console, logins, invites, the org registry and every slot, and there is
+      no read-only or single-org operator key.
+    so: Never issue one to unblock a single task. Only identity and platform administrators may request
+      one, a second administrator approves it, and it is revoked when its holder's job no longer needs it.
+    evidence: docs/design/operator-action-audit.md
+  - claim: A topic under a slot can be created by that slot's own portal key or by an operator key, and by
+      nothing else. An enrolled machine gets its own slot and its own portal key in its bundle; the person
+      who looks after the machine gets no write authority over its topics through their own sign-in.
+    so: To register a device's topics, make the device's bundle a second context with `goat profile init
+      <bundle> --context <device>` and create the topic from it. Do not raise the person's role.
+    evidence: ops/goat-zenoh-portal/internal/api/auth.go
+  - claim: Roles compose; they are not a ladder. A platform administrator is ADMIN plus DEVELOPER, and an
+      identity administrator is MONITOR plus the IAM-ADMIN sign-in group, with no data slot of their own.
+    so: Grant the combination that matches the job, not the next tier up. Someone who onboards people does
+      not need to deploy, and someone who deploys does not need to onboard.
+    evidence: docs/design/onboard-tier-role-model.md
+  - claim: Authority over an org's shared data is its own role, `data.govern.org:<org>`. Its holder can
+      create the org's multi-publisher topics and add the org's own publishers to them, and nothing outside
+      that org. No role lets anyone write into another principal's own root.
+    so: When several of an org's devices must publish to one topic, grant this role to the org's data
+      lead. It is the answer to "more than a developer, less than a platform admin" for data.
+    evidence: docs/design/pubsub-org-admin-co-publish.md
+  - claim: A demotion takes the key. Sponsorship and the operator key follow the administrator level, and
+      offboarding revokes keys as one of its planes.
+    so: Before removing an administrator level from someone, check that each task they still do has a
+      narrower path, so the removal does not stop their work.
+    evidence: docs/design/platform-admin-lifecycle.md
+  - claim: The intake form grants the in-band half of a tier, the role groups, the sign-in groups and the
+      data slot. The credentials an administrator tier needs to change identities arrive separately.
+    so: An administrator who cannot act after approval is usually missing the separate credential, not a
+      group. Check that before adding groups.
+    evidence: docs/design/onboard-tier-role-model.md
+  drill:
+    do: Clone `hello-galaxy-human-machine-onboarding` from the welcome guide's Repositories page. On your
+      goatlite, enroll a gear-class machine to yourself with scenario 02, then run scenario 06 with
+      `--for-real` and the machine's context, and try the same create from your own context.
+    pass: The create from the machine's context succeeds. The same create from your own context is refused
+      with `vendor scope mismatch`.
+    safety: writes
+    needs: fabric
+  deeper:
+  - doc: docs/design/onboard-tier-role-model.md
+    why: The tiers the intake form offers, the roles each one composes, and why identity administration
+      is separate from platform administration.
+  - doc: docs/design/data-access-roles.md
+    why: Who may see and write which data, as roles that work on both the sign-in and the certificate side.
+  - doc: docs/design/operator-action-audit.md
+    why: What an operator key authorizes, who may hold one, and how a request is approved by a second
+      administrator.
+  - doc: docs/adr/1096-delegated-machine-enrollment.md
+    why: How a person enrolls their own machines, each with its own slot and key.
+  status: written
+  summary: Each role on a goatnet serves one kind of job. The narrow path for a task is usually a role
+    that already exists, or a machine's own key, never a wider administrator role.
 - id: change-network-access-warrant-way
   title: Change network access the warrant way
   level: working
