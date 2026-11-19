@@ -244,8 +244,10 @@ The page uses some plain-language words for Zenoh terms:
 ## Who runs which router (optional)
 
 `serve` can also show who operates each router, from files on the surface's
-host. The reading of those files is built for goat's own deployments today; a
-neutral file format that anyone can write is designed and is being built. With
+host. The reading of those files is built for goat's own deployments today. A
+neutral file that anyone can write (match a router by ZID, address or CIDR;
+give it a name, an operator and labels) is designed, not built: see §9.1 of the
+[design document](../../docs/design/zenoh-topology-surface.md). With
 no such file configured, routers are named by their node names, or by a name
 derived from their ZID for routers that send no report.
 

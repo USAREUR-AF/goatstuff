@@ -969,7 +969,7 @@ retired.
 **Designed, not built** (2026-11-16). The surface is meant to run on any Zenoh
 fabric, inside goat and outside it, as one public build. Three parts of it
 still assume goat. This section is the design for each; the build lands on top
-of the owner-from-record change (§2.5), which edits the same code.
+of the owner-from-record change (goatstuff#104), which edits the same code.
 
 ### 9.1 One neutral, optional router directory
 
