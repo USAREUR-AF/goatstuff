@@ -1,0 +1,3 @@
+# Path-filtered workflows the weekly run (ops/ci/weekly-path-filtered.py) does not start
+# on main, each with its reason. ops/ci/test_weekly_path_filtered.py fails for any other
+# path-filtered workflow without workflow_dispatch.

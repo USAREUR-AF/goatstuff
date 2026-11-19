@@ -12,6 +12,7 @@ name: base-images
 # branch and push. The rewritten Dockerfiles are what rebuild the images.
 
 on:
+  workflow_dispatch:  # the weekly path-filtered run starts it on main
   pull_request:
     paths:
       - '**/Dockerfile'

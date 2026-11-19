@@ -7,6 +7,7 @@ name: transform-shim
 # packs under ops/xf runs this too.
 
 on:
+  workflow_dispatch:  # the weekly path-filtered run starts it on main
   pull_request:
     paths:
       - 'ops/zenoh-shims/transform-shim/**'
