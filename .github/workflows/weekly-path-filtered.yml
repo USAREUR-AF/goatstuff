@@ -1,0 +1,46 @@
+name: weekly-path-filtered
+
+# Every path-filtered workflow, run on main once a week (ops/ci/weekly-path-filtered.py).
+# A path-filtered job runs only when a change touches its paths, so an upstream change
+# (a package withdrawn from a mirror, an image tag removed) breaks it silently until an
+# unrelated pull request touches those paths. This run finds it the same week and opens
+# one issue per red workflow; a workflow green again closes its issue. Path-filtered
+# workflows it cannot start are listed in ops/ci/weekly-path-filtered-exceptions.txt.
+
+on:
+  schedule:
+    - cron: '37 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 345
+    permissions:
+      contents: read
+      actions: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: PyYAML
+        run: python3 -c 'import yaml' 2>/dev/null || python3 -m pip install -q pyyaml
+
+      - name: Which workflows are covered
+        run: python3 ops/ci/weekly-path-filtered.py list
+
+      - name: Start each path-filtered workflow on main
+        run: python3 ops/ci/weekly-path-filtered.py dispatch --ref main --out "$RUNNER_TEMP/runs.json"
+
+      - name: Wait for them and file the red ones
+        run: python3 ops/ci/weekly-path-filtered.py report --runs "$RUNNER_TEMP/runs.json" --wait-minutes 300 --open-issues --poll-seconds 60

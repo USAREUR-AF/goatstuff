@@ -11,6 +11,7 @@ name: manifest-allowlist
 # (--self-test) before its verdict on the real tree is trusted.
 
 on:
+  workflow_dispatch:  # the weekly path-filtered run starts it on main
   pull_request:
     paths:
       - '.github/workflows/manifest-allowlist.yml'
