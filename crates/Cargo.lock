@@ -2071,11 +2071,13 @@ dependencies = [
 [[package]]
 name = "panoscope-core"
 version = "0.1.0"
-source = "git+https://github.com/usareur-af/goatcore?tag=goatcore/v0.2.0#2f83e33c14a3b1e7c6eeb693483b876e25d1a954"
+source = "git+https://github.com/usareur-af/goatcore?rev=69f4a745026457f7382fe54038e8df08dd5aecd9#69f4a745026457f7382fe54038e8df08dd5aecd9"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "futures",
+ "hex",
  "quick-xml",
  "reqwest",
  "rustls",
@@ -2083,6 +2085,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -2879,7 +2882,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.1",
  "url",
  "zeroize",
 ]
@@ -3138,6 +3141,17 @@ name = "sha1"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
