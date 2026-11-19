@@ -1,12 +1,12 @@
-<h1 align="center">goatstuff</h1>
+# goatstuff
 
-<p align="center">
-  Inspection tools and demonstration applications that run on a goat data fabric.
-</p>
+<picture>
+  <img src="docs/figures/panoscope.gif" width="760" alt="panoscope showing 24 synthetic peers and 20 topics on a local Zenoh fabric, then the live stream of a newly published topic, notional/hello, message by message.">
+</picture>
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
-</p>
+Inspection tools and demonstration applications that run on a goat data fabric. Above: panoscope, the live view of the fabric, running on a laptop with synthetic peers; its code is in [`ops/panoscope/`](ops/panoscope/).
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 > [!NOTE]
 > goat is pre-1.0: interfaces can still change between releases.
