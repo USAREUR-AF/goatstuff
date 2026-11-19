@@ -1,7 +1,7 @@
 {
   "library": {
     "repository": "https://github.com/USAREUR-AF/goat-transformers",
-    "rev": "0be9fc9cf926139d7c188465e56f0320f348657a"
+    "rev": "5459b24ccdfb664133b08c97603153da8f1cfd45"
   },
   "formats": [
     "canonical-track-v2",
@@ -13,18 +13,13 @@
   "files": [
     {
       "path": "model/core.def",
-      "sha256": "275729696e9bb7a91e3b46bc0f8a3f5ebf0fad66b9af9f458923eaf36cefe859",
+      "sha256": "799323cd026de9366fe6c0600621e9a96526968e1e0cd44b6c3cb62c67d05698",
       "origin": "library"
-    },
-    {
-      "path": "model/cotxml.def",
-      "sha256": "913947e6f8885102817ba0206898dd69b4d03e8827f468cd1e635e6d0cc1f607",
-      "origin": "upstream-proposed"
     },
     {
       "path": "model/geotrack.def",
       "sha256": "4c8cc0974fc2d72c2e4b7cbb1feee1e24ead044b18dabb8f18171b023497dfe3",
-      "origin": "upstream-proposed"
+      "origin": "library"
     },
     {
       "path": "model/takproto.def",
@@ -43,18 +38,18 @@
     },
     {
       "path": "packs/cot-protobuf/pack.def",
-      "sha256": "d534c1904a83ad5b22d4e1fb6efdfa832eae593760ea16fa6f9fd298959e0c72",
+      "sha256": "86fb8f33f94285f267ab127e8af7eacb76c667bfff81ef69b2e883a3544cbfd0",
       "origin": "library"
     },
     {
       "path": "packs/cot-xml/pack.def",
-      "sha256": "6df0c6576ecd13b8064d0f082c874b6237f6b2ff8f7e6a507f0e876955fa8ea7",
-      "origin": "upstream-proposed"
+      "sha256": "deabe5fceb2e8ceb67ebb451ed47d49a9d66802b34b8778349aa141000b32a87",
+      "origin": "library"
     },
     {
       "path": "packs/geo-track-v1/pack.def",
-      "sha256": "347b3edbcd5147423f57643bc8978ca93efdf8bf2cee6156bce202355ed2019d",
-      "origin": "upstream-proposed"
+      "sha256": "f303fbd445a40667c323f5d45c98fd5541d026692b0ae34805a905c9dc39f34b",
+      "origin": "library"
     },
     {
       "path": "packs/geojson/pack.def",

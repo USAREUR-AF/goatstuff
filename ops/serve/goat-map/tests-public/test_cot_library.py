@@ -154,14 +154,18 @@ def test_completion_step_null_members():
 
 def test_the_packs_leave_exactly_what_the_completion_steps_name():
     # Take a step away and the member it owns is the only thing that changes.
-    full = parse()
-    for step, members in ((cot_library.complete_type_letters, {"affiliation", "dimension"}),
-                          (cot_library.complete_error_sentinel, {"ce_m", "le_m"}),
-                          (cot_library.complete_null_members, {"org"})):
+    # The pack leaves 9999999 absent; complete_error_sentinel owns a larger value.
+    above = TRACK.replace(b'ce="9999999"', b'ce="10000000"').replace(b'le="9999999"', b'le="1e8"')
+    for step, members, payload in (
+            (cot_library.complete_type_letters, {"affiliation", "dimension"}, TRACK),
+            (cot_library.complete_error_sentinel, {"ce_m", "le_m"}, above),
+            # 9999999 in ce and le is absent from the packs, so null comes from here.
+            (cot_library.complete_null_members, {"org", "ce_m", "le_m"}, TRACK)):
+        full = parse(payload)
         saved = cot_library.COMPLETION
         cot_library.COMPLETION = tuple(s for s in saved if s is not step)
         try:
-            partial = cot_library.convert(TRACK, {
+            partial = cot_library.convert(payload, {
                 "geotrack.kind": "track", "geotrack.sensor": "radar-a",
                 "geotrack.site": SOURCE["site"], "geotrack.node": SOURCE["node"],
                 "geotrack.observed_at": full["observed_at"], "geotrack.producer_anchor": ANCHOR,

@@ -93,11 +93,14 @@ def complete_type_letters(track: dict[str, Any]) -> None:
 
 
 def complete_error_sentinel(track: dict[str, Any]) -> None:
-    """`ce_m` and `le_m`: CoT writes 9999999 for "no usable estimate"; the
-    track says null.
+    """`ce_m` and `le_m`: a value above 9999999, CoT's "no usable estimate",
+    the track says null, as `cot.parse` does for any value at or above it.
 
-    Needs in the library: absent-value sentinels, a `field` option that leaves
-    the key absent when the wire holds a stated value.
+    The `cot-xml` pack leaves the key absent for the text 9999999 itself (its
+    `absent` option), so `complete_null_members` writes that one null; this
+    step is left only for a larger number, which the pack keeps as a value.
+    Needs in the library: a `field` option that leaves the key absent for
+    every value at or above a stated one.
     """
     for key in ("ce_m", "le_m"):
         if track.get(key) is not None and track[key] >= cot._ERROR_UNKNOWN:

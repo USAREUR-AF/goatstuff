@@ -492,6 +492,8 @@ fn default_encoding(wire: Wire, format: &str) -> String {
         Wire::GeoJson => "application/geo+json",
         Wire::Protobuf => "application/protobuf",
         Wire::Bits => "application/octet-stream",
+        // One record of ASCII text (engine-spec 0.10), carried as it is.
+        Wire::Text => "text/plain",
     };
     // Zenoh's `<type>;<schema>` form: the schema names the pack.
     format!("{mime};{format}")

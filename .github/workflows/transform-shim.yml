@@ -3,8 +3,8 @@ name: transform-shim
 # Build, test and lint the format transformer shim
 # (docs/design/format-transformers.md). The crate takes the goat-transformers
 # engine as a git dependency at the commit in ops/xf/goat-transformers.ref and
-# loads the pack bundle beside it, so a change to the pin or to the proposed
-# packs under ops/xf runs this too.
+# loads the pack bundle beside it, so a change to the pin or to the bundle
+# tooling under ops/xf runs this too.
 
 on:
   workflow_dispatch:  # the weekly path-filtered run starts it on main

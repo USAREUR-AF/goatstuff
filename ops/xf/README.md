@@ -9,8 +9,13 @@ library in `ops/zenoh-shims/transform-shim/` (Rust engine) and in
 |---|---|
 | `goat-transformers.ref` | the library commit every consumer here uses |
 | `bundle.py` | builds and checks a consumer's pack bundle: the model modules and packs it loads, with a manifest of SHA-256 values |
-| `upstream-proposed/` | two model modules, a pack and five added lines of the `cot-xml` pack, written here and offered to the library |
-| `tests/` | runs the proposed vectors and checks both bundles |
+| `tests/` | checks both bundles against their manifests and the pin |
+
+The pin is goat-transformers `5459b24`. Every bundle file is the library's
+file at that commit: the `geo-track-v1` pack, the `geotrack` module and the
+`cot-xml` keys once proposed from `upstream-proposed/` are in the library, and
+that directory is deleted. goat-map's comparison of its two CoT paths, and what
+the library still lacks, are in the design document, section 4.1.
 
 ```bash
 python3 ops/xf/bundle.py check ops/serve/goat-map/xf-bundle

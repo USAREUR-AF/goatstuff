@@ -12,16 +12,12 @@ names the library commit and the SHA-256 of every file.
   bundle.py check <dir> [--library <checkout>]
 
 `build` refuses a library checkout that is not at the commit in
-ops/xf/goat-transformers.ref. A file under ops/xf/upstream-proposed/ is taken
-from there and marked `upstream-proposed` in the manifest: a pack or module
-the library does not hold, or a library file with lines added. The model
-modules are `core` plus every module a chosen pack or module names in a `uses`
-line.
+ops/xf/goat-transformers.ref. Every file is the library's file of the same
+path. The model modules are `core` plus every module a chosen pack or module
+names in a `uses` line.
 
 `check` recomputes every hash and refuses a file the manifest does not list.
-With --library it also compares every library file with the checkout and
-every proposed file with ops/xf/upstream-proposed/, and refuses a proposed
-file that drops or changes a line of the library file it replaces.
+With --library it also compares every file with the checkout.
 
 Standard library only. Exit 0 on success, 1 on any finding.
 """
@@ -38,7 +34,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REF_FILE = HERE / "goat-transformers.ref"
-PROPOSED = HERE / "upstream-proposed"
 REPOSITORY = "https://github.com/USAREUR-AF/goat-transformers"
 MANIFEST = "MANIFEST.json"
 
@@ -60,20 +55,11 @@ def uses_of(def_file: Path) -> list[str]:
     return out
 
 
-def find(rel: str, library: Path) -> tuple[Path, str]:
-    """The source of one bundle file: the proposed set first, then the library."""
-    if (PROPOSED / rel).is_file():
-        return PROPOSED / rel, "upstream-proposed"
+def find(rel: str, library: Path) -> Path:
+    """The source of one bundle file in the library checkout."""
     if (library / rel).is_file():
-        return library / rel, "library"
-    raise SystemExit(f"bundle: {rel} is in neither {library} nor {PROPOSED}")
-
-
-def adds_lines_only(proposed: Path, original: Path) -> bool:
-    """Every line of `original` is in `proposed`, in the same order."""
-    lines = iter(proposed.read_text(encoding="utf-8").splitlines())
-    return all(any(line == have for have in lines)
-               for line in original.read_text(encoding="utf-8").splitlines())
+        return library / rel
+    raise SystemExit(f"bundle: {rel} is not in {library}")
 
 
 def library_rev(library: Path) -> str:
@@ -95,23 +81,23 @@ def build(library: Path, out: Path, formats: list[str]) -> int:
     rels = [f"packs/{f}/pack.def" for f in formats]
     modules, queue = [], ["core"]
     for rel in rels:
-        queue += uses_of(find(rel, library)[0])
+        queue += uses_of(find(rel, library))
     while queue:
         name = queue.pop(0)
         if name in modules:
             continue
         modules.append(name)
-        queue += uses_of(find(f"model/{name}.def", library)[0])
+        queue += uses_of(find(f"model/{name}.def", library))
     rels += [f"model/{m}.def" for m in modules]
     for stale in ("model", "packs"):  # a rebuild leaves no file of the previous set
         shutil.rmtree(out / stale, ignore_errors=True)
     files = []
     for rel in sorted(rels):
-        src, origin = find(rel, library)
+        src = find(rel, library)
         dst = out / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(src.read_bytes())
-        files.append({"path": rel, "sha256": sha256(dst), "origin": origin})
+        files.append({"path": rel, "sha256": sha256(dst), "origin": "library"})
     manifest = {
         "library": {"repository": REPOSITORY, "rev": rev},
         "formats": sorted(formats),
@@ -146,17 +132,11 @@ def check(bundle: Path, library: Path | None) -> int:
             continue
         if sha256(path) != entry["sha256"]:
             findings.append(f"{rel}: content does not match the manifest")
-        source = None
-        if entry["origin"] == "upstream-proposed":
-            source = PROPOSED / rel
-        elif library is not None:
-            source = library / rel
+        if entry.get("origin") != "library":
+            findings.append(f"{rel}: origin {entry.get('origin')!r}; every file is the library's")
+        source = library / rel if library is not None else None
         if source is not None and (not source.is_file() or sha256(source) != entry["sha256"]):
             findings.append(f"{rel}: differs from its source {source}")
-        replaced = library / rel if library is not None else None
-        if (entry["origin"] == "upstream-proposed" and replaced is not None
-                and replaced.is_file() and not adds_lines_only(PROPOSED / rel, replaced)):
-            findings.append(f"{rel}: the proposed file drops or changes a line of {replaced}")
     if library is not None and library_rev(library) != pinned_rev():
         findings.append(f"{library} is not at the pinned commit {pinned_rev()}")
     for finding in findings:

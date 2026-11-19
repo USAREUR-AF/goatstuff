@@ -24,7 +24,7 @@ arrived, are passed to the conversion as context.
 |---|---|---|---|
 | 1 | `transform-shim`, a fabric peer that subscribes in one format and republishes in another | Rust | built, tested in CI, not deployed |
 | 2 | goat-map's Cursor on Target to GeoTrackV1 step through the library, selected by `GOATMAP_COT_ENGINE=library` | Python | built, tested in CI, default `builtin` |
-| 3 | The `geo-track-v1` pack, the `geotrack` and `cotxml` model modules and five added lines of the `cot-xml` pack, written here and proposed to the library | data | built; the vectors pass on the Python engine in CI and the Rust engine loads the same files in the shim's tests |
+| 3 | The `geo-track-v1` pack and the `geotrack` model module, written here and taken into the library with the three `cot-xml` keys they need | data | in the library since commit `5459b24`; both bundles are built from the library alone |
 | 4 | `goat xf` on the operator's machine | Rust | designed; no goat code is needed |
 | 5 | The portal inspector decoding any pack-described format | Go | designed |
 
@@ -208,8 +208,13 @@ accepted inputs give 368 members (23 each).
 
 | Stage | Equal | Equal value, other form | null where the packs write no member | Different |
 |---|---|---|---|---|
-| The packs alone | 271 | 15 | 19 | 63 |
+| The packs alone | 271 | 15 | 49 | 33 |
 | The service's library path | 353 | 15 | 0 | 0 |
+
+At the previous library commit (`0be9fc9`, with the files of section 5) the
+packs alone gave 271, 15, 19 and 63: 30 `ce_m` and `le_m` members that were
+`9999999` are now absent rather than different, and the service's path is
+unchanged.
 
 "Other form" is `course_deg` written `65` where the built-in path writes
 `65.0`: one JSON number. What the packs alone leave, by cause, and the named
@@ -218,16 +223,17 @@ step of `cot_library.COMPLETION` that closes it in the service:
 | Members | Count | Cause | Step | What the library needs |
 |---|---|---|---|---|
 | `affiliation`, `dimension` | 32 different | each is a token of the type, looked up in a table, `unknown` when missing or unlisted | `complete_type_letters` | a derive function that takes a token of a string, and a value-table entry for a value with no entry |
-| `ce_m`, `le_m` | 31 different | `9999999` means no usable estimate and the track says null | `complete_error_sentinel` | absent-value sentinels (designed in the library) |
-| `org`, and `course_deg`, `speed_mps`, `descriptor` when the event has none | 19 absent | the `json` wire writes no member for an absent key; the map's tracks carry every member, null when not reported | `complete_null_members` | a `json` pack directive that writes `null` for an absent mapped member |
+| `ce_m`, `le_m` | 1 different | a value above `9999999`: the built-in path says null for any value at or above it; the pack leaves only the text `9999999` absent and keeps `10000000` | `complete_error_sentinel` | a `field` option that leaves a key absent for every value at or above a stated one, or goat-map taking the library's rule (only `9999999` means not known) |
+| `org`, `ce_m` and `le_m` when `9999999`, and `course_deg`, `speed_mps`, `descriptor` when the event has none | 49 absent | the `json` wire writes no member for an absent key; the map's tracks carry every member, null when not reported | `complete_null_members` | a `json` pack directive that writes `null` for an absent mapped member |
 
 Each step has its own test, and a test removes each step in turn and checks
 that only its members change.
 
 The packs give the rest. `descriptor` is `detail/uid/@Droid`, and
-`reported_at` and `stale_at` are the sensor's text as written, through three
-keys of the proposed module `cotxml` that the proposed lines of `cot-xml`
-fill. An event with no type gives `cot_type` `""` through a `default` line.
+`reported_at` and `stale_at` are the sensor's text as written, through the
+core keys `display_name`, `time_text` and `stale_text` of the library's
+`cot-xml` pack. `ce_m` and `le_m` of `9999999` are null through the pack's
+`absent` option (spec 0.9) and `complete_null_members`. An event with no type gives `cot_type` `""` through a `default` line.
 
 The one disagreement: an event with no `uid`. The built-in path publishes the
 id `radar-a:`, which the schema's id pattern does not allow; the packs give
@@ -237,8 +243,8 @@ such an event no identity and refuse it.
 
 `requirements.txt` installs the engine from the library's source archive at
 the pinned commit; it has no dependencies. The packs are in `xf-bundle/`
-(`cot-xml` with its proposed lines, `geo-track-v1`, and the modules `core`,
-`track`, `geotrack` and `cotxml`) with a manifest that
+(`cot-xml`, `geo-track-v1`, and the modules `core`, `track` and `geotrack`,
+all from the library) with a manifest that
 `cot_library.load_engine` checks; the Dockerfile copies it to
 `/app/xf-bundle`.
 
@@ -250,29 +256,23 @@ setting it uses `goatmap.cot`; with an unknown value it stops with the
 error. The repository has no container test for goat-map, so these four
 checks were run by hand.
 
-## 5. Packs proposed to the library
+## 5. Packs written here, now in the library
 
-`ops/xf/upstream-proposed/` holds what was written here for the library and is
-not in it yet:
+Written here and taken into the library at commit `5459b24`:
 
-| File | What |
+| In the library | What |
 |---|---|
 | `model/geotrack.def` | module `geotrack`: ten keys the republishing host supplies, and the derivation of the identity |
-| `model/cotxml.def` | module `cotxml`: the text of an event's `time` and `stale` as written, and `detail/uid/@Droid` |
 | `packs/geo-track-v1/` | the pack for GeoTrackV1 on the `json` wire, its notes and four vectors |
-| `packs/cot-xml/pack.def` | the library's `cot-xml` pack with five lines added: `uses cotxml` and a `field` line for each of its three keys, placed after the lines that parse the instants so that encode still writes those (ruling 16 of spec 0.5) |
-| `packs/cot-xml/vectors/geo-*.json` | five vectors: four from `cot-xml` to `geo-track-v1` and one `cot-xml` round trip |
+| `packs/cot-xml/` | the core keys `time_text`, `stale_text` (an event's `time` and `stale` as written) and `display_name` (`detail/uid/@Droid`), five `geo-*` vectors, and the core key `access` (`@access`) |
 
-A file here replaces the library's file of the same path in a bundle and is
-marked `upstream-proposed` in the manifest. `bundle.py check --library`
-refuses a proposed file that drops or changes a line of the library file it
-replaces, so moving the library commit cannot hide a change to `cot-xml`.
-
-`ops/xf/tests/test_upstream_proposed.py` runs the nine vectors on the Python
-engine in CI. The library's own 56 conversion vectors for the five bundled
-formats pass on the bundle with the proposed `cot-xml`. When the library
-carries these files, the directory is deleted and the bundles are rebuilt from
-the library alone.
+What was proposed as a module `cotxml` became three core keys, so the library
+has no `cotxml` module and `geo-track-v1` uses `geotrack` only. The library
+also decodes `9999999` in `hae`, `ce` and `le` as absent, which section 4.1
+measures. `ops/xf/upstream-proposed/`, its test, and the handling in
+`bundle.py` that took a file from there before the library's are deleted. On
+the shim's bundle, the library's 72 conversion vectors between the five
+bundled formats pass on the Python engine.
 
 ## 6. `goat xf`: converting on an operator's machine
 
@@ -316,11 +316,10 @@ The Go engine is standard library only, so it adds one module to the portal's
 
 ## 8. The library commit and the bundles
 
-The library is used at one commit, stated in `ops/xf/goat-transformers.ref`.
-`ops/xf/bundle.py build` copies the chosen packs and the model modules they
-use from a library checkout at that commit, or from
-`ops/xf/upstream-proposed/` where a file is there, into a consumer's directory
-and writes the manifest; `bundle.py check` recomputes it. Moving the commit is
+The library is used at one commit, stated in `ops/xf/goat-transformers.ref`
+(`5459b24`). `ops/xf/bundle.py build` copies the chosen packs and the model
+modules they use from a library checkout at that commit into a consumer's
+directory and writes the manifest; every file's origin is `library`; `bundle.py check` recomputes it. Moving the commit is
 one change: the `.ref` file, the `rev` in the shim's `Cargo.toml` and `Cargo.lock`,
 the archive URL in goat-map's `requirements.txt`, and both bundles rebuilt.
 The shim's `tests/routes.rs` and `ops/xf/tests/` fail when they disagree.
