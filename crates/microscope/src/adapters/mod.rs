@@ -21,25 +21,23 @@ mod kratos_sessions;
 pub mod netbird_events;
 pub mod netbird_peers;
 pub mod operator_audit;
-pub mod surface_visits;
 pub mod portal_audit;
+pub mod surface_visits;
 
-/// Shared MinIO audit-tail constructor for the two audit adapters.
-/// `Ok(None)` ⇒ not configured on this deployment (adapters report
-/// `skipped`): none of the three required fields are set, which is the
-/// normal steady state for a site that has not turned audit tail on.
-/// `Err` ⇒ configured but broken — only some of the three fields are set,
-/// or the endpoint does not parse — and the caller must surface it rather
-/// than fold it into a quiet skip.
-pub(crate) fn tail_from(cfg: &Config) -> Result<Option<AuditTail>, String> {
-    if cfg.audit_endpoint.is_empty()
-        && cfg.audit_access_key.is_empty()
-        && cfg.audit_secret_key.is_empty()
-    {
+/// Shared portal metadata history constructor for the audit adapters.
+/// Unset portal configuration skips; partial or invalid settings surface errors.
+pub(crate) fn tail_from(cfg: &Config) -> anyhow::Result<Option<AuditTail>> {
+    if cfg.portal_url.is_empty() && cfg.portal_api_key.is_empty() {
+        anyhow::ensure!(
+            cfg.audit_endpoint.is_empty() && cfg.audit_access_key.is_empty() && cfg.audit_secret_key.is_empty(),
+            "raw S3 audit history is gated; configure portal URL and operator token"
+        );
         return Ok(None);
     }
     AuditTail::new(AuditTailConfig {
         enabled: true,
+        portal_url: cfg.portal_url.clone(),
+        portal_api_key: cfg.portal_api_key.clone(),
         endpoint: cfg.audit_endpoint.clone(),
         region: cfg.audit_region.clone(),
         bucket: cfg.audit_bucket.clone(),
@@ -51,7 +49,6 @@ pub(crate) fn tail_from(cfg: &Config) -> Result<Option<AuditTail>, String> {
         fetch_concurrency: audit_fetch_concurrency(cfg),
     })
     .map(Some)
-    .map_err(|e| e.to_string())
 }
 
 /// The audit adapters' fetch concurrency for this config (0 means
@@ -264,70 +261,34 @@ pub(crate) fn test_audit_event(key: &str, i: usize) -> panoscope_core::AuditEven
         payload_len: 8,
         payload_bytes_b64: None,
         audit_subscriber_id: String::new(),
+        sample_kind: "put".into(),
+        ..Default::default()
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod audit_startup_tests {
     use super::*;
-
-    /// Nothing set at all (the normal, steady state for a site that has
-    /// never turned audit tail on) must stay a quiet skip, not an error.
-    /// AuditTail holds a reqwest::Client and does not derive Debug, so the
-    /// branches are matched explicitly rather than via an `assert!` with a
-    /// `{:?}`-formatted value.
     #[test]
-    fn tail_from_unconfigured_is_ok_none() {
-        let cfg = Config::default();
-        match tail_from(&cfg) {
-            Ok(None) => {}
-            Ok(Some(_)) => panic!("expected Ok(None) for a fully unconfigured site, got Ok(Some(_))"),
-            Err(e) => panic!("expected Ok(None) for a fully unconfigured site, got Err({e})"),
-        }
-    }
-
-    /// A malformed endpoint (present but not a valid URL) must surface its
-    /// real parse error through tail_from's Result, not get discarded by
-    /// `.ok()` and reported as "unset" by the caller.
-    #[test]
-    fn tail_from_malformed_endpoint_surfaces_parse_error() {
-        let cfg = Config {
-            audit_endpoint: "not a url".to_string(),
-            audit_access_key: "access-key".to_string(),
-            audit_secret_key: "secret-key".to_string(),
-            ..Default::default()
-        };
-        let err = match tail_from(&cfg) {
-            Err(e) => e,
-            Ok(None) => panic!("expected Err surfacing the parse failure, got Ok(None)"),
-            Ok(Some(_)) => panic!("expected Err surfacing the parse failure, got Ok(Some(_))"),
-        };
-        assert!(
-            err.contains("not a url"),
-            "expected the real parse error to name the malformed endpoint, got: {err}"
-        );
-    }
-
-    /// Partial configuration (var-name drift between the secret mint and
-    /// the consumer leaves one field empty while the others are set) is a
-    /// real misconfiguration, not an intentional skip, and must surface.
-    #[test]
-    fn tail_from_partial_config_is_an_error_not_a_skip() {
-        let cfg = Config {
-            audit_endpoint: "http://198.18.0.9:9000".to_string(),
-            audit_access_key: "access-key".to_string(),
-            audit_secret_key: String::new(),
-            ..Default::default()
-        };
-        let err = match tail_from(&cfg) {
-            Err(e) => e,
-            Ok(None) => panic!("expected Err for a partially configured tail, got Ok(None)"),
-            Ok(Some(_)) => panic!("expected Err for a partially configured tail, got Ok(Some(_))"),
-        };
-        assert!(
-            err.contains("secret_key"),
-            "expected the error to name the missing field, got: {err}"
-        );
+    fn partial_and_insecure_portal_configuration_is_an_error() {
+        let mut cfg = Config::default();
+        cfg.portal_url.clear();
+        cfg.portal_api_key.clear();
+        assert!(tail_from(&cfg).unwrap().is_none());
+        cfg.portal_url = "https://portal.invalid".into();
+        assert!(tail_from(&cfg).is_err());
+        cfg.portal_api_key = "fixture".into();
+        cfg.portal_url = "http://portal.invalid".into();
+        assert!(tail_from(&cfg).is_err());
+        cfg.portal_url = "https://portal.invalid".into();
+        assert!(tail_from(&cfg).unwrap().is_some());
+        cfg.portal_url.clear();
+        cfg.portal_api_key.clear();
+        cfg.audit_endpoint = "https://storage.invalid".into();
+        assert!(tail_from(&cfg).is_err());
+        cfg.audit_access_key = "fixture".into();
+        cfg.audit_secret_key = "fixture".into();
+        assert!(tail_from(&cfg).is_err());
     }
 
     fn row(ts: &str, n: usize) -> TimelineEvent {

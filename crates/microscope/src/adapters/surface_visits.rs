@@ -1,26 +1,6 @@
-//! Surface visits (design source S7): the `ops/audit/surface/<surface>/<actor>`
-//! stream, read from the same MinIO audit-integrity tier the fabric and
-//! operator adapters use.
-//!
-//! WHAT THIS ADDS THAT hydra-consents CANNOT. A consent grant is a STANDING
-//! record with a moving `handled_at`: it says this person reached this service,
-//! and when they last did. Several visits to one surface collapse into one row,
-//! so the grant can never answer "how many times" or "on which days". Each row
-//! here is ONE request, so counts and a history fall out of the same stream.
-//!
-//! The two sources are complementary and neither subsumes the other. A consent
-//! grant survives a gap in this stream (the emitter down, the router wedged);
-//! this stream survives a REVOKED grant, which vanishes from Hydra's API
-//! entirely. Read together they distinguish "never came" from "came, and the
-//! grant was later revoked" — apart, neither can (the F-177 class).
-//!
-//! DELIBERATELY NOT DECRYPTED, exactly as operator-audit is not. The payload is
-//! age-encrypted to the operator roster and this service holds no roster
-//! identity; key custody stays with operators. What the ciphertext still proves,
-//! with strong attribution, is carried by the KEY PATH rather than the body:
-//! WHICH SURFACE, WHICH PERSON, and WHEN — which is the whole of "who visited
-//! what, how often". Only the per-request detail (path, status, duration) needs
-//! the roster key, and that is the deliberate follow-on, not a gap.
+//! Surface namespace observations through authenticated metadata projection.
+//! Keys name a surface and asserted actor. Counts measure observed records,
+//! not authenticated visits; no body is fetched or decrypted.
 
 use std::collections::BTreeMap;
 
@@ -83,18 +63,19 @@ impl VisitFold {
         self.rows.offer(crate::timefmt::canonical_str(&r.ts), move |ts| TimelineEvent {
             ts,
             source: SOURCE,
-            action: "surface-visit".into(),
+            action: "surface-namespace-observed".into(),
             actor: actor.clone(),
             target: Some(surface.clone()),
             summary: format!(
-                "visited {surface} ({} B age-encrypted — path and status decrypt operator-side)",
+                "observed {} in {surface} namespace ({} B; actor unverified)",
+                if r.sample_kind.is_empty() { "unknown kind" } else { &r.sample_kind },
                 r.payload_len
             ),
             kind: crate::event::EventKind::classify("surface.visit"),
             outcome: crate::event::Outcome::Unrecorded,
             direction: crate::event::Direction::BySubject,
             detail: None,
-            attribution: Attribution::Strong,
+            attribution: Attribution::Coarse,
             raw: serde_json::to_value(&r).ok(),
         });
     }
@@ -108,9 +89,9 @@ impl SourceAdapter for SurfaceVisits {
 
     async fn collect(&self, cfg: &Config, spine: &EntitySpine) -> AdapterOutput {
         let tail = match tail_from(cfg) {
-            Ok(Some(t)) => t,
-            Ok(None) => return AdapterOutput::skipped(SOURCE, "MICROSCOPE_AUDIT_* unset"),
-            Err(e) => return AdapterOutput::error(SOURCE, e),
+            Ok(Some(tail)) => tail,
+            Ok(None) => return AdapterOutput::skipped(SOURCE, "portal history unconfigured"),
+            Err(error) => return AdapterOutput::error(SOURCE, error),
         };
         // The stream's first key segment is `ops`, so one vendor-filtered walk
         // narrows to the ops namespace before the prefix match — same shape as
@@ -149,7 +130,7 @@ impl SourceAdapter for SurfaceVisits {
         // published nothing in the window, which a stopped emitter also
         // produces.
         let breakdown = if per_surface.is_empty() {
-            "no visits in window".to_string()
+            "no namespace observations in window".to_string()
         } else {
             per_surface
                 .iter()
@@ -161,9 +142,9 @@ impl SourceAdapter for SurfaceVisits {
         AdapterOutput::ok(
             SOURCE,
             &format!(
-                "per-request visits from audit-integrity, {coverage}: {breakdown}. \
-                 Counts and times are read from the key path; path and status are \
-                 age-encrypted to the operator roster and stay operator-side. \
+                "surface namespace observations from audit-integrity, {coverage}: {breakdown}. \
+                 Counts and times describe observed namespace traffic; request \
+                 paths, statuses and verified actors are unavailable in this metadata. \
                  A zero here is a window result, not proof nobody came — pair it \
                  with the standing consent grant in hydra-consents."
             ),

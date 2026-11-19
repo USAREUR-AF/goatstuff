@@ -144,13 +144,23 @@ impl Check for CardinalityCheck {
 
         // Folded as the tail streams: the window is never held in memory.
         let mut counts = TopicCounts::new(system_prefix, MAX_TRACKED_TOPICS);
+        // Publications only: a delete is not traffic, and an unknown operation
+        // kind means the publication history is incomplete.
+        let mut unknown_kind = false;
         if let Err(e) = ctx
             .audit
-            .stream_recent_events(WINDOW_HOURS, Some(vendor), |ev| counts.observe(&ev))
+            .stream_recent_events(WINDOW_HOURS, Some(vendor), |ev| match ev.sample_kind.as_str() {
+                "put" => counts.observe(&ev),
+                "delete" => {}
+                _ => unknown_kind = true,
+            })
             .await
         {
             debug!(error = %e, "cardinality: audit_tail stream_recent_events failed");
             return CheckOutcome::skipped(ID, format!("audit-tail error: {e}"));
+        }
+        if unknown_kind {
+            return CheckOutcome::skipped(ID, format!("audit-tail error: {}", "audit history contains unknown operation kinds; publication history is incomplete"));
         }
         judge(&counts)
     }
@@ -280,6 +290,8 @@ mod tests {
             payload_len: 1,
             payload_bytes_b64: None,
             audit_subscriber_id: String::new(),
+            sample_kind: "put".into(),
+            ..Default::default()
         }
     }
 

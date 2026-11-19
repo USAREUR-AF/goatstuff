@@ -37,6 +37,10 @@ services:
       # env var to flip if needed is ZO_S3_FEATURE_FORCE_HOSTED_STYLE,
       # not the documented-but-fictional ZO_S3_FORCE_PATH_STYLE).
       ZO_S3_PROVIDER: "s3"
+{% if minio_tls_enabled | default(false) | bool %}
+      SSL_CERT_FILE: /storage-ca/ca.crt
+      ZO_S3_ALLOW_INVALID_CERTIFICATES: "false"
+{% endif %}
       ZO_S3_SERVER_URL: "${ZO_S3_SERVER_URL}"
       ZO_S3_REGION_NAME: "${ZO_S3_REGION_NAME}"
       ZO_S3_BUCKET_NAME: "${ZO_S3_BUCKET_NAME}"
@@ -65,6 +69,9 @@ services:
 {% endif %}
     volumes:
       - {{ openobserve_data_root }}:/data
+{% if minio_tls_enabled | default(false) | bool %}
+      - {{ minio_client_ca_path | default('/etc/goat/storage-ca/ca.crt') }}.combined:/storage-ca/ca.crt:ro
+{% endif %}
     ports:
       - "{{ openobserve_http_port }}:{{ openobserve_http_port }}"
       - "{{ openobserve_grpc_port }}:{{ openobserve_grpc_port }}"

@@ -5,7 +5,7 @@
 // Replaces the in-process audit-logger plugin per:
 //   - docs/design/zenoh-audit-external-subscriber.md
 //   - ADR 0858 (zenoh image upstream pivot enabled by this move)
-//   - ADR 0811 (audit log integrity → MinIO Object-Lock COMPLIANCE 1y)
+//   - ADR 0811 (audit integrity with environment-owned retention)
 //
 // Shape:
 //   - Opens an mTLS Zenoh session as a client peer of the audited router.
@@ -15,31 +15,27 @@
 //     MinIO bucket (S3-compatible).
 //   - Exposes Prometheus /metrics on a separate HTTP port.
 //
-// Event schema is `AuditEvent` below — matches the design doc shape
-// (vendor, key_expr, ts, src_zid, payload_hash, payload_len,
-// payload_bytes?, audit_subscriber_id). Payload bytes are captured
-// inline up to --max-inline-payload; oversize publishes carry the hash
-// + length only.
+// Audit metadata contains no body. Replay capture is gated pending governance.
+// SourceInfo remains an unverified publisher claim.
+mod records;
+mod attribution;
+mod state;
+mod writer;
+#[cfg(test)]
+use records::AuditEvent;
+use records::ReplayEvent;
 
 use anyhow::{Context, Result};
-use aws_config::BehaviorVersion;
-use aws_credential_types::Credentials;
-use aws_sdk_s3::config::Region;
-use aws_sdk_s3::primitives::ByteStream;
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::Router;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use base64::Engine;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{SecondsFormat, Utc};
 use clap::Parser;
 use prometheus::{
     register_counter_vec_with_registry, register_gauge_vec_with_registry,
     register_int_counter_with_registry, register_int_gauge_with_registry, CounterVec, Encoder,
     GaugeVec, IntCounter, IntGauge, Registry, TextEncoder,
 };
-use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,6 +53,14 @@ struct Args {
     #[arg(long, env = "AUDIT_SUBSCRIBER_ENDPOINT")]
     endpoint: String,
 
+    #[arg(long, env = "AUDIT_SUBSCRIBER_RECEIVING_SITE")]
+    receiving_site: String,
+    /// Rendered router configuration; evidence of intent, not live attestation.
+    #[arg(long, env = "AUDIT_SUBSCRIBER_ROUTER_POLICY")]
+    router_policy: Option<std::path::PathBuf>,
+    #[arg(long, env = "AUDIT_SUBSCRIBER_S3_CA_BUNDLE")]
+    s3_ca_bundle: Option<std::path::PathBuf>,
+
     /// Key-expression to subscribe to. Default `**` captures every
     /// sample the router routes to this client; narrow per-prefix when
     /// the trial fabric ACL gets tighter.
@@ -72,7 +76,11 @@ struct Args {
     /// the non-persisted class (high-throughput telemetry + bounded
     /// large-file transfer) must not fill the locked audit store. Set to
     /// an empty string to capture everything (legacy behaviour).
-    #[arg(long, env = "AUDIT_SUBSCRIBER_EXCLUDE_KEYS", default_value = "volatile/**")]
+    #[arg(
+        long,
+        env = "AUDIT_SUBSCRIBER_EXCLUDE_KEYS",
+        default_value = "volatile/**"
+    )]
     exclude_keys: String,
 
     /// Stable identifier for this subscriber's writes (e.g. `site-a`).
@@ -138,11 +146,7 @@ struct Args {
 
     /// MinIO / S3 region. MinIO ignores the value but the SDK requires
     /// one to construct the client.
-    #[arg(
-        long,
-        env = "AUDIT_SUBSCRIBER_S3_REGION",
-        default_value = "us-east-1"
-    )]
+    #[arg(long, env = "AUDIT_SUBSCRIBER_S3_REGION", default_value = "us-east-1")]
     s3_region: String,
 
     /// Environment variable name holding the S3 access key. The value
@@ -163,7 +167,7 @@ struct Args {
     )]
     s3_secret_key_env: String,
 
-    /// Cap on inline payload bytes captured per event. Publishes
+    /// Replay-only payload capture cap. Audit records never contain bodies. Publishes
     /// larger than this carry hash + length only. Default 16 KiB per
     /// the design-doc open question (revisit when we have trial-fabric
     /// payload-size distribution evidence).
@@ -173,6 +177,31 @@ struct Args {
         default_value_t = 16384
     )]
     max_inline_payload: usize,
+
+    /// Durable directory holding the subscriber lock and batch high-water mark.
+    #[arg(long, env = "AUDIT_SUBSCRIBER_STATE_DIR")]
+    state_dir: std::path::PathBuf,
+
+    /// Initialize a NEW state directory above the final legacy batch timestamp,
+    /// then exit. Never resets existing state. Use 0 only for an empty stream.
+    #[arg(long)]
+    initialize_state_after: Option<i64>,
+
+    /// Separate replay bucket on the same S3 endpoint. Unset disables capture.
+    #[arg(long, env = "AUDIT_SUBSCRIBER_REPLAY_BUCKET")]
+    replay_bucket: Option<String>,
+    #[arg(
+        long,
+        env = "AUDIT_SUBSCRIBER_REPLAY_ACCESS_KEY_ENV",
+        default_value = "AUDIT_SUBSCRIBER_REPLAY_ACCESS_KEY"
+    )]
+    replay_access_key_env: String,
+    #[arg(
+        long,
+        env = "AUDIT_SUBSCRIBER_REPLAY_SECRET_KEY_ENV",
+        default_value = "AUDIT_SUBSCRIBER_REPLAY_SECRET_KEY"
+    )]
+    replay_secret_key_env: String,
 
     /// Maximum events per uploaded NDJSON batch.
     ///
@@ -199,7 +228,11 @@ struct Args {
     /// inside `flush_batch`, not continuously — so a crash loses up to this
     /// much audit outright, not merely un-WORMed. 60 s was chosen by the
     /// operator with that stated.
-    #[arg(long, env = "AUDIT_SUBSCRIBER_BATCH_INTERVAL_MS", default_value_t = 60_000)]
+    #[arg(
+        long,
+        env = "AUDIT_SUBSCRIBER_BATCH_INTERVAL_MS",
+        default_value_t = 60_000
+    )]
     batch_interval_ms: u64,
 
     /// Optional local directory to ALSO append each NDJSON batch to (a
@@ -225,50 +258,6 @@ const VALID_IDENTITY_MODELS: [&str; 2] = ["per-vendor", "per-uuid-slot-pool"];
 /// small without hammering the router.
 const SESSION_OPEN_RETRY: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, Serialize)]
-struct AuditEvent {
-    /// Enforced write-anchor — the first segment of the key-expression,
-    /// which is the identity the router's ACL bound the write to. Shape-
-    /// neutral: a human vendor prefix under `per-vendor`, an opaque slot-
-    /// anchor uuid under `per-uuid-slot-pool` (ADR 1025). New consumers
-    /// read this together with `identity_model`.
-    anchor: String,
-    /// DEPRECATED back-compat alias of `anchor` — identical value. The
-    /// in-portal audit tailer keys on `vendor`, so it stays emitted; new
-    /// consumers should prefer `anchor` + `identity_model`.
-    vendor: String,
-    /// Identity model that produced this record (`per-vendor` |
-    /// `per-uuid-slot-pool`) — tells a reader how to interpret `anchor`.
-    identity_model: String,
-    key_expr: String,
-    /// ISO-8601 UTC, millisecond precision.
-    ts: String,
-    /// Source zenoh-id of the publisher (when zenoh exposes it; empty
-    /// string when not available).
-    ///
-    /// **ASSERTED BY THE PUBLISHER, VERIFIED BY NOTHING.**
-    ///
-    /// This is `ext_sinfo` as it appeared on the wire. A forwarding hop rewrites
-    /// only `wire_expr` and `ext_nodeid`, so it crosses a federation boundary
-    /// unchanged, and no code compares it to the transport peer that delivered
-    /// the sample. A peered party can claim any ZID, including one of ours.
-    ///
-    /// The audit trail therefore records a CLAIM here, not a fact. For anything
-    /// that crossed a trust boundary, attribute on the ingress key prefix and the
-    /// peering certificate CN — the only authenticated facts available.
-    /// See `docs/design/cross-sovereign-federation.md` §6 and ADR 1152.
-    src_zid: String,
-    /// `sha256:<hex>` over the full payload bytes.
-    payload_hash: String,
-    payload_len: usize,
-    /// Base64-encoded payload, present only when len ≤
-    /// `max_inline_payload`. Null otherwise — the hash + len still
-    /// pin the value structurally.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    payload_bytes_b64: Option<String>,
-    audit_subscriber_id: String,
-}
-
 #[derive(Clone)]
 struct Metrics {
     samples_total: CounterVec,
@@ -279,6 +268,10 @@ struct Metrics {
     batches_uploaded_total: IntCounter,
     batch_size_events: GaugeVec,
     session_state: IntGauge,
+    replay_drop_total: IntCounter,
+    replay_write_errors_total: IntCounter,
+    replay_batches_uploaded_total: IntCounter,
+    local_write_errors_total: IntCounter,
     registry: Registry,
 }
 
@@ -332,7 +325,7 @@ impl Metrics {
         let drop_total = register_int_counter_with_registry!(
             prometheus::Opts::new(
                 "goat_audit_drop_total",
-                "Samples dropped because the writer channel was full."
+                "Audit samples lost to queue saturation or failed upload."
             )
             .const_labels(const_labels.clone()),
             registry
@@ -363,6 +356,29 @@ impl Metrics {
             registry
         )?;
 
+        let counter = |name: &str, help: &str| -> Result<IntCounter> {
+            Ok(register_int_counter_with_registry!(
+                prometheus::Opts::new(name, help).const_labels(const_labels.clone()),
+                registry
+            )?)
+        };
+        let replay_drop_total = counter(
+            "goat_replay_drop_total",
+            "Replay records lost to queue saturation or failed upload.",
+        )?;
+        let replay_write_errors_total = counter(
+            "goat_replay_write_errors_total",
+            "Replay uploads failed after SDK retries.",
+        )?;
+        let replay_batches_uploaded_total = counter(
+            "goat_replay_batches_uploaded_total",
+            "Replay batches uploaded.",
+        )?;
+        let local_write_errors_total = counter(
+            "goat_audit_local_write_errors_total",
+            "Metadata local-tail append failures.",
+        )?;
+
         Ok(Self {
             samples_total,
             sample_bytes,
@@ -372,12 +388,18 @@ impl Metrics {
             batches_uploaded_total,
             batch_size_events,
             session_state,
+            replay_drop_total,
+            replay_write_errors_total,
+            replay_batches_uploaded_total,
+            local_write_errors_total,
             registry,
         })
     }
 }
 
 #[tokio::main]
+// This standalone I/O supervisor has no relay shard affinity (ADR 0709).
+#[allow(clippy::disallowed_methods)]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -387,6 +409,9 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
+    anyhow::ensure!(args.replay_bucket.is_none(), "replay capture is gated pending owner governance");
+    anyhow::ensure!(!args.receiving_site.trim().is_empty(), "receiving site is required");
+    let policy = attribution::Policy::load(args.router_policy.as_deref())?;
 
     // Validate the identity model up front (ADR 1025) — a typo here would
     // mislabel every audit record's identity_model, so fail loud at startup.
@@ -398,6 +423,67 @@ async fn main() -> Result<()> {
         );
     }
 
+    anyhow::ensure!(
+        args.batch_events > 0 && args.batch_interval_ms > 0 && args.channel_depth > 0,
+        "batch and channel bounds must be positive"
+    );
+    if let Some(bucket) = &args.replay_bucket {
+        anyhow::ensure!(
+            !bucket.is_empty() && bucket != &args.s3_bucket,
+            "replay bucket must be nonempty and different from audit bucket"
+        );
+        anyhow::ensure!(args.s3_endpoint.is_some(), "replay requires an S3 endpoint");
+    }
+    let clock = state::BatchClock::open(
+        &args.state_dir,
+        &args.audit_subscriber_id,
+        args.initialize_state_after,
+    )?;
+    if args.initialize_state_after.is_some() {
+        info!("batch state initialized; no subscription started");
+        return Ok(());
+    }
+    let target =
+        |bucket: &str, access_env: &str, secret_env: &str| -> Result<Option<writer::Target>> {
+            args.s3_endpoint
+                .as_ref()
+                .map(|endpoint| {
+                    Ok(writer::Target {
+                        endpoint: endpoint.clone(),
+                        ca_bundle: Some(args.s3_ca_bundle.clone().context("S3 CA bundle required")?),
+                        bucket: bucket.to_string(),
+                        region: args.s3_region.clone(),
+                        access: read_env_opt(access_env).context("S3 access key missing")?,
+                        secret: read_env_opt(secret_env).context("S3 secret key missing")?,
+                    })
+                })
+                .transpose()
+        };
+    let writer_args = writer::WriterArgs {
+        audit: target(
+            &args.s3_bucket,
+            &args.s3_access_key_env,
+            &args.s3_secret_key_env,
+        )?,
+        replay: match &args.replay_bucket {
+            Some(bucket) => target(
+                bucket,
+                &args.replay_access_key_env,
+                &args.replay_secret_key_env,
+            )?,
+            None => None,
+        },
+        subscriber: args.audit_subscriber_id.clone(),
+        batch_events: args.batch_events,
+        batch_interval: Duration::from_millis(args.batch_interval_ms),
+        local_dir: args.local_ndjson_dir.as_ref().map(Into::into),
+    };
+    if let (Some(audit), Some(replay)) = (&writer_args.audit, &writer_args.replay) {
+        anyhow::ensure!(
+            audit.access != replay.access,
+            "audit and replay require separate S3 identities"
+        );
+    }
     let metrics = Metrics::new(&args.audit_subscriber_id)?;
 
     // Serve /metrics. Must be ready before zenoh open so Prometheus
@@ -410,26 +496,11 @@ async fn main() -> Result<()> {
         }
     });
 
-    let (tx, rx) = mpsc::channel::<AuditEvent>(args.channel_depth);
+    let (tx, rx) = mpsc::channel::<ReplayEvent>(args.channel_depth);
 
     // Writer task — owns the S3 client (or none, for observe-only mode).
     let writer_metrics = metrics.clone();
-    let writer_args = WriterArgs {
-        s3_endpoint: args.s3_endpoint.clone(),
-        s3_bucket: args.s3_bucket.clone(),
-        s3_region: args.s3_region.clone(),
-        s3_access_key: read_env_opt(&args.s3_access_key_env),
-        s3_secret_key: read_env_opt(&args.s3_secret_key_env),
-        audit_subscriber_id: args.audit_subscriber_id.clone(),
-        batch_events: args.batch_events,
-        batch_interval: Duration::from_millis(args.batch_interval_ms),
-        local_ndjson_dir: args.local_ndjson_dir.clone(),
-    };
-    let writer_handle = tokio::spawn(async move {
-        if let Err(e) = run_writer(writer_args, writer_metrics, rx).await {
-            error!(error = %e, "writer task exited");
-        }
-    });
+    let mut writer_handle = tokio::spawn(writer::run(writer_args, writer_metrics, rx, clock));
 
     // Parse the audit exclude filter (ADR 1032). Done up front so a
     // malformed key-expression fails the process at startup rather than
@@ -439,7 +510,10 @@ async fn main() -> Result<()> {
         info!("audit exclude filter: none (capturing all routed keys)");
     } else {
         let patterns: Vec<&str> = exclude_kes.iter().map(|k| k.as_str()).collect();
-        info!(?patterns, "audit exclude filter active — matching samples dropped before persistence");
+        info!(
+            ?patterns,
+            "audit exclude filter active — matching samples dropped before persistence"
+        );
     }
 
     // Subscriber loop — opens the zenoh session and forwards samples.
@@ -452,39 +526,54 @@ async fn main() -> Result<()> {
         root_ca: args.root_ca.clone(),
         audit_subscriber_id: args.audit_subscriber_id.clone(),
         identity_model: args.identity_model.clone(),
+        receiving_site: args.receiving_site.clone(),
+        policy,
         max_inline_payload: args.max_inline_payload,
+        replay: args.replay_bucket.is_some(),
         exclude_kes,
     };
-    let mut subscriber_handle = tokio::spawn(async move {
-        if let Err(e) = run_subscriber(subscriber_args, subscriber_metrics, tx).await {
-            error!(error = %e, "subscriber task exited");
-        }
-    });
-
-    // The subscriber task ending for ANY reason means the process is no
-    // longer auditing — exit non-zero so the container restart policy
-    // brings up a fresh process, instead of idling as a zombie whose
-    // metrics listener keeps the container looking healthy. A router that comes
-    // up after us otherwise means one failed session open and a silent audit gap.
+    let mut subscriber_handle =
+        tokio::spawn(run_subscriber(subscriber_args, subscriber_metrics, tx));
     tokio::select! {
-        r = tokio::signal::ctrl_c() => {
-            r.context("install ctrl_c handler")?;
-            info!("shutdown signal received");
+        r = shutdown_signal() => {
+            r?;
             subscriber_handle.abort();
-            drop(subscriber_handle);
-            // Writer keeps draining until the channel closes — that happens
-            // when `tx` is dropped, which happens when the subscriber task is
-            // aborted and its tx clone falls out of scope.
-            let _ = tokio::time::timeout(Duration::from_secs(10), writer_handle).await;
+            let _ = subscriber_handle.await;
+            tokio::time::timeout(Duration::from_secs(60), &mut writer_handle).await
+                .context("writers did not drain before shutdown deadline")?
+                .context("writer task panicked")??;
             Ok(())
         }
-        _ = &mut subscriber_handle => {
-            // Give the writer a moment to flush any batched events before
-            // dying — the channel is closed (subscriber's tx dropped).
-            let _ = tokio::time::timeout(Duration::from_secs(10), writer_handle).await;
-            anyhow::bail!("subscriber task ended — exiting so the container restarts");
+        r = &mut writer_handle => {
+            subscriber_handle.abort();
+            r.context("writer task panicked")??;
+            anyhow::bail!("writer task ended unexpectedly")
+        }
+        r = &mut subscriber_handle => {
+            let drain = tokio::time::timeout(Duration::from_secs(60), &mut writer_handle).await;
+            if let Err(e) = drain { error!(error=%e, "writer drain timed out"); }
+            r.context("subscriber task panicked")??;
+            anyhow::bail!("subscriber task ended unexpectedly")
         }
     }
+}
+
+async fn shutdown_signal() -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("install SIGTERM handler")?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result.context("install SIGINT handler")?,
+            _ = terminate.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c()
+        .await
+        .context("install shutdown handler")?;
+    Ok(())
 }
 
 fn read_env_opt(var_name: &str) -> Option<String> {
@@ -540,14 +629,17 @@ struct SubscriberArgs {
     root_ca: Option<String>,
     audit_subscriber_id: String,
     identity_model: String,
+    receiving_site: String,
+    policy: attribution::Policy,
     max_inline_payload: usize,
+    replay: bool,
     exclude_kes: Vec<KeyExpr<'static>>,
 }
 
 async fn run_subscriber(
     args: SubscriberArgs,
     metrics: Metrics,
-    tx: mpsc::Sender<AuditEvent>,
+    tx: mpsc::Sender<ReplayEvent>,
 ) -> Result<()> {
     // Retry the initial open forever: at host boot the router routinely
     // comes up after us, and a one-shot open turned that ordering into a
@@ -585,6 +677,15 @@ async fn run_subscriber(
         })?;
     metrics.session_state.set(1);
 
+    // Per-producer audit rate meter (GHSA-hq6c): counts and alerts when one
+    // producer exceeds its budget; drops only when enforcement is opted in.
+    // See quota.rs.
+    let mut producer_quota = quota::ProducerQuota::new(
+        quota::Limits::from_env(),
+        Some(&metrics.registry),
+        &args.audit_subscriber_id,
+    );
+
     loop {
         let sample = match subscriber.recv_async().await {
             Ok(s) => s,
@@ -612,6 +713,18 @@ async fn run_subscriber(
             continue;
         }
 
+        // Before any hashing, queueing or upload: meter the sample against
+        // its producer's rate budget (producer derived from the key per the
+        // router ACL). Observe-only by default; only when enforcement is on
+        // is an over-budget sample refused (never ops/audit/**). See quota.rs.
+        if !producer_quota.admit(
+            sample.key_expr().as_str(),
+            sample.payload().len(),
+            args.max_inline_payload,
+        ) {
+            continue;
+        }
+
         let key_expr = sample.key_expr().to_string();
         // The enforced write-anchor is the first key segment in BOTH identity
         // models (ADR 1025): a vendor prefix under per-vendor, an opaque slot
@@ -619,28 +732,26 @@ async fn run_subscriber(
         // value for back-compat; `identity_model` disambiguates downstream.
         let anchor = anchor_of_key(&key_expr).to_string();
         let key_pattern = key_pattern_label(&key_expr);
-        let payload_bytes = sample.payload().to_bytes().to_vec();
+        let payload_bytes = sample.payload().to_bytes();
         let payload_len = payload_bytes.len();
-        let mut hasher = Sha256::new();
-        hasher.update(&payload_bytes);
-        let payload_hash = format!("sha256:{}", hex::encode(hasher.finalize()));
-        let payload_bytes_b64 = if payload_len <= args.max_inline_payload {
-            Some(BASE64_STANDARD.encode(&payload_bytes))
-        } else {
-            None
-        };
-        let event = AuditEvent {
-            anchor: anchor.clone(),
-            vendor: anchor.clone(),
-            identity_model: args.identity_model.clone(),
-            key_expr: key_expr.clone(),
-            ts: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
-            src_zid: String::new(),
-            payload_hash,
-            payload_len,
-            payload_bytes_b64,
-            audit_subscriber_id: args.audit_subscriber_id.clone(),
-        };
+        let source = sample
+            .source_info()
+            .map(|si| si.source_id().zid().to_string());
+        let event = records::record(
+            &key_expr,
+            &payload_bytes,
+            source,
+            Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            records::Capture {
+                sample_kind: match sample.kind() { zenoh::sample::SampleKind::Put => "put", zenoh::sample::SampleKind::Delete => "delete" },
+                receiving_site: &args.receiving_site,
+                policy: &args.policy,
+                subscriber: &args.audit_subscriber_id,
+                identity_model: &args.identity_model,
+                cap: args.max_inline_payload,
+                replay: args.replay,
+            },
+        );
 
         metrics
             .samples_total
@@ -655,6 +766,7 @@ async fn run_subscriber(
             Ok(()) => {}
             Err(mpsc::error::TrySendError::Full(_)) => {
                 metrics.drop_total.inc();
+                producer_quota.note_queue_drop(&key_expr);
                 warn!(
                     key_expr = key_expr.as_str(),
                     "writer channel full; dropping sample"
@@ -668,6 +780,8 @@ async fn run_subscriber(
     }
     Ok(())
 }
+
+mod quota;
 
 /// The enforced write-anchor of a key-expression: its first `/`-segment.
 /// This is the ACL-bound identity in BOTH identity models (ADR 1025) — a
@@ -696,14 +810,20 @@ async fn open_session(args: &SubscriberArgs) -> Result<zenoh::Session> {
         .insert_json5("mode", "\"client\"")
         .map_err(|e| anyhow::anyhow!("config mode: {e}"))?;
     config
-        .insert_json5(
-            "connect/endpoints",
-            &format!("[\"{}\"]", args.endpoint),
-        )
+        .insert_json5("connect/endpoints", &format!("[\"{}\"]", args.endpoint))
         .map_err(|e| anyhow::anyhow!("config connect/endpoints: {e}"))?;
+    config
+        .insert_json5("scouting/multicast/enabled", "false")
+        .map_err(|e| anyhow::anyhow!("config scouting: {e}"))?;
     if args.endpoint.starts_with("tls/") {
-        let cert = args.cert.as_ref().context("--cert required for tls/ endpoint")?;
-        let key = args.key.as_ref().context("--key required for tls/ endpoint")?;
+        let cert = args
+            .cert
+            .as_ref()
+            .context("--cert required for tls/ endpoint")?;
+        let key = args
+            .key
+            .as_ref()
+            .context("--key required for tls/ endpoint")?;
         let root_ca = args
             .root_ca
             .as_ref()
@@ -725,192 +845,91 @@ async fn open_session(args: &SubscriberArgs) -> Result<zenoh::Session> {
         .context("opening zenoh session")
 }
 
-struct WriterArgs {
-    s3_endpoint: Option<String>,
-    s3_bucket: String,
-    s3_region: String,
-    s3_access_key: Option<String>,
-    s3_secret_key: Option<String>,
-    audit_subscriber_id: String,
-    batch_events: usize,
-    batch_interval: Duration,
-    local_ndjson_dir: Option<String>,
-}
-
-async fn run_writer(
-    args: WriterArgs,
-    metrics: Metrics,
-    mut rx: mpsc::Receiver<AuditEvent>,
-) -> Result<()> {
-    let client = build_s3_client(&args).await?;
-    if client.is_none() {
-        info!("observe-only mode (no S3 endpoint configured); events logged but not uploaded");
-    }
-
-    let mut batch: Vec<AuditEvent> = Vec::with_capacity(args.batch_events);
-    let mut deadline = tokio::time::Instant::now() + args.batch_interval;
-
-    loop {
-        let now = tokio::time::Instant::now();
-        let sleep = tokio::time::sleep_until(deadline);
-        tokio::pin!(sleep);
-
-        tokio::select! {
-            maybe_event = rx.recv() => {
-                match maybe_event {
-                    Some(event) => {
-                        batch.push(event);
-                        if batch.is_empty() {
-                            deadline = tokio::time::Instant::now() + args.batch_interval;
-                        }
-                        if batch.len() >= args.batch_events {
-                            flush_batch(&client, &args, &metrics, &mut batch).await;
-                            deadline = tokio::time::Instant::now() + args.batch_interval;
-                        }
-                    }
-                    None => {
-                        // Channel closed — final flush.
-                        if !batch.is_empty() {
-                            flush_batch(&client, &args, &metrics, &mut batch).await;
-                        }
-                        break;
-                    }
-                }
-            }
-            _ = &mut sleep => {
-                if !batch.is_empty() {
-                    flush_batch(&client, &args, &metrics, &mut batch).await;
-                }
-                deadline = now + args.batch_interval;
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn build_s3_client(args: &WriterArgs) -> Result<Option<aws_sdk_s3::Client>> {
-    let endpoint = match &args.s3_endpoint {
-        Some(e) => e,
-        None => return Ok(None),
-    };
-    let access = args
-        .s3_access_key
-        .clone()
-        .context("S3 endpoint set but access key env var unset / empty")?;
-    let secret = args
-        .s3_secret_key
-        .clone()
-        .context("S3 endpoint set but secret key env var unset / empty")?;
-    let creds = Credentials::new(access, secret, None, None, "audit-subscriber");
-    let region = Region::new(args.s3_region.clone());
-    let conf = aws_config::defaults(BehaviorVersion::latest())
-        .region(region)
-        .credentials_provider(creds)
-        .endpoint_url(endpoint)
-        .load()
-        .await;
-    let s3_conf = aws_sdk_s3::config::Builder::from(&conf)
-        .force_path_style(true)
-        .build();
-    Ok(Some(aws_sdk_s3::Client::from_conf(s3_conf)))
-}
-
-async fn flush_batch(
-    client: &Option<aws_sdk_s3::Client>,
-    args: &WriterArgs,
-    metrics: &Metrics,
-    batch: &mut Vec<AuditEvent>,
-) {
-    if batch.is_empty() {
-        return;
-    }
-    let count = batch.len();
-    let now: DateTime<Utc> = Utc::now();
-    let key = format!(
-        "{}/{:04}/{:02}/{:02}/{:02}/{}-{}.ndjson",
-        args.audit_subscriber_id,
-        now.format("%Y").to_string().parse::<u32>().unwrap_or(0),
-        now.format("%m").to_string().parse::<u32>().unwrap_or(0),
-        now.format("%d").to_string().parse::<u32>().unwrap_or(0),
-        now.format("%H").to_string().parse::<u32>().unwrap_or(0),
-        now.timestamp_millis(),
-        count
-    );
-
-    let mut buf = Vec::with_capacity(count * 256);
-    for event in batch.drain(..) {
-        match serde_json::to_vec(&event) {
-            Ok(bytes) => {
-                buf.extend_from_slice(&bytes);
-                buf.push(b'\n');
-            }
-            Err(e) => {
-                warn!(error = %e, "serde_json failed for event; skipping");
-            }
-        }
-    }
-
-    // Best-effort local tail for off-box cyber-logging (goat-logship, ADR 1078).
-    // A local-write failure must NEVER affect the durable MinIO path below.
-    if let Some(dir) = args.local_ndjson_dir.as_deref() {
-        let local_path = format!("{}/{}-{}.ndjson", dir, args.audit_subscriber_id, now.format("%Y-%m-%d"));
-        match std::fs::OpenOptions::new().create(true).append(true).open(&local_path) {
-            Ok(mut f) => {
-                use std::io::Write;
-                if let Err(e) = f.write_all(&buf) {
-                    warn!(error = %e, path = local_path.as_str(), "local ndjson tail append failed (durable path unaffected)");
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, path = local_path.as_str(), "local ndjson tail open failed (durable path unaffected)");
-            }
-        }
-    }
-
-    let Some(client) = client else {
-        info!(events = count, bytes = buf.len(), "observe-only flush");
-        metrics
-            .batch_size_events
-            .with_label_values(&["observe_only"])
-            .set(count as f64);
-        return;
-    };
-
-    let body = ByteStream::from(buf);
-    match client
-        .put_object()
-        .bucket(&args.s3_bucket)
-        .key(&key)
-        .body(body)
-        .content_type("application/x-ndjson")
-        .send()
-        .await
-    {
-        Ok(_) => {
-            metrics.batches_uploaded_total.inc();
-            metrics
-                .batch_size_events
-                .with_label_values(&["uploaded"])
-                .set(count as f64);
-            info!(bucket = args.s3_bucket.as_str(), key = key.as_str(), events = count, "batch uploaded");
-        }
-        Err(e) => {
-            metrics.write_errors_total.inc();
-            metrics
-                .batch_size_events
-                .with_label_values(&["error"])
-                .set(count as f64);
-            error!(error = %e, bucket = args.s3_bucket.as_str(), key = key.as_str(), events = count, "S3 put_object failed");
-        }
-    }
-}
-
 #[cfg(test)]
 mod s3_tls_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::disallowed_methods)] // Zenoh requires block_in_place, incompatible with LocalSet.
+    async fn loopback_capture_preserves_assertions_and_excludes_volatile() {
+        let mut config = zenoh::Config::default();
+        config.insert_json5("mode", "\"router\"").unwrap();
+        config
+            .insert_json5("listen/endpoints", "[\"tcp/127.0.0.1:0\"]")
+            .unwrap();
+        config
+            .insert_json5("scouting/multicast/enabled", "false")
+            .unwrap();
+        let session = zenoh::open(config).await.unwrap();
+        let endpoint = session.info().locators().await[0].to_string();
+        let metrics = Metrics::new("site").unwrap();
+        let (tx, mut rx) = mpsc::channel(8);
+        let args = SubscriberArgs {
+            endpoint,
+            subscribe_key: "**".into(),
+            cert: None,
+            key: None,
+            root_ca: None,
+            audit_subscriber_id: "site".into(),
+            identity_model: "per-vendor".into(),
+            receiving_site: "fixture".into(),
+            policy: attribution::Policy::default(),
+            max_inline_payload: 16384,
+            replay: true,
+            exclude_kes: parse_exclude_keys("volatile/**").unwrap(),
+        };
+        {
+            let task = tokio::spawn(run_subscriber(args, metrics.clone(), tx));
+            let publisher = session.declare_publisher("vendor/topic").await.unwrap();
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while !publisher.matching_status().await.unwrap().matching() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            publisher.put("no-source").await.unwrap();
+            let absent = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(absent.audit.source_provenance, "unavailable");
+            publisher
+                .put("asserted-source")
+                .source_info(zenoh::sample::SourceInfo::new(publisher.id(), 7))
+                .await
+                .unwrap();
+            let asserted = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(asserted.audit.src_zid, publisher.id().zid().to_string());
+            assert_eq!(asserted.audit.source_provenance, "publisher_asserted");
+            session
+                .put("volatile/slot/data", "excluded-secret")
+                .await
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while metrics
+                    .excluded_total
+                    .with_label_values(&["volatile/**"])
+                    .get()
+                    == 0.0
+                {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(rx.try_recv().is_err());
+            task.abort();
+            assert!(task.await.unwrap_err().is_cancelled());
+        }
+        session.close().await.unwrap();
+    }
 
     // The anchor is the first segment in BOTH identity models — this is what
     // makes the audit path dual-shape without branching on the model.
@@ -941,14 +960,12 @@ mod tests {
     #[test]
     fn volatile_exclusion_matches_uuid_anchor_but_not_persisted() {
         let kes = parse_exclude_keys("volatile/**").unwrap();
-        let vol =
-            KeyExpr::new("volatile/61dc1e84ca2c7cfea827728a0f4bfa4d/stream/x").unwrap();
+        let vol = KeyExpr::new("volatile/61dc1e84ca2c7cfea827728a0f4bfa4d/stream/x").unwrap();
         assert!(
             kes.iter().any(|e| e.intersects(&vol)),
             "volatile/<uuid>/** must be excluded from audit"
         );
-        let persisted =
-            KeyExpr::new("61dc1e84ca2c7cfea827728a0f4bfa4d/data/track/v1").unwrap();
+        let persisted = KeyExpr::new("61dc1e84ca2c7cfea827728a0f4bfa4d/data/track/v1").unwrap();
         assert!(
             !kes.iter().any(|e| e.intersects(&persisted)),
             "persisted <uuid>/** must NOT be excluded"
@@ -969,6 +986,12 @@ mod tests {
     fn event_vendor_aliases_anchor_and_serializes_model() {
         let anchor = anchor_of_key("61dc1e84ca2c7cfea827728a0f4bfa4d/data/x/v1").to_string();
         let ev = AuditEvent {
+            sample_kind: "put".into(), receiving_site: "fixture".into(), outcome: "observed".into(), attribution: Default::default(),
+            schema_version: 2,
+            event_id: "batch#0".into(),
+            source_provenance: "unavailable",
+            payload_capture: "disabled",
+            onboarding_classification: "other",
             anchor: anchor.clone(),
             vendor: anchor.clone(),
             identity_model: "per-uuid-slot-pool".to_string(),
@@ -977,10 +1000,10 @@ mod tests {
             src_zid: String::new(),
             payload_hash: "sha256:00".to_string(),
             payload_len: 0,
-            payload_bytes_b64: None,
             audit_subscriber_id: "zagros".to_string(),
         };
-        let j: serde_json::Value = serde_json::from_str(&serde_json::to_string(&ev).unwrap()).unwrap();
+        let j: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&ev).unwrap()).unwrap();
         assert_eq!(j["anchor"], j["vendor"]);
         assert_eq!(j["identity_model"], "per-uuid-slot-pool");
     }
