@@ -1,7 +1,7 @@
 {
   "library": {
     "repository": "https://github.com/USAREUR-AF/goat-transformers",
-    "rev": "5459b24ccdfb664133b08c97603153da8f1cfd45"
+    "rev": "6eeec009b098a6636752f4034d44c5ec0a9f13e8"
   },
   "formats": [
     "canonical-track-v2",
@@ -13,7 +13,7 @@
   "files": [
     {
       "path": "model/core.def",
-      "sha256": "799323cd026de9366fe6c0600621e9a96526968e1e0cd44b6c3cb62c67d05698",
+      "sha256": "a38c57fa55faf816fa53b8d63b61ff51a8e07637feb5a0ed19f6daad0caa8baf",
       "origin": "library"
     },
     {

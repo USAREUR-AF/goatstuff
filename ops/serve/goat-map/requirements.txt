@@ -3,4 +3,4 @@ aiohttp==3.14.5
 # The goat-transformers Python engine (standard library only), for
 # GOATMAP_COT_ENGINE=library. The commit is the one in ops/xf/goat-transformers.ref;
 # the packs it loads are in xf-bundle/.
-goat-transformers @ https://github.com/USAREUR-AF/goat-transformers/archive/5459b24ccdfb664133b08c97603153da8f1cfd45.zip#subdirectory=engines/python
+goat-transformers @ https://github.com/USAREUR-AF/goat-transformers/archive/6eeec009b098a6636752f4034d44c5ec0a9f13e8.zip#subdirectory=engines/python
