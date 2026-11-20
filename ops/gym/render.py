@@ -99,6 +99,19 @@ def md_to_html(md: str, link_resolver=None, demote_h1: bool = True) -> str:
                        f"<tbody>{body}</tbody></table></div>")
             continue
 
+        if line.startswith("|"):
+            # Rows with no header and separator above them (a table continued
+            # after a paragraph): a table without a header, not a hang.
+            rows = []
+            while i < len(lines) and lines[i].startswith("|"):
+                rows.append([c.strip() for c in lines[i].strip("|").split("|")])
+                i += 1
+            body = "".join(
+                "<tr>" + "".join(f"<td>{inline(c, link_resolver)}</td>" for c in r) + "</tr>"
+                for r in rows)
+            out.append(f'<div class="scroll"><table><tbody>{body}</tbody></table></div>')
+            continue
+
         if re.match(r"^\s*[-*] ", line):
             items = []
             while i < len(lines) and re.match(r"^\s*[-*] ", lines[i]):
@@ -133,6 +146,11 @@ def md_to_html(md: str, link_resolver=None, demote_h1: bool = True) -> str:
         while i < len(lines) and lines[i].strip() and \
                 not lines[i].startswith(("#", "|", ">", "```")) and \
                 not re.match(r"^\s*[-*] |^\d+\. ", lines[i]):
+            buf.append(lines[i])
+            i += 1
+        if not buf:
+            # No block rule took this line: keep it as text and move on, so
+            # every line is consumed and the renderer always returns.
             buf.append(lines[i])
             i += 1
         out.append("<p>" + inline(" ".join(buf), link_resolver) + "</p>")
