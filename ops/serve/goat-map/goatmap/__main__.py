@@ -70,7 +70,7 @@ SUB_KEY = _env("GOATMAP_SUBSCRIBE_KEY", "sensor/cot/*")
 # builtin | library. Which code turns CoT into GeoTrackV1: goatmap/cot.py, or
 # the goat-transformers packs in xf-bundle/ (goatmap/cot_library.py). An
 # unknown value, or a bundle that does not load, stops the service here.
-COT_ENGINE = _env("GOATMAP_COT_ENGINE", "builtin")
+COT_ENGINE = _env("GOATMAP_COT_ENGINE", "library")
 COT_PARSE = cot_library.parser_for(COT_ENGINE)
 
 # -- fabric leg (optional) ----------------------------------------------------

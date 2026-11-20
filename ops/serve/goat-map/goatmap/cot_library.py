@@ -4,8 +4,8 @@
 The same job as `cot.parse`, done by data instead of code: the library's
 Python engine decodes the event with the `cot-xml` pack and encodes it with
 the `geo-track-v1` pack (docs/design/format-transformers.md in goatstuff).
-Selected by `GOATMAP_COT_ENGINE=library`; the default is the hand-written
-`cot.parse`.
+The default; `GOATMAP_COT_ENGINE=builtin` selects the hand-written
+`cot.parse` instead.
 
 What the packs cannot state is completed here by three named steps
 (`COMPLETION`), each of which names the library feature that would remove it.
