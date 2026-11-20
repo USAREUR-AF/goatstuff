@@ -137,6 +137,7 @@ const DIRECTORY_SECS: u64 = 30;
 
 pub async fn run(
     session: zenoh::Session,
+    prefix: &str,
     site: Option<String>,
     bind: &str,
     mut sources: crate::directory::Sources,
@@ -149,10 +150,7 @@ pub async fn run(
         store.write().await.set_directory(d);
     }
 
-    let selector = match &site {
-        Some(s) => format!("ops/fabric/topology/{s}/**"),
-        None => "ops/fabric/topology/**".to_string(),
-    };
+    let selector = crate::keys::selector(prefix, site.as_deref());
     tracing::info!(selector = %selector, bind = %bind, "subscribing");
 
     let subscriber = session
@@ -166,14 +164,12 @@ pub async fn run(
     // no shard affinity. The policy's own escape hatch is an explicit allow
     // with the reasoning stated, so a reviewer sees the deviation.
     let ingest = store.clone();
+    let prefix = prefix.to_string();
     #[allow(clippy::disallowed_methods)]
     tokio::spawn(async move {
         while let Ok(sample) = subscriber.recv_async().await {
             let key = sample.key_expr().as_str().to_string();
-            let id = key
-                .strip_prefix("ops/fabric/topology/")
-                .unwrap_or(&key)
-                .to_string();
+            let id = crate::keys::router_id(&prefix, &key).to_string();
             match RouterTopologyV1::decode(&*sample.payload().to_bytes()) {
                 Ok(snap) => {
                     let now = now_ms();
@@ -235,9 +231,7 @@ pub async fn run(
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        .with_graceful_shutdown(crate::shutdown_signal())
         .await?;
     Ok(())
 }

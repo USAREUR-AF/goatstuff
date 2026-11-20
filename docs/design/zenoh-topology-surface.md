@@ -176,8 +176,22 @@ is recorded as such in `ops/scripts/zenoh-region-census.sh`; it is not a
 constraint on this design. Getting that distinction wrong would have designed a
 privileged container for no reason.
 
-The publisher **does** need an mTLS client cert — but only to *publish* onto the
-fabric, exactly like every other meter.
+The publisher **does** need a client identity on a goatnet — but only to
+*publish* onto the fabric, exactly like every other meter.
+
+**Built (TLS):** for a `tls/` or `quic/` endpoint both modes need `--root-ca`,
+against which the router's certificate is verified. `--cert` and `--key`
+together make it mutual TLS (what the goat role passes, unchanged); with
+neither, only the router is authenticated, for a fabric whose routers do not
+ask clients for a certificate; one without the other is refused.
+`--tls-verify-name` (`TOPOLOGY_TLS_VERIFY_NAME`, default off, as before) also
+checks the router's certificate against the host name in the endpoint. The
+TLS block is built as JSON, so a path containing a quote cannot break it.
+**Measured** 2026-11-16 against stock `eclipse/zenoh:1.9.0` with a test CA:
+server-only TLS connects with the CA alone; mutual TLS connects with a client
+certificate and is refused without one; with the name check, a connection by
+a name in the certificate succeeds and one by an address not in it is
+refused.
 
 ### 2.1a Reading a router must not be able to crash it
 
@@ -233,6 +247,13 @@ stopped answering at start (no CPU, the REST plugin never replies, nothing
 logged) while publishers were reading them; a restart cleared both. A
 publisher cannot report a router in that state, because it publishes through
 the same router, so the page shows it as not reporting.
+
+**Built:** both modes open their client session with multicast scouting
+off. They connect to the router named in `--endpoint` and nothing else; with
+scouting on, each process also bound `224.0.0.224:7446` and answered scouts on
+whatever network it ran in, which for the publisher is the router host's own.
+**Measured** 2026-11-16: the publisher held one 7446/udp socket before and
+none after, and published in both cases.
 
 ### 2.2 Why self-publish rather than have the surface ask
 
@@ -508,9 +529,20 @@ reporter's own subscriptions and publishers.
 
 ## 3. The envelope — `RouterTopologyV1`
 
-Published to `ops/fabric/topology/<site>/<node>`, protobuf, canonical schema at
+Published to `<prefix>/<site>/<node>`, protobuf, canonical schema at
 `ops/goat-topology/proto/router_topology_v1.proto`. One message per router per
-interval. Shape:
+interval.
+
+**Built:** the prefix is a setting on both modes, `--key-prefix` /
+`TOPOLOGY_KEY_PREFIX`, default `ops/fabric/topology` (the key every
+deployment used before the setting existed, so a goatnet is unchanged).
+Publishers and the surface must use the same value. The prefix, `--site` and
+`--node` are checked at start: each chunk must be non-empty and free of `/`,
+`*`, `$`, `#` and `?`, and a bad value stops the process with the reason
+rather than publishing on a key the surface never subscribes to
+(`src/keys.rs`).
+
+Shape:
 
 | Field | Meaning |
 |---|---|
@@ -525,6 +557,7 @@ interval. Shape:
 | `declarations` | The declarations census, from its own slower cycle (§2.6). Absent from an older publisher or one with the census off. |
 | `next_hops[]` | Route-table entries per next-hop neighbour (§2.6). |
 | `route_table_note` | Empty when the route table was read this cycle; otherwise why not, and `route_successor_count` and `next_hops` are then unknown (§2.1a). Empty from an older publisher, which always read it. |
+| `shape_notes[]` | What the publisher expected in the adminspace and did not find: a zenoh version other than the tested 1.9.0, a router entry with no `sessions` list, no link-state graph, a graph that is not DOT, sessions with no region. Empty on the tested shape and from an older publisher. The page lists them in the router's detail and flags the row; what they name is shown as not read. **Measured** 2026-11-16 against stock `eclipse/zenoh:1.10.2`: everything parsed, and the only note was the version one. |
 | `client_admission` | `admitted` \| `refused` \| `unspecified`. From the declared `gateway` block: whether any Custom subregion can match a default client (§2.4). `unspecified` under `auto`, `unreadable`, or from an older publisher, and then no finding fires. |
 
 ### 3.1 Two sources, because neither one is enough
@@ -669,19 +702,30 @@ because they are load-bearing here:
   reporting**, and its unknown numbers are blank, not zero. It is counted in the
   router total, and the total is split into reporting and not reporting.
 - Every rendered number carries its snapshot age.
+- **Built:** every absolute time on the page is UTC with the zone named (`11:25:27 UTC`, `2026-11-16 11:25:18 UTC`), so two operators in different time zones quote the same time and it matches the logs, which are UTC. A test fails on any browser-local time format in the page's JavaScript. **Measured** 2026-11-16 in a browser set to America/Los_Angeles: the page from main showed `3:25:58 AM`, this one `11:25:27 UTC`.
 - A finding states what was *observed*. Where a finding rests on a projection —
   only `T-009` does — it says so in the finding text, not in a footnote.
 
 ## 6a. The surface is born in the design system
 
-It carries no palette of its own. `src/serve.rs` `include_str!`s
+It carries no palette of its own. It serves
 [`docs/design-system/colors_and_type.css`](../design-system/colors_and_type.css)
-and `components.css` and splices them ahead of the page's own rules — the same
-way flashlight consumes them, so there is one source of truth for the bytes and
-a design-system change reaches this surface on the next image build rather than
-drifting in a vendored copy ([`design-system.md`](https://github.com/usareur-af/goatdocs/blob/main/docs/design/design-system.md)
-§"How consumers receive the CSS bytes"). The Dockerfile therefore builds from
-the **repo root**, not from the crate directory.
+and `components.css` at `/assets/design-system.css`, ahead of the page's own
+rules.
+
+**Built:** the crate carries a byte-identical copy of the two files in
+`ops/goat-topology/static/design-system/`, and `src/assets.rs` `include_str!`s
+the copy. The copy is what lets the crate build from its own directory alone
+(`cargo install --git`, `cargo build` in a copied directory), which a reader
+outside this repository needs. `docs/design-system/` stays the
+one source of truth: the test
+`the_design_system_copy_matches_its_canonical_home` and
+`ops/goat-topology/tools/sync-design-system.sh --check` (in the image
+workflow's test job) both fail when the copy differs, and
+`tools/sync-design-system.sh` with no argument updates it. The image is still
+built with the repository root as its Docker context (**designed, not built:**
+the crate directory as the context, so `docker build ops/goat-topology` works
+from a copy too).
 
 Two properties are asserted by tests rather than left to review:
 
@@ -780,6 +824,14 @@ which knows about any other). A test walks the import graph and fails if a
 module is imported but not served, because that is a 404 at runtime and nothing
 at build time.
 
+**Built:** every URL the page requests is relative (`assets/app.js`,
+`api/topology`), so the page works at the root of a host name and behind a
+reverse proxy that serves it under a sub-path. Under a sub-path it must be
+opened with the trailing slash (`/topology/`), which the proxy redirects to.
+The test `the_page_requests_only_relative_urls` holds it. **Measured**
+2026-11-16 behind nginx at `/topology/`: the page loaded, and its routers
+table showed the reporting router.
+
 ### 6b.1 A request does no work
 
 This is the property to protect in review, and it is stronger than the ADR 1123
@@ -833,12 +885,35 @@ exists.
 
 | Piece | Where |
 |---|---|
-| Image | `ghcr.io/<org>/goat-topology`, built by `.github/workflows/goat-topology-image.yml` **from the repo-root context** (the design-system `include_str!` needs it), digest-pinned in `ops/pins/fleet-pins.yaml` |
+| Image | `ghcr.io/<org>/goat-topology`, built by `.github/workflows/goat-topology-image.yml` from the repository-root context (§6a), anonymously pullable, digest-pinned in `ops/pins/fleet-pins.yaml` |
 | Role | `roles/goat-topology`, one role with two modes; `goat_topology_modes` per group_vars. **Publish runs on every host whose router serves the adminspace REST plugin** — core, standby and pod routers alike; a router host without it shows as not reporting (§2.3). A peering edge (`goat-zenoh-edge`) loads no REST plugin, by design: its in-process session presents no certificate and matches no ACL subject. Edges are therefore always drawn not reporting, from the core router's map. `goat_topology_publish_fallback_endpoints` for a router that refuses clients (§2.4). Serve mode: `goat_topology_peer_directory_path`, `goat_topology_roster_path`, `goat_topology_goatnet`, `goat_topology_show_individual` (§2.5), mounted read-only and only when the file exists, passed as environment so an older pinned image ignores them |
 | Playbook | `ops/ansible/topology-deploy.yml -e target=<group>` |
 | Zenoh ACL | rule `infra-w-topology` + subject `infra-topology` in `roles/goat-zenoh/templates/config.json5.j2` |
 | Certificate | a `goat-topology` row in the site cert manifest, minted by `ops/scripts/mint-site-certs.sh` |
 | DNS + catalogue | an `isitup_services` row per goatnet; the mesh zone is **generated** from it |
+
+### 7.0 Running it outside goat
+
+**Built:** the crate's `README.md` tells a reader with stock `zenohd` and the
+REST plugin, and no goat component, how to run `publish` on each router and
+`serve` once: the router config lines, the binary (published image,
+`cargo install --git`, or `cargo build`), every setting, access control, TLS,
+and the known zenoh 1.9.0 issues (§2.1a). Its quick start is
+`ops/goat-topology/example/`: three `eclipse/zenoh:1.9.0` routers pinned by
+digest, one publisher per router, one `serve`, plain TCP, no access control,
+and `check.sh`, which fails unless the page shows the three routers, all
+reporting, three links, no read error and no critical or warning finding.
+
+**Built:** `.github/workflows/goat-topology-stock-zenoh.yml` builds the image
+from the tree, runs that example with it and runs `check.sh`, on every change
+under `ops/goat-topology/`. The README's commands are therefore the commands
+CI runs.
+
+In the example each router's REST plugin listens on the compose network (the
+port is not published) and each publisher reads it by service name. A
+publisher that shared the router's network namespace instead, as on a real
+host, would keep a dead namespace after docker restarts the router, and stock
+1.9.0 can need that restart (§2.1a).
 
 ### 7.1 Two prerequisites that fail silently if skipped
 
@@ -888,3 +963,92 @@ retired.
   not in a web surface.
 - **Not evidence about scale.** It shows what is running. The scaling claims it
   can make are bounded by M-111 and M-112 and nothing more.
+
+## 9. Reuse outside goat: who runs a router, neutral wording, facts and policy
+
+**Designed, not built** (2026-11-16). The surface is meant to run on any Zenoh
+fabric, inside goat and outside it, as one public build. Three parts of it
+still assume goat. This section is the design for each; the build lands on top
+of the owner-from-record change (goatstuff#104), which edits the same code.
+
+### 9.1 One neutral, optional router directory
+
+Today the names and owners of routers come from goat's own files: the
+relay-health peer-names file, a goat roster, and goat's peer-name grammar
+(`peer-<handle>-…`, `machine-<handle>-…`) with a `TOPOLOGY_GOATNET` token. No
+one outside goat has those files or that grammar.
+
+**Design.** One optional file, given by `--directory <path>`
+(`TOPOLOGY_DIRECTORY`), JSON, that anyone can write by hand or generate:
+
+```json
+{
+  "version": 1,
+  "routers": [
+    { "match": { "zid": "a1a1a1a1a1a1a1a1" },
+      "name": "core-1", "operator": "Network operations",
+      "organization": "Example Org", "labels": { "rack": "r2" } },
+    { "match": { "address": "192.0.2.10" }, "name": "edge-3" },
+    { "match": { "address": "198.51.100.0/24" }, "operator": "Partner B" }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `match.zid` | The router's ZID, in full. A ZID is chosen by the router itself and proves nothing; the detail says so when a match was by ZID. |
+| `match.address` | An IP address or CIDR block. Matched against the address a reporting router sees the router's session come from (the `link_dst` already in each snapshot), which is observed by our own router, not claimed by the other. |
+| `name` | Shown in place of the derived name. A reporting router keeps its `--node` name; `name` is then shown beside it. |
+| `operator`, `organization` | Free text, shown in the detail and, when any entry sets them, in one table column. |
+| `labels` | Free-form key/value pairs, shown verbatim in the detail. |
+
+Precedence: a `zid` match, then an exact address, then the longest CIDR. The
+file is re-read when its modification time changes; an unreadable file or a
+bad entry is listed on the page and in the log, and the rest of the file still
+applies.
+
+**With no directory configured, the page shows no owner column, no owner
+fields in the detail, no owner state and no owner finding.** Routers are named
+by their `--node` name, or by the name derived from their ZID for one that
+sends no report. Today the page shows an empty "organization · nation" column
+and "not known" in that case; that is the defect this removes.
+
+**goat becomes an adapter.** The goat inputs (`--peer-directory`, `--roster`,
+`TOPOLOGY_GOATNET`, and the owner block written from the record) are read by
+one module that produces the same in-memory entries as the neutral file. Their
+flag and variable names stay accepted unchanged, so a goatnet's role keeps
+working with no edit. The owner findings that encode goat's rule that every
+router has a recorded owner (T-014, T-015, T-016) run only when
+`--require-owner` is set; the goat role sets it, so a goatnet sees the same
+findings as before.
+
+### 9.2 Words a reader outside goat can follow
+
+Page and finding texts cite records only goat can open (ADR numbers,
+`docs/design/zenoh-version-pinning.md`, `ops/pins/fleet-pins.yaml`, "the
+goat-topology role") and say "goatnet". **Design:** every such text states its
+reason in the text itself and says "fabric"; a link, where one helps, goes to a
+public page. The texts to change: T-006 (steps name the publisher's default
+REST address as if fixed), T-007 (steps name goat's pin file and pinning
+procedure), T-008 ("a goatnet with one router"), T-012 (step names the goat
+role), the page header comment, the CLI `about` line, and the planner caveat
+("every goatnet today").
+
+Where the page's words differ from upstream Zenoh's (region, subregion,
+gateway, client), the README's "Words on the page" table states the mapping
+today. Whether the page itself should switch to upstream's words is waiting on
+the Zenoh team's answer in the public discussion.
+
+### 9.3 Findings that are Zenoh facts, and findings that are a policy
+
+| Finding | Kind | Design |
+|---|---|---|
+| T-001, T-002, T-010, T-011, T-013 | Fact about a router's `gateway` configuration | Always on. |
+| T-004, T-006, T-008, T-012 | Fact about what the reports show | Always on. |
+| T-005, T-009 | Our measured model of the route table, not an upstream statement | Always on; the text says the model is ours and measured. |
+| T-007 | Fact: routers report different Zenoh versions | Always on, with neutral steps. **New, optional:** `--expect-zenoh-version <v>`; when set, a router on another version is also named, even when every router agrees. Unset by default and in the goat role. |
+| T-003 | **Policy:** "every router uses the same gateway mode". A gateway with a custom `gateway.south` above routers on `auto` is a normal layout, and the generic-name rig raises T-003 for exactly that. | Runs only with `--expect-uniform-gateway-mode`; the goat role sets it, so a goatnet sees the same findings. |
+| T-014, T-015, T-016 | **Policy:** every router has a recorded owner | Runs only with `--require-owner` (§9.1); the goat role sets it. |
+
+No finding today compares a router against a pinned version; the exact pin
+appears only in T-007's steps, which §9.2 rewrites.

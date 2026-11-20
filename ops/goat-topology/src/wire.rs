@@ -349,6 +349,11 @@ pub struct RouterTopologyV1 {
     /// field, which always read it.
     #[prost(string, tag = "17")]
     pub route_table_note: String,
+    /// What the publisher expected in the adminspace and did not find (a
+    /// version other than the tested one, a missing list, an unparseable
+    /// graph). Empty on the tested shape and from an older publisher.
+    #[prost(string, repeated, tag = "18")]
+    pub shape_notes: Vec<String>,
 }
 
 impl RouterTopologyV1 {

@@ -10,7 +10,7 @@
 // that rebuilt itself every fifteen seconds anyway would cost an operator's
 // scroll position and focus for no information.
 
-import { $ } from "./lib.js";
+import { $, utcTime } from "./lib.js";
 import { renderVerdict } from "./render/verdict.js";
 import { renderGraph, onNodeClick } from "./render/graph.js";
 import { renderFindings, renderFindingFilters, onFilterChange } from "./render/findings.js";
@@ -70,13 +70,13 @@ onFilterChange(() => { renderFindingFilters(latest); renderFindings(latest); });
 
 async function poll() {
   try {
-    const res = await fetch("/api/topology", {
+    const res = await fetch("api/topology", {
       cache: "no-store",
       headers: etag ? { "If-None-Match": etag } : {},
     });
 
     if (res.status === 304) {
-      $("#clock").textContent = "checked " + new Date().toLocaleTimeString() + " · no change";
+      $("#clock").textContent = "checked " + utcTime(Date.now()) + " · no change";
       return;
     }
     if (res.status === 503) {
@@ -88,7 +88,7 @@ async function poll() {
     etag = res.headers.get("ETag");
     latest = await res.json();
     paint();
-    $("#clock").textContent = "updated " + new Date().toLocaleTimeString();
+    $("#clock").textContent = "updated " + utcTime(Date.now());
   } catch (e) {
     $("#clock").textContent = "refresh failed — " + e.message;
   }
