@@ -46,7 +46,7 @@ function draw() {
 
 // ── nested tunnels ───────────────────────────────────────────────────────────
 function drawNested(c, now) {
-  const faint = color('--ink-faint'), dim = color('--ink-dim'), line = color('--line')
+  const faint = color('--ink-faint'), dim = color('--ink-dim')
   const wg = color('--accent'), tls = color('--green'), ink = color('--ink')
   const cy = H * 0.46, Ax = 64, Bx = W - 64
   const span = Bx - Ax

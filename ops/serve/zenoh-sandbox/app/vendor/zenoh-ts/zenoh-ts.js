@@ -287,7 +287,7 @@ var require_lib2 = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.daysFrom = exports.hoursFrom = exports.minutesFrom = exports.secondsFrom = exports.millisecondsFrom = exports.numberFrom = exports.daysOf = exports.hoursOf = exports.minutesOf = exports.millisecondsOf = exports.secondsOf = exports.valueOf = exports.valueFrom = exports.isTypedDuration = void 0;
-    var isTypedDuration = (maybeTypedDuration) => typeof maybeTypedDuration === "object" && (maybeTypedDuration === null || maybeTypedDuration === void 0 ? void 0 : maybeTypedDuration.valueType) === "TYPED_DURATION";
+    var isTypedDuration = (maybeTypedDuration) => typeof maybeTypedDuration === "object" && (maybeTypedDuration === null ? void 0 : maybeTypedDuration.valueType) === "TYPED_DURATION";
     exports.isTypedDuration = isTypedDuration;
     var valueFrom = (time) => (0, exports.isTypedDuration)(time) ? time.value : time;
     exports.valueFrom = valueFrom;
@@ -523,8 +523,6 @@ function join(ke1, ke2) {
     var ptr3 = ret[0];
     var len3 = ret[1];
     if (ret[3]) {
-      ptr3 = 0;
-      len3 = 0;
       throw takeFromExternrefTable0(ret[2]);
     }
     deferred4_0 = ptr3;
@@ -546,8 +544,6 @@ function concat(ke1, ke2) {
     var ptr3 = ret[0];
     var len3 = ret[1];
     if (ret[3]) {
-      ptr3 = 0;
-      len3 = 0;
       throw takeFromExternrefTable0(ret[2]);
     }
     deferred4_0 = ptr3;
@@ -589,8 +585,6 @@ function autocanonize(ke) {
     var ptr2 = ret[0];
     var len2 = ret[1];
     if (ret[3]) {
-      ptr2 = 0;
-      len2 = 0;
       throw takeFromExternrefTable0(ret[2]);
     }
     deferred3_0 = ptr2;
@@ -1463,9 +1457,6 @@ var UnsupportedOperationError = defError(
 var unsupportedOp = (msg) => {
   throw new UnsupportedOperationError(msg);
 };
-var UnsupportedFeatureError = defError(
-  () => "unsupported feature"
-);
 
 // node_modules/@thi.ng/leb128/binary.js
 var BINARY = "AGFzbQEAAAABCgJgAX4Bf2AAAX4DBQQAAQABBQMBABEGEQJ/AUGAgMAAC38AQYCAwAALB1gGBm1lbW9yeQIAD2xlYjEyOEVuY29kZVU2NAAAA2J1ZgMBD2xlYjEyOERlY29kZVU2NAABD2xlYjEyOEVuY29kZUk2NAACD2xlYjEyOERlY29kZUk2NAADCoYEBFsBAn8CQCAAQoABWgRAA0AgAUGAgEBrIACnQf8AcSAAQv8AVkEHdHI6AAAgAUEBaiEBIABCgAFUIABCB4ghAEUNAAsMAQtBgIDAACAAPAAAQQEhAQsgAUH/AXELdwIEfwF+IwBBEGsiACQAIABBADoADwNAAkAgACAALQAPIgJBB2pBP3E6AA8gAUGAgEBrLAAAIgNB/wBxrSACQT9xrYYgBIQhBCABQQFqIQIgAUEISw0AIAIhASADQQBIDQELC0GAgMAAIAI6AAAgAEEQaiQAIAQLkQEBA38CQCAAQkB9QoABWgRAQQEhAgNAIAJBAXFFDQIgAUGAgEBrQQBBgH8gAKciAkHAAHEiA0UgAEKAAVRxIANBBnYgAEIHhyIAQn9RcXIiAxsgAkH/AHFyOgAAIANFIQIgAUEBaiEBDAALAAtBgIDAACAAQjmIp0HAAHEgAKdBP3FyOgAAQQEhAQsgAUH/AXELnAECAX4EfyMAQRBrIgEkACABQQA6AA9BfyECA0ACQCABIAEtAA8iA0EHakE/cToADyACQYGAwABqLQAAIgRB/wBxrSADQT9xrYYgAIQhACAEwCEDIAJBAWoiAkEISw0AIANBAEgNAQsLIANBwABxRSACQQhLckUEQEJ/IAExAA+GIACEIQALQYCAwAAgAkEBajoAACABQRBqJAAgAAs=";
@@ -1483,11 +1474,6 @@ if (hasWASM()) {
   U8 = new Uint8Array(wasm2.memory.buffer, wasm2.buf, 16);
 }
 var __ensureWASM = () => !wasm2 && unsupportedOp("WASM module unavailable");
-var __encode = (op, signed) => (x) => {
-  __ensureWASM();
-  const value = signed ? BigInt.asIntN(64, BigInt(x)) : BigInt.asUintN(64, BigInt(x));
-  return U8.slice(0, wasm2[op](value));
-};
 var __encodeInto = (op, signed) => (dst, x, pos = 0) => {
   __ensureWASM();
   const value = signed ? BigInt.asIntN(64, BigInt(x)) : BigInt.asUintN(64, BigInt(x));
@@ -1505,10 +1491,6 @@ var __decode = (op, signed) => (src, idx = 0) => {
     U8[0]
   ];
 };
-var encodeSLEB128 = __encode("leb128EncodeI64", true);
-var decodeSLEB128 = __decode("leb128DecodeI64", true);
-var encodeSLEB128Into = __encodeInto("leb128EncodeI64", true);
-var encodeULEB128 = __encode("leb128EncodeU64", false);
 var decodeULEB128 = __decode("leb128DecodeU64", false);
 var encodeULEB128Into = __encodeInto("leb128EncodeU64", true);
 
@@ -4339,7 +4321,6 @@ var MAX_RETRIES = 10;
 var RemoteLink = class _RemoteLink {
   ws;
   constructor(ws) {
-    this.ws = ws;
     this.ws = ws;
   }
   static async new(locator) {

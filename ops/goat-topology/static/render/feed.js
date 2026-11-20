@@ -3,7 +3,6 @@
 import { $, esc, utcTime, utcDateTime } from "../lib.js";
 
 export function renderFeed(d) {
-  const since = new Date(d.watching_since_ms);
   $("#since").textContent = "since this surface started watching, " + utcDateTime(d.watching_since_ms);
 
   if (!d.changes.length) {

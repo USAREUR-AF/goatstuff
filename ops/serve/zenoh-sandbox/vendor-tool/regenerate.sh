@@ -31,6 +31,8 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 python3 -I "$HERE/fetch.py" "$HERE/packages.lock.json" "$work/tree"
+python3 -m unittest discover -s "$HERE" -p 'test_patch.py'
+python3 -I "$HERE/patch.py" "$work/tree"
 ( cd "$HERE" && go run . "$work/tree" "$work/$BUNDLE" )
 
 sha256() {
