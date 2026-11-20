@@ -8,7 +8,7 @@
 # a-u-X (atom, unknown affiliation, other) for the type. `how` is required too,
 # but the schema names no value for "not known", so it has no default.
 format  cot-xml
-version 0.5.0
+version 0.6.0
 distribution public
 source  "Cursor on Target event schema (MITRE, public release); field use cross-checked against pytak"
 uses    track
@@ -22,15 +22,20 @@ field   time_ms   @time                       iso8601_ms
 field   time_ms   @start                      iso8601_ms
 field   stale_ms  @stale                      iso8601_ms
 field   how       @how                        string
+field   track.opex  @opex                     string
 field   access    @access                     string
 field   lat       point/@lat                  float
 field   lon       point/@lon                  float
 field   hae       point/@hae                  float  absent 9999999,9999999.0
 field   ce        point/@ce                   float  absent 9999999,9999999.0
 field   le        point/@le                   float  absent 9999999,9999999.0
+# detail is written even when nothing inside it is (spec 0.18), as CoT
+# senders write <detail/>.
+element detail
 field   callsign  detail/contact/@callsign    string
 field   course    detail/track/@course        float
 field   speed_ms  detail/track/@speed         float
+field   track.status_text  detail/remarks/#text  string
 # The sender's text of the two instants, after the lines that parse them, so
 # a changed time_ms or stale_ms is what encode writes (ruling 16 of 0.5).
 field   time_text     @time              string

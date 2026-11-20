@@ -11,7 +11,7 @@ library in `ops/zenoh-shims/transform-shim/` (Rust engine) and in
 | `bundle.py` | builds and checks a consumer's pack bundle: the model modules and packs it loads, with a manifest of SHA-256 values |
 | `tests/` | checks both bundles against their manifests and the pin |
 
-The pin is goat-transformers `6eeec00`. Every bundle file is the library's
+The pin is goat-transformers `240d06d`. Every bundle file is the library's
 file at that commit: the `geo-track-v1` pack, the `geotrack` module and the
 `cot-xml` keys once proposed from `upstream-proposed/` are in the library, and
 that directory is deleted. goat-map's comparison of its two CoT paths, and what

@@ -4,7 +4,7 @@
 # Flags are int: 1 = the source states it, 0 = the source denies it, absent =
 # the source says nothing.
 module        track
-version       0.1.0
+version       0.2.0
 distribution  public
 source        "USAREUR-AF/open-billie schemas/canonical-track-v2.schema.json (Apache-2.0)"
 key  source_id      string  -    "stable identifier of the sensor or source namespace"
@@ -24,6 +24,10 @@ key  simulated      int     -    "flag: the track is simulated"
 key  header_simulated  int  -    "flag: the source frame marks every track in it as simulated"
 key  test_data      int     -    "flag: the report is test data"
 key  final_update   int     -    "flag: this is the final update for the track"
+key  simulated_any  int     -    "flag: any of simulated, header_simulated and test_data is set (derived)"
+key  tentative      int     -    "flag: the source states the track is not confirmed (derived: not confirmed)"
+key  status_text    string  -    "the track's status as text: derived from the flags as comma-separated tokens test-data, simulated, tentative, coasting, final-update (open-billie's convention); a format whose field is free text decodes the sender's text as it is"
+key  opex           string  -    "CoT event/@opex: s for a simulated track (derived from simulated_any), e for exercise, o for operations"
 # The identifiers of the track in other systems (engine-spec 0.7, lists): one
 # item per identifier, each holding the scheme and the value.
 list identifiers             "identifiers of the track in other systems; each item holds id_scheme and id_value"
@@ -48,3 +52,12 @@ derive  ce                  hypot     track.sigma_east_m track.sigma_north_m
 derive  le                  copy      track.sigma_up_m
 derive  track.vel_east_ms   east_of   speed_ms  course
 derive  track.vel_north_ms  north_of  speed_ms  course
+
+# Status (engine-spec 0.8 `any` and `not`, 0.18 `tokens` and `text_if`): the
+# flags as the open-billie translator writes them into CoT detail/remarks and
+# SAPIENT DetectionReport.state, and CoT opex="s" for a simulated track. Each
+# line sets its target only while the target is absent.
+derive  track.simulated_any  any      track.simulated  track.header_simulated  track.test_data
+derive  track.tentative      not      track.confirmed
+derive  track.status_text    tokens:comma:test-data,simulated,tentative,coasting,final-update  track.test_data  track.simulated_any  track.tentative  track.coasting  track.final_update
+derive  track.opex           text_if:s  track.simulated_any
