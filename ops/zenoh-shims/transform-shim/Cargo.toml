@@ -33,7 +33,7 @@ path = "src/main.rs"
 [dependencies]
 # The engine. Standard library only. The commit is the one in
 # ops/xf/goat-transformers.ref; tests/routes.rs holds the two together.
-goat-transformers = { git = "https://github.com/USAREUR-AF/goat-transformers", rev = "240d06df1ffd0f2b62d795a101c6996be2344b1f" }
+goat-transformers = { git = "https://github.com/USAREUR-AF/goat-transformers", rev = "7597d8199bc37445fe572dde4286bdaf6571e72d" }
 zenoh = { version = "=1.9.0", features = ["unstable"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
 clap = { version = "4", features = ["derive", "env"] }

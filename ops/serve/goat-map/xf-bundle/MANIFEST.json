@@ -1,7 +1,7 @@
 {
   "library": {
     "repository": "https://github.com/USAREUR-AF/goat-transformers",
-    "rev": "240d06df1ffd0f2b62d795a101c6996be2344b1f"
+    "rev": "7597d8199bc37445fe572dde4286bdaf6571e72d"
   },
   "formats": [
     "cot-xml",

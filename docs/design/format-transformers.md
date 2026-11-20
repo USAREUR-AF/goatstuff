@@ -317,7 +317,7 @@ The Go engine is standard library only, so it adds one module to the portal's
 ## 8. The library commit and the bundles
 
 The library is used at one commit, stated in `ops/xf/goat-transformers.ref`
-(`240d06d`). `ops/xf/bundle.py build` copies the chosen packs and the model
+(`7597d81`). `ops/xf/bundle.py build` copies the chosen packs and the model
 modules they use from a library checkout at that commit into a consumer's
 directory and writes the manifest; every file's origin is `library`; `bundle.py check` recomputes it. Moving the commit is
 one change: the `.ref` file, the `rev` in the shim's `Cargo.toml` and `Cargo.lock`,
