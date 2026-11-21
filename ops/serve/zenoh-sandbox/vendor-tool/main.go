@@ -7,7 +7,8 @@
 // dependencies by bare package name, and its key-expression code is
 // wasm-bindgen "bundler" output, which imports a .wasm file as if it were a
 // JavaScript module. esbuild resolves the bare imports; the plugin below
-// supplies the .wasm module. No upstream file is edited.
+// supplies the .wasm module. patch.py applies the reviewed input cleanups
+// before this command runs; package versions and the .wasm bytes are unchanged.
 //
 // Usage: zenoh-ts-bundle <dir holding node_modules> <out.js>
 package main

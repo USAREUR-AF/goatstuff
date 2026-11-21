@@ -24,7 +24,31 @@ versions and hashes are in `../../../vendor-tool/packages.lock.json`, which is
 what the tool reads.
 
 Bundle: `zenoh-ts.js`, SHA-256
-`cb6d288c1579d70225d3005a0a830aba975b9c3fc94ae6dafbf8c78498e128b9`.
+`a574977706002bf6e1121a4af6218bd8d71d6862bb30bf0632d534b953d6477c`.
+
+## Local input patches
+
+The versions and tarball integrity values above remain the upstream inputs.
+After verification, `vendor-tool/patch.py` applies the edits recorded in
+`vendor-tool/patches.json`. Each of the five package files has an input and
+output SHA-256 and exact edit counts; all are validated before any file is
+changed. An upstream input change requires reviewing these patches again.
+
+- `typed-duration/dist/lib/index.js`: remove the undefined check already
+  excluded by the object type guard, retaining the null check.
+- `@eclipse-zenoh/zenoh-ts/dist/link.js`: remove one duplicate constructor
+  assignment.
+- `@eclipse-zenoh/zenoh-ts/dist/key_expr/zenoh_keyexpr_wrapper_bg.js`:
+  remove six unread local assignments immediately before throws. The
+  deferred variables used by `finally` and the WebAssembly binary stay intact.
+- `@thi.ng/errors/unsupported.js` and `@thi.ng/leb128/index.js`: annotate
+  five pure factory calls so esbuild can remove unused results. These
+  factories return classes or closures; calling them does not invoke the
+  constructors or WebAssembly operations. Package exports stay intact.
+
+These are downstream quality cleanups, not an upstream release or a change
+to the Zenoh protocol, router, remote-API plugin or dependency pins. License
+files are copied from the original tarballs unchanged.
 
 ## Licenses
 
@@ -41,7 +65,8 @@ ops/serve/zenoh-sandbox/vendor-tool/regenerate.sh
 ```
 
 The script downloads each tarball named in `packages.lock.json`, refuses any
-whose SHA-512 differs from the lock file, and bundles the unpacked tree into
+whose SHA-512 differs from the lock file, applies the reviewed input patches,
+and bundles the unpacked tree into
 one ES module with esbuild's Go API (`vendor-tool/main.go`; esbuild version
 pinned in `vendor-tool/go.mod` and `go.sum`). It needs python3 and Go, and
 needs no npm and no Node. The same inputs always produce the same bytes.
