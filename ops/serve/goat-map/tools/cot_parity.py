@@ -92,8 +92,8 @@ def corpus() -> list[tuple[str, bytes, str]]:
 CAUSES = {
     "affiliation": "no function takes a token of the type; completed by complete_type_letters",
     "dimension": "no function takes a token of the type; completed by complete_type_letters",
-    "ce_m": "no absent-value sentinel; completed by complete_error_sentinel",
-    "le_m": "no absent-value sentinel; completed by complete_error_sentinel",
+    "ce_m": "a value above the 9999999 sentinel is kept; completed by complete_error_sentinel",
+    "le_m": "a value above the 9999999 sentinel is kept; completed by complete_error_sentinel",
     "course_deg": "the json wire writes 65 where Python writes 65.0: one JSON number",
 }
 ABSENT = "the json wire writes no member for an absent key; completed by complete_null_members"

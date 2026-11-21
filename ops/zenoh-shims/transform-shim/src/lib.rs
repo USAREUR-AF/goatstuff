@@ -482,7 +482,7 @@ pub struct Converted {
 }
 
 fn is_binary(wire: Wire) -> bool {
-    matches!(wire, Wire::Bits | Wire::Protobuf)
+    matches!(wire, Wire::Bits | Wire::Protobuf | Wire::Tlv)
 }
 
 fn default_encoding(wire: Wire, format: &str) -> String {
@@ -492,6 +492,10 @@ fn default_encoding(wire: Wire, format: &str) -> String {
         Wire::GeoJson => "application/geo+json",
         Wire::Protobuf => "application/protobuf",
         Wire::Bits => "application/octet-stream",
+        // Tag-length-value records (engine-spec 0.13), binary as `bits` is.
+        Wire::Tlv => "application/octet-stream",
+        // One record of ASCII text (engine-spec 0.10), carried as it is.
+        Wire::Text => "text/plain",
     };
     // Zenoh's `<type>;<schema>` form: the schema names the pack.
     format!("{mime};{format}")

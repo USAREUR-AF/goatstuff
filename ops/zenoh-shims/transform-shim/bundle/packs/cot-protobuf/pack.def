@@ -7,6 +7,7 @@ distribution  public
 source        "TAK protocol version 1 protobuf definitions: github.com/deptofdefense/AndroidTacticalAssaultKit-CIV commit 889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc, directory takproto (10 .proto files); field numbers, names and types only"
 source        "LICENSE.md at that commit: GNU General Public License, Version 3; INTENT.md at that commit on work of U.S. Federal government employees; the .proto files carry no header (packs/cot-protobuf/PROVENANCE.md)"
 uses          takproto
+uses          track
 wire          protobuf
 
 # common: the fields of TakMessage.takControl, a member that may stand beside any other
@@ -22,6 +23,7 @@ field  takproto.cot_event_type                         2.1       pstring
 field  takproto.cot_event_access                       2.2       pstring
 field  takproto.cot_event_qos                          2.3       pstring
 field  takproto.cot_event_opex                         2.4       pstring
+field  track.scoped_id                                 2.5       pstring
 field  uid                                             2.5       pstring
 field  takproto.cot_event_uid                          2.5       pstring
 field  time_ms                                         2.6       pvarint

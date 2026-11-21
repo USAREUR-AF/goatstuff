@@ -1,7 +1,0 @@
-{
-  "name": "to-geo-track-v1-without-context-is-no-kind",
-  "from": "cot-xml",
-  "to": "geo-track-v1",
-  "input": "<event version=\"2.0\" uid=\"4411\" type=\"a-f-A\" time=\"2021-02-27T20:00:00.250Z\" start=\"2021-02-27T20:00:00.250Z\" stale=\"2021-02-27T20:03:00.250Z\" how=\"m-g\"><point lat=\"30.25\" lon=\"-85.5\" hae=\"120.5\" ce=\"25.5\" le=\"40\"/><detail><track course=\"90\" speed=\"12.5\"/></detail></event>",
-  "expect_error": "no-kind"
-}

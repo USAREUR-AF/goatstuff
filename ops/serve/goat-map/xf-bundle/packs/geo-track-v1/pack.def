@@ -10,7 +10,6 @@ version 0.1.0
 distribution public
 source  "USAREUR-AF/goatstuff ops/serve/goat-map/schemas/geo/track.v1.schema.json (Apache-2.0)"
 uses    geotrack
-uses    cotxml
 wire    json
 when    schema  goat.geo.track.v1
 kind    Track
@@ -31,13 +30,13 @@ field   ce                        ce_m              float
 field   le                        le_m              float
 field   type                      cot_type          string
 field   how                       how               string
-field   cotxml.uid_droid          descriptor        string
+field   display_name              descriptor        string
 # The two sensor times are the sender's text where the source format kept it
 # (the schema: verbatim and unrepaired), else the instant in canonical form.
 # The text line is first, so it is the one encode writes (ruling 16 of 0.5).
-field   cotxml.time_text          reported_at       string
+field   time_text                 reported_at       string
 field   time_ms                   reported_at       iso8601_ms
-field   cotxml.stale_text         stale_at          string
+field   stale_text                stale_at          string
 field   stale_ms                  stale_at          iso8601_ms
 field   geotrack.observed_at      observed_at       string
 field   geotrack.producer_anchor  producer_anchor   string

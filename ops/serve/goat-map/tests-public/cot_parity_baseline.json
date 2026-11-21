@@ -11,19 +11,19 @@
     "inputs": 26
   },
   "packs": {
-    "absent": 19,
+    "absent": 49,
     "by_cause": {
-      "no absent-value sentinel; completed by complete_error_sentinel": 31,
+      "a value above the 9999999 sentinel is kept; completed by complete_error_sentinel": 1,
       "no function takes a token of the type; completed by complete_type_letters": 32,
       "the json wire writes 65 where Python writes 65.0: one JSON number": 15,
-      "the json wire writes no member for an absent key; completed by complete_null_members": 19
+      "the json wire writes no member for an absent key; completed by complete_null_members": 49
     },
     "by_member": {
       "affiliation": {
         "different": 16
       },
       "ce_m": {
-        "different": 15
+        "absent": 15
       },
       "course_deg": {
         "absent": 1,
@@ -36,7 +36,8 @@
         "different": 16
       },
       "le_m": {
-        "different": 16
+        "absent": 15,
+        "different": 1
       },
       "org": {
         "absent": 16
@@ -45,7 +46,7 @@
         "absent": 1
       }
     },
-    "different": 63,
+    "different": 33,
     "equal": 271,
     "form": 15,
     "members": 368

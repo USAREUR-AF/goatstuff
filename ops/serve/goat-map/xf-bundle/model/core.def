@@ -2,12 +2,20 @@
 # Keys of this module are written bare in a pack (`lat`); keys of every other
 # module are written `<module>.<key>`. spec/shared-model.md.
 module        core
-version       0.1.0
+version       0.3.0
 distribution  public
 source        "goat-transformers spec/shared-model.md; type and how tokens follow the public Cursor on Target event schema"
 key  uid       string  -      "stable identifier of the entity"
 key  type      string  -      "CoT type token (a-f-G-U-C-I), the shared type vocabulary"
 key  time_ms   int     ms     "time the report is valid, epoch milliseconds UTC"
+key  time_error_ms  float  ms  "coherence error bound of the clock that stamped time_ms, >= 0: the bound, not the offset; absent when not stated"
+key  time_state     string  -  "state of the clock that stamped time_ms: coherent, drifting or free-running; absent when not stated"
+key  time_utc_state      string  -   "UTC confidence of the clock that stamped time_ms: confident or unknown (goatcore's labels UTC-confident, UTC-unknown); absent when not stated"
+key  time_utc_error_ms   float   ms  "one-sigma uncertainty of time_ms's offset from UTC, >= 0 (goatcore sigma_us, in ms); absent when not stated"
+key  time_anchor         string  -   "the time source the clock is anchored to: gnss, peer_nts, wan_nts, orphan or none (goatcore selected_source); absent when not stated"
+key  time_anchor_age_ms  int     ms  "time from the last external anchor (gnss, wan_nts, peer_nts) to time_ms, >= 0 (goatcore seconds_since_external_lock, in ms); absent when not stated"
+key  time_attested       int     -   "1 when a signed attestation backs the time quality, 0 when the source states it is not attested (goatcore attested); absent when not stated"
+key  time_attestation    string  -   "the attestation the time quality rests on: ntp-attest-v1:<valid_until epoch ms>:<host_id>; absent when not stated"
 key  lat       float   deg    "latitude, WGS84"
 key  lon       float   deg    "longitude, WGS84"
 key  hae       float   m      "height above the WGS84 ellipsoid"
@@ -18,3 +26,7 @@ key  course    float   deg    "direction of travel, degrees true"
 key  speed_ms  float   m/s    "ground speed"
 key  how       string  -      "provenance token (m-g, h-e, ...)"
 key  stale_ms  int     ms     "time after which the report is no longer valid, epoch milliseconds UTC"
+key  time_text   string  -    "time_ms as the sender wrote it, unparsed, for a consumer that needs the text"
+key  stale_text  string  -    "stale_ms as the sender wrote it, unparsed"
+key  access    string  -      "the handling value the sender gives the report (CoT event/@access); passed through as text, never chosen by a conversion"
+key  display_name  string  -  "the name the sender shows for the entity where it differs from callsign (CoT detail/uid/@Droid)"
