@@ -204,6 +204,17 @@ def _session(endpoint: str, mode: str, tls: dict[str, str] | None = None) -> zen
     return zenoh.open(conf)
 
 
+# The message standard each input shape arrived in, as shown on a track's card.
+STANDARD_COT = "Cursor-on-Target (CoT XML)"
+STANDARD_TRACK = "goat.geo.track.v1 (JSON)"
+STANDARD_TRACKSET = "goat.geo.trackset.v1 (JSON)"
+
+
+def _origin(key: str, standard: str) -> dict[str, str]:
+    """Where a track came from: the Zenoh key it arrived on and its standard."""
+    return {"key": key, "standard": standard}
+
+
 def _null_island(track: dict[str, Any]) -> bool:
     """A placeholder fix at exactly 0,0 (a radar's empty track slot), not a contact."""
     try:
@@ -419,6 +430,7 @@ class Service:
                 return
             self.unmappable += 1
             return
+        track["origin"] = _origin(key, STANDARD_COT)
         self._publish(track)
         if not STORE_FROM_FABRIC or self.fabric is None:
             self._store(track)
@@ -430,6 +442,7 @@ class Service:
         if payload.lstrip()[:1] == b"<":
             track = self._fabric_cot(key, anchor, payload)
             if track is not None:
+                track["origin"] = _origin(key, STANDARD_COT)
                 self._store_fabric(anchor, track)
             return
         try:
@@ -440,9 +453,12 @@ class Service:
             return
         # goat.geo.trackset.v1: one stable key carrying every current track
         # (the cardinality-budget pattern a sensor node publishes on the WAN).
-        tracks = body.get("tracks") if body.get("schema") == "goat.geo.trackset.v1" else [body]
+        is_set = body.get("schema") == "goat.geo.trackset.v1"
+        tracks = body.get("tracks") if is_set else [body]
+        standard = STANDARD_TRACKSET if is_set else STANDARD_TRACK
         for track in tracks or []:
             if isinstance(track, dict) and "id" in track and not _null_island(track):
+                track["origin"] = _origin(key, standard)
                 self._store_fabric(anchor, track)
 
     def _fabric_cot(self, key: str, anchor: str, payload: bytes) -> dict[str, Any] | None:

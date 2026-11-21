@@ -289,6 +289,18 @@ function select(id, fly) {
   render();
 }
 
+function escHtml(v) {
+  return String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Which node and sensor produced the track, as far as the message says.
+function fromOf(t) {
+  const s = t.source || {};
+  const parts = [s.node, s.sensor].filter(Boolean).map(escHtml);
+  const at = s.site ? ` @ ${escHtml(s.site)}` : '';
+  return parts.length ? parts.join(' · ') + at : '—';
+}
+
 function renderDetail() {
   const box = el('detail');
   const t = state.selected ? state.tracks.get(state.selected) : null;
@@ -311,8 +323,10 @@ function renderDetail() {
     ['updates', String(t.updates)],
     ['observed', `${ageOf(t).toFixed(0)}s ago`],
     ['sensor clock', t.reported_at || '—'],
-    ['source', `${t.source.sensor} @ ${t.source.site}`],
+    ['from', fromOf(t)],
     ['producer', t.org || `${(t.producer_anchor || '').slice(0, 8)}… (unverified)`],
+    ['standard', (t.origin && t.origin.standard) || '—'],
+    ['zenoh key', t.origin && t.origin.key ? `<code class="key">${escHtml(t.origin.key)}</code>` : '—'],
     ['data', t.synthetic ? 'SYNTHETIC — simulated, not a real detection' : 'real detection'],
     ['descriptor', t.descriptor || '—'],
   ];
