@@ -3,4 +3,4 @@
 # digest (the free catalogue tags only latest; Dependabot moves the digest).
 # An overlay replaces this file to build on other bases, such as a private
 # Chainguard catalogue: goatcore docs/operations/build-on-your-own-base-images.md.
-FROM cgr.dev/chainguard/node:latest-dev@sha256:6e9255f8d62e662455e834f357db7d9512d208a616cee5257b56180509601649
+FROM cgr.dev/chainguard/node:latest-dev@sha256:77b4d3932d21f35d74988a45267d88cdc30b08b5213501357b3859a056929071
