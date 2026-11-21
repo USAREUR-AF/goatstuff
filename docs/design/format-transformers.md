@@ -23,7 +23,7 @@ arrived, are passed to the conversion as context.
 | Part | What | Engine | Status |
 |---|---|---|---|
 | 1 | `transform-shim`, a fabric peer that subscribes in one format and republishes in another | Rust | built, tested in CI, not deployed |
-| 2 | goat-map's Cursor on Target to GeoTrackV1 step through the library, selected by `GOATMAP_COT_ENGINE=library` | Python | built, tested in CI, default `builtin` |
+| 2 | goat-map's Cursor on Target to GeoTrackV1 step through the library, selected by `GOATMAP_COT_ENGINE=library` | Python | built, tested in CI, the default (`builtin` selects the hand-written code) |
 | 3 | The `geo-track-v1` pack and the `geotrack` model module, written here and taken into the library with the three `cot-xml` keys they need | data | in the library since commit `5459b24`; both bundles are built from the library alone |
 | 4 | `goat xf` on the operator's machine | Rust | designed; no goat code is needed |
 | 5 | The portal inspector decoding any pack-described format | Go | designed |
@@ -186,8 +186,8 @@ the receive time and the attachment's member. No test runs against a router with
 goat-map turns each Cursor on Target event into GeoTrackV1 with hand-written
 code, `goatmap/cot.py`. `GOATMAP_COT_ENGINE=library` makes it use the library
 instead: the Python engine decodes the event with the `cot-xml` pack and
-encodes it with the `geo-track-v1` pack. The default is `builtin`, the
-existing code. `/healthz` reports the value as `cot_engine`. An unknown value,
+encodes it with the `geo-track-v1` pack. That is the default;
+`GOATMAP_COT_ENGINE=builtin` selects the hand-written code. `/healthz` reports the value as `cot_engine`. An unknown value,
 or a pack bundle that does not load, stops the service at start.
 
 The service passes what only it knows as context: the kind (from the topic),
