@@ -99,6 +99,25 @@
   when: goat_map_portal_token | length > 0
   register: gm_portal
 
+- name: goat-map | stat the portal token file
+  ansible.builtin.stat:
+    path: "{{ goat_map_compose_dir }}/secrets/portal.env"
+  register: gm_portal_file
+
+# The token lets the map resolve each producer's org and synthetic flag from the
+# portal registry. Without it the map still runs and marks producers unverified,
+# so an absent token is a warning, not a stop.
+- name: goat-map | portal token absent (producers shown unverified)
+  ansible.builtin.copy:
+    content: "GOATMAP_PORTAL_TOKEN=\n"
+    dest: "{{ goat_map_compose_dir }}/secrets/portal.env"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - goat_map_portal_token | length == 0
+    - not gm_portal_file.stat.exists
+
 - name: goat-map | fence settings (supplied)
   ansible.builtin.template:
     src: oauth2-proxy.env.j2
@@ -113,23 +132,23 @@
     - goat_map_oauth2_cookie_secret | length > 0
   register: gm_fence
 
-- name: goat-map | stat the secret files
+- name: goat-map | stat the fence settings file
   ansible.builtin.stat:
     path: "{{ goat_map_compose_dir }}/secrets/{{ item }}"
-  loop: [portal.env, oauth2-proxy.env]
+  loop: [oauth2-proxy.env]
   register: gm_secret_files
 
-- name: goat-map | require each secret file
+- name: goat-map | require the fence settings
   ansible.builtin.assert:
     that: item.stat.exists
     fail_msg: >-
       {{ goat_map_compose_dir }}/secrets/{{ item.item }} is missing and its secret
-      was not supplied. Export {{ 'GOATMAP_PORTAL_TOKEN' if item.item == 'portal.env'
-      else 'GOATMAP_OAUTH2_CLIENT_SECRET and GOATMAP_OAUTH2_COOKIE_SECRET' }} for this run.
+      was not supplied. Export GOATMAP_OAUTH2_CLIENT_SECRET and
+      GOATMAP_OAUTH2_COOKIE_SECRET for this run.
   loop: "{{ gm_secret_files.results }}"
   loop_control:
     label: "{{ item.item }}"
-  when: item.item == 'portal.env' or goat_map_fenced | bool
+  when: goat_map_fenced | bool
 
 # --- render and start ---------------------------------------------------------
 
