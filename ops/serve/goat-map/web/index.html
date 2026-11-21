@@ -9,12 +9,6 @@
 </head>
 <body>
 <div id="map"></div>
-    <div id="lasso-hint" class="provenance lasso" hidden></div>
-    <div class="lasso-controls">
-      <button id="lasso-btn" type="button" title="Click points to enclose an area; Backspace undoes a point">Draw area</button>
-      <button id="lasso-view" type="button" title="Search everything currently on screen">Search visible area</button>
-      <button id="lasso-clear" type="button" title="Remove the drawn area and its results">Clear</button>
-    </div>
 
 <header class="bar">
   <div class="brand">
@@ -31,14 +25,39 @@
   </div>
 </header>
 
-    <div id="scope-banner" class="provenance scope" hidden></div>
-    <div id="sensor-status" class="readout sensor" hidden></div>
-    <div id="provenance" class="provenance" hidden></div>
-
-<div class="mode-tabs" role="tablist" aria-label="View">
-  <button id="tab-tracks" role="tab" aria-selected="true">Tracks</button>
-  <button id="tab-readiness" role="tab" aria-selected="false">Readiness</button>
+<!-- Layout: everything that floats over the map lives in one of four regions
+     (toolbar, left column, notices, right panel), each a flex container, so
+     overlays stack instead of being pinned to coordinates that collide. -->
+<div class="toolbar">
+  <div class="mode-tabs" role="tablist" aria-label="View">
+    <button id="tab-tracks" role="tab" aria-selected="true">Tracks</button>
+    <button id="tab-readiness" role="tab" aria-selected="false">Readiness</button>
+  </div>
+  <label class="history-ctl" title="Draw every track's path over a past window">
+    <span>History</span>
+    <select id="history-window">
+      <option value="0">off</option>
+      <option value="3600">last 1 h</option>
+      <option value="10800">last 3 h</option>
+      <option value="21600">last 6 h</option>
+      <option value="43200">last 12 h</option>
+      <option value="86400">last 24 h</option>
+    </select>
+  </label>
+  <div class="lasso-controls">
+    <button id="lasso-btn" type="button" title="Click points to enclose an area; Backspace undoes a point">Draw area</button>
+    <button id="lasso-view" type="button" title="Search everything currently on screen">Search visible area</button>
+    <button id="lasso-clear" type="button" title="Remove the drawn area and its results">Clear</button>
+  </div>
 </div>
+
+<div class="notices">
+  <div id="scope-banner" class="provenance scope" hidden></div>
+  <div id="provenance" class="provenance" hidden></div>
+  <div id="history-note" class="readout history" hidden></div>
+  <div id="lasso-hint" class="provenance lasso" hidden></div>
+</div>
+
 
 <aside class="panel" id="rd-panel" hidden>
   <div class="panel-head">
@@ -58,11 +77,14 @@
   <p id="empty" class="empty">Waiting for the first detection…</p>
 </aside>
 
-<section class="detail" id="detail" hidden>
+<div class="left-col">
+  <div id="sensor-status" class="readout sensor" hidden></div>
+  <section class="detail" id="detail" hidden>
   <button class="close" id="detail-close" aria-label="Close">×</button>
   <h3 id="d-title">—</h3>
   <dl id="d-body"></dl>
 </section>
+</div>
 
 <footer class="legend">
   <div class="keys" id="legend-keys"></div>
@@ -71,6 +93,7 @@
 
 <script src="vendor/maplibre-gl.js"></script>
 <script src="vendor/pmtiles.js"></script>
+<script src="overlay.js"></script>
 <script src="app.js"></script>
 <script src="lasso.js"></script>
 <script src="readiness.js"></script>

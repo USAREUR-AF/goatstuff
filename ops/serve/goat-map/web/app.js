@@ -93,9 +93,19 @@ maplibregl.addProtocol('pmtiles', protocol.tile);
 // geography must never be the default.
 async function loadStyle() {
   const name = state.meta && state.meta.basemap;
-  if (!name) throw new Error('no GOATMAP_BASEMAP configured for this goatnet');
-  const style = await (await fetch('basemap/style-dark.json')).json();
   const base = location.origin;
+  if (!name) {
+    // No basemap configured: draw on a plain background rather than no map at
+    // all, so sites, tracks and history still render where they are.
+    console.warn('no GOATMAP_BASEMAP configured for this goatnet; drawing without a basemap');
+    return {
+      version: 8,
+      glyphs: `${base}/basemap/fonts/{fontstack}/{range}.pbf`,
+      sources: {},
+      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#0a0e14' } }],
+    };
+  }
+  const style = await (await fetch('basemap/style-dark.json')).json();
   style.sprite = `${base}/basemap/sprites/dark`;
   style.glyphs = `${base}/basemap/fonts/{fontstack}/{range}.pbf`;
   style.sources.protomaps.url = `pmtiles://${base}/basemap/${name}`;
@@ -216,6 +226,9 @@ function onMapLoad() {
   // The lasso owns the map's contents from here. Its sources and layers are
   // added after the base layers so clusters draw above the basemap.
   window.map = map;
+  window.state = state;
+  // Sites and the history overlay draw under the live tracks.
+  if (typeof window.overlayInit === 'function') window.overlayInit(map);
   if (typeof window.lassoInit === 'function') window.lassoInit(map);
   render();
 }

@@ -157,6 +157,10 @@ SITE = _env("GOATMAP_SITE", "unknown-site")
 NODE = _env("GOATMAP_NODE", "unknown-node")
 GOATNET = _env("GOATMAP_GOATNET", "unknown-goatnet")
 TTL_S = float(_env("GOATMAP_TTL_S", "120"))
+# How far back the history overlay can reach (seconds). 0 turns history off.
+HISTORY_S = float(_env("GOATMAP_HISTORY_S", str(24 * 3600)))
+# Points per track in one /api/history answer; longer histories are thinned.
+HISTORY_MAX_POINTS = 1500
 # Report degraded after this long with no inbound message. Must exceed the
 # sensor's quietest normal gap or a healthy-but-idle feed reads as broken.
 STALE_AFTER_S = float(_env("GOATMAP_STALE_AFTER_S", "180"))
@@ -745,6 +749,7 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
                 "subscribe_key": SUB_KEY,
                 "publish_prefix": PUBLISH_PREFIX or None,
                 "ttl_s": TTL_S,
+                "history_s": HISTORY_S,
                 "center": [float(lon or 0), float(lat or 0)],
                 "zoom": ZOOM,
                 "basemap": BASEMAP or None,
@@ -762,6 +767,27 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
         return web.json_response(
             scope_mod.track_envelope(store.snapshot(), _viewer(request), svc.stats())
         )
+
+    async def history(request: web.Request) -> web.Response:
+        # The overlay of every track over a window, scoped exactly like the
+        # live picture: a viewer sees the history of what they may see now.
+        try:
+            window = float(request.query.get("window_s", "3600"))
+        except ValueError:
+            return web.json_response({"error": "window_s must be a number of seconds"}, status=400)
+        window = max(60.0, min(window, store.history_s))
+        viewer = _viewer(request)
+        permitted, withheld = scope_mod.scope_tracks(store.history(window), viewer)
+        for e in permitted:
+            pts = e["points"]
+            if len(pts) > HISTORY_MAX_POINTS:
+                step = len(pts) / HISTORY_MAX_POINTS
+                e["points"] = [pts[int(i * step)] for i in range(HISTORY_MAX_POINTS - 1)] + [pts[-1]]
+        body = {"window_s": window, "max_window_s": store.history_s, "tracks": permitted,
+                "partial": withheld > 0}
+        if viewer.tier == scope_mod.FULL:
+            body["withheld"] = withheld
+        return web.json_response(body)
 
     async def healthz(_: web.Request) -> web.Response:
         # Non-200 when degraded: a health endpoint that always returns 200 is
@@ -1158,6 +1184,7 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
     app.router.add_get("/api/sites", sites)
     app.router.add_get("/api/meta", meta)
     app.router.add_get("/api/tracks", tracks)
+    app.router.add_get("/api/history", history)
     app.router.add_get("/api/stream", stream)
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", index)
@@ -1183,7 +1210,7 @@ async def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     loop = asyncio.get_running_loop()
-    store = TrackStore(ttl_s=TTL_S)
+    store = TrackStore(ttl_s=TTL_S, history_s=HISTORY_S)
     hub = Hub(max_clients=MAX_STREAM_CLIENTS)
     svc = Service(store, hub, loop)
     svc.open()
