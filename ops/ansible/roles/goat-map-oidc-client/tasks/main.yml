@@ -1,0 +1,69 @@
+---
+# Registers goat-map's OAuth2 client at the site Hydra, idempotently (upsert by
+# client_id). Runs before the goat-map role: a fence presenting a client Hydra
+# does not know is green on every health probe and fails every sign-in with
+# `invalid_client`. Mirrors roles/microscope-oidc-client.
+
+- name: goat-map-oidc-client | require the client secret and hostname
+  ansible.builtin.assert:
+    that:
+      - (goat_map_oidc_client_secret | length) >= 32
+      - goat_map_hostname | default('') | length > 0
+    fail_msg: >-
+      goat_map_oauth2_client_secret (32+ characters) or goat_map_hostname is
+      unset. The secret comes from the goatnet's credential reference named in
+      group_vars/<group>/goat-map.yml.
+  no_log: true
+
+- name: goat-map-oidc-client | Hydra admin is reachable
+  ansible.builtin.uri:
+    url: "{{ goat_map_oidc_hydra_admin }}/health/ready"
+    status_code: 200
+  retries: 5
+  delay: 2
+
+- name: goat-map-oidc-client | read the client
+  ansible.builtin.uri:
+    url: "{{ goat_map_oidc_hydra_admin }}/admin/clients/{{ goat_map_oidc_client_id }}"
+    status_code: [200, 404]
+    return_content: true
+  register: gm_client_get
+  no_log: true
+
+- name: goat-map-oidc-client | desired client
+  ansible.builtin.set_fact:
+    gm_client_config:
+      client_id: "{{ goat_map_oidc_client_id }}"
+      client_name: "{{ goat_map_oidc_client_name }}"
+      client_secret: "{{ goat_map_oidc_client_secret }}"
+      grant_types: [authorization_code, refresh_token]
+      response_types: [code]
+      scope: "{{ goat_map_oidc_scopes | join(' ') }}"
+      redirect_uris: ["{{ goat_map_oidc_redirect_uri }}"]
+      token_endpoint_auth_method: client_secret_post
+      skip_consent: true
+      access_token_strategy: jwt
+      audience: ["{{ goat_map_oidc_client_id }}"]
+  no_log: true
+
+- name: goat-map-oidc-client | create the client
+  ansible.builtin.uri:
+    url: "{{ goat_map_oidc_hydra_admin }}/admin/clients"
+    method: POST
+    body_format: json
+    body: "{{ gm_client_config }}"
+    status_code: 201
+  when: gm_client_get.status == 404
+  no_log: true
+
+# Hydra omits client_secret from a GET, so an existing client always reads as
+# drifted on the secret and is re-synced by an idempotent PUT.
+- name: goat-map-oidc-client | update the client
+  ansible.builtin.uri:
+    url: "{{ goat_map_oidc_hydra_admin }}/admin/clients/{{ goat_map_oidc_client_id }}"
+    method: PUT
+    body_format: json
+    body: "{{ gm_client_config }}"
+    status_code: 200
+  when: gm_client_get.status == 200
+  no_log: true

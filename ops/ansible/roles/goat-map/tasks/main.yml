@@ -118,7 +118,19 @@
     - goat_map_portal_token | length == 0
     - not gm_portal_file.stat.exists
 
-- name: goat-map | fence settings (supplied)
+- name: goat-map | require the fence secrets
+  ansible.builtin.assert:
+    that:
+      - goat_map_oauth2_client_secret | length >= 32
+      - goat_map_oauth2_cookie_secret | length >= 16
+    fail_msg: >-
+      The fence needs goat_map_oauth2_client_secret (32+ characters) and
+      goat_map_oauth2_cookie_secret (16+ characters), set in
+      group_vars/<group>/goat-map.yml from the goatnet's credential references.
+  no_log: true
+  when: goat_map_fenced | bool
+
+- name: goat-map | fence settings
   ansible.builtin.template:
     src: oauth2-proxy.env.j2
     dest: "{{ goat_map_compose_dir }}/secrets/oauth2-proxy.env"
@@ -126,29 +138,8 @@
     group: root
     mode: "0600"
   no_log: true
-  when:
-    - goat_map_fenced | bool
-    - goat_map_oauth2_client_secret | length > 0
-    - goat_map_oauth2_cookie_secret | length > 0
-  register: gm_fence
-
-- name: goat-map | stat the fence settings file
-  ansible.builtin.stat:
-    path: "{{ goat_map_compose_dir }}/secrets/{{ item }}"
-  loop: [oauth2-proxy.env]
-  register: gm_secret_files
-
-- name: goat-map | require the fence settings
-  ansible.builtin.assert:
-    that: item.stat.exists
-    fail_msg: >-
-      {{ goat_map_compose_dir }}/secrets/{{ item.item }} is missing and its secret
-      was not supplied. Export GOATMAP_OAUTH2_CLIENT_SECRET and
-      GOATMAP_OAUTH2_COOKIE_SECRET for this run.
-  loop: "{{ gm_secret_files.results }}"
-  loop_control:
-    label: "{{ item.item }}"
   when: goat_map_fenced | bool
+  register: gm_fence
 
 # --- render and start ---------------------------------------------------------
 

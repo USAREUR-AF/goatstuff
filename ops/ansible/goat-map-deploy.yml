@@ -21,5 +21,11 @@
   hosts: "{{ target | mandatory }}"
   become: true
   gather_facts: false
+  pre_tasks:
+    - name: Run on the map host only
+      ansible.builtin.meta: end_host
+      when: inventory_hostname != (goat_map_host | mandatory)
   roles:
+    # The fence's Hydra client is registered before the fence that presents it.
+    - role: goat-map-oidc-client
     - role: goat-map

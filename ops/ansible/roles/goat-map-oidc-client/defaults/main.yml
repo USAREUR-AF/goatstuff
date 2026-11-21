@@ -1,0 +1,15 @@
+---
+# The OAuth2 client goat-map's fence (oauth2-proxy) presents to the site Hydra.
+# The secret is the SAME value the goat-map role writes into the fence's
+# settings: one value, both sides of the handshake.
+goat_map_oidc_client_id: "{{ goat_map_oauth2_client_id | default('oauth2-proxy-goat-map') }}"
+goat_map_oidc_client_name: "goat-map ({{ site_id | default('site') }})"
+goat_map_oidc_client_secret: "{{ goat_map_oauth2_client_secret | default('') }}"
+goat_map_oidc_redirect_uri: "https://{{ goat_map_hostname }}/oauth2/callback"
+goat_map_oidc_scopes:
+  - openid
+  - profile
+  - email
+  - groups
+  - offline_access
+goat_map_oidc_hydra_admin: "http://127.0.0.1:{{ hydra_admin_host_port | default(4445) }}"
