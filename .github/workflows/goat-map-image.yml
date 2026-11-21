@@ -1,0 +1,56 @@
+name: goat-map-image
+# Builds ops/serve/goat-map/Dockerfile and publishes ghcr.io/usareur-af/goat-map,
+# a multi-arch index (linux/amd64 + linux/arm64). Goatnets run it from the
+# digest pinned in their fleet pin table; nothing builds on a target host.
+#
+# Tags: :sha-<short> on every build, :latest on main, :<tag> on goat-map/v*.
+# Build body: .github/workflows/_image-build.yml (shared).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/serve/goat-map/**'
+      - '.github/workflows/goat-map-image.yml'
+    tags: ['goat-map/v*']
+  pull_request:
+    paths:
+      - 'ops/serve/goat-map/**'
+      - '.github/workflows/goat-map-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ops/serve/goat-map
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: install
+        run: python -m pip install -q -r requirements.txt pytest jsonschema
+      - name: tests
+        run: pytest tests-public -q
+      - name: browser script parses
+        run: node --check web/app.js
+
+  image:
+    needs: ["test"]
+    uses: ./.github/workflows/_image-build.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      image_name: goat-map
+      tag_prefix: goat-map
+      context: ops/serve/goat-map
+      description: "goat-map: geographic track surface"

@@ -1,0 +1,203 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy goat-map from a pinned image. Checks rather than assumes:
+#   - the image is digest-pinned;
+#   - the fence binds a mesh IP, never 0.0.0.0;
+#   - the fabric leaf carries the CN the router admits (a wrong CN is denied
+#     silently, and the map then shows nothing while reporting a live session);
+#   - each secret is either supplied or already on the host.
+
+- name: goat-map | require the host that runs the map
+  ansible.builtin.assert:
+    that: goat_map_host | length > 0
+    fail_msg: goat_map_host is unset. Name the one host of this group that runs goat-map.
+  run_once: true
+
+- name: goat-map | end hosts that do not run the map
+  ansible.builtin.meta: end_host
+  when: inventory_hostname != goat_map_host
+
+- name: goat-map | require a pinned image
+  ansible.builtin.assert:
+    that: goat_map_image is defined and 'sha256:' in goat_map_image
+    fail_msg: >-
+      goat_map_image is unset or unpinned. It is set from ops/pins/fleet-pins.yaml
+      and must be a digest-pinned multi-arch index.
+
+- name: goat-map | require a mesh bind address
+  ansible.builtin.assert:
+    that:
+      - goat_map_bind_ip | length > 0
+      - goat_map_bind_ip != '0.0.0.0'
+    fail_msg: goat_map_bind_ip must be this host's mesh IP, not '{{ goat_map_bind_ip }}'.
+
+- name: goat-map | refuse an unfenced deploy unless asked for
+  ansible.builtin.assert:
+    that: goat_map_fenced | bool or goat_map_allow_unfenced | bool
+    fail_msg: >-
+      goat_map_fenced is false, which serves track data with no sign-in.
+      Set goat_map_allow_unfenced true as well if that is intended.
+
+- name: goat-map | read the fabric leaf subject
+  ansible.builtin.command:
+    cmd: openssl x509 -noout -subject -in {{ goat_map_cert_dir }}/goat-map-cert.pem
+  register: gm_subject
+  changed_when: false
+
+- name: goat-map | require the CN the router admits
+  ansible.builtin.assert:
+    that: gm_subject.stdout is search('CN *= *' ~ (goat_map_cert_cn | regex_escape) ~ '$')
+    fail_msg: >-
+      The fabric leaf at {{ goat_map_cert_dir }}/goat-map-cert.pem has
+      {{ gm_subject.stdout | trim }}, but the router admits CN={{ goat_map_cert_cn }}.
+      Every sample would be denied silently. Reissue the leaf with that CN.
+  when: goat_map_cert_cn | length > 0
+
+- name: goat-map | directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.owner | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ goat_map_compose_dir }}", mode: "0755" }
+    - { path: "{{ goat_map_compose_dir }}/secrets", mode: "0700" }
+    - { path: "{{ goat_map_compose_dir }}/basemap", mode: "0755" }
+    - { path: "{{ goat_map_compose_dir }}/estate", mode: "0755" }
+    - { path: "{{ goat_map_attest_dir }}", mode: "0755", owner: "65532" }
+
+- name: goat-map | basemap extracts
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../{{ item }}"
+    dest: "{{ goat_map_compose_dir }}/basemap/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ goat_map_basemaps }}"
+
+- name: goat-map | estate files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../{{ item }}"
+    dest: "{{ goat_map_compose_dir }}/estate/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ goat_map_estate_files }}"
+
+# --- secrets: write when supplied, otherwise require the host's copy ----------
+
+- name: goat-map | portal token (supplied)
+  ansible.builtin.copy:
+    content: "GOATMAP_PORTAL_TOKEN={{ goat_map_portal_token }}\n"
+    dest: "{{ goat_map_compose_dir }}/secrets/portal.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: goat_map_portal_token | length > 0
+  register: gm_portal
+
+- name: goat-map | stat the portal token file
+  ansible.builtin.stat:
+    path: "{{ goat_map_compose_dir }}/secrets/portal.env"
+  register: gm_portal_file
+
+# The token lets the map resolve each producer's org and synthetic flag from the
+# portal registry. Without it the map still runs and marks producers unverified,
+# so an absent token is a warning, not a stop.
+- name: goat-map | portal token absent (producers shown unverified)
+  ansible.builtin.copy:
+    content: "GOATMAP_PORTAL_TOKEN=\n"
+    dest: "{{ goat_map_compose_dir }}/secrets/portal.env"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - goat_map_portal_token | length == 0
+    - not gm_portal_file.stat.exists
+
+- name: goat-map | fence settings (supplied)
+  ansible.builtin.template:
+    src: oauth2-proxy.env.j2
+    dest: "{{ goat_map_compose_dir }}/secrets/oauth2-proxy.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when:
+    - goat_map_fenced | bool
+    - goat_map_oauth2_client_secret | length > 0
+    - goat_map_oauth2_cookie_secret | length > 0
+  register: gm_fence
+
+- name: goat-map | stat the fence settings file
+  ansible.builtin.stat:
+    path: "{{ goat_map_compose_dir }}/secrets/{{ item }}"
+  loop: [oauth2-proxy.env]
+  register: gm_secret_files
+
+- name: goat-map | require the fence settings
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: >-
+      {{ goat_map_compose_dir }}/secrets/{{ item.item }} is missing and its secret
+      was not supplied. Export GOATMAP_OAUTH2_CLIENT_SECRET and
+      GOATMAP_OAUTH2_COOKIE_SECRET for this run.
+  loop: "{{ gm_secret_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: goat_map_fenced | bool
+
+# --- render and start ---------------------------------------------------------
+
+- name: goat-map | settings
+  ansible.builtin.template:
+    src: goat-map.env.j2
+    dest: "{{ goat_map_compose_dir }}/goat-map.env"
+    owner: root
+    group: root
+    mode: "0644"
+  register: gm_env
+
+- name: goat-map | compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ goat_map_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: gm_compose
+
+- name: goat-map | pull image
+  community.docker.docker_image:
+    name: "{{ goat_map_image }}"
+    source: pull
+
+- name: goat-map | up
+  community.docker.docker_compose_v2:
+    project_src: "{{ goat_map_compose_dir }}"
+    project_name: goat-map
+    remove_orphans: true
+    recreate: >-
+      {{ 'always' if (gm_env.changed or gm_compose.changed
+                      or gm_portal.changed | default(false)
+                      or gm_fence.changed | default(false)) else 'auto' }}
+
+- name: goat-map | wait for health through the fence
+  ansible.builtin.uri:
+    url: "http://{{ goat_map_bind_ip }}:{{ goat_map_port }}/healthz"
+    status_code: [200, 503]
+    return_content: true
+  register: gm_health
+  until: gm_health.status in [200, 503]
+  retries: 20
+  delay: 3
+
+- name: goat-map | report
+  ansible.builtin.debug:
+    msg: >-
+      goat-map on {{ inventory_hostname }}: {{ (gm_health.json | default({})).status | default('no body') }};
+      reasons {{ (gm_health.json | default({})).reasons | default([]) }};
+      image {{ goat_map_image }}

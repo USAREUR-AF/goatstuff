@@ -1,0 +1,58 @@
+---
+# goat_map_image comes from ops/pins/fleet-pins.yaml (rendered into pins.yml).
+# Everything else is per goatnet, in group_vars/<group>/goat-map.yml.
+
+# The single host that runs the map. Every other host in the target group is
+# ended without change. Required: there is no safe default.
+goat_map_host: ""
+
+goat_map_compose_dir: /opt/goat-map
+goat_map_container: goat-map
+goat_map_oauth2_container: oauth2-proxy-goat-map
+goat_map_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.7.1"
+
+# Where the fence listens. Must be the host's mesh IP: mesh membership is the
+# outer gate, and 0.0.0.0 would also publish the surface on the host's LAN.
+goat_map_bind_ip: ""
+goat_map_port: 8081
+
+# The fabric leaf and CA, owned by uid 65532 (the container user).
+goat_map_cert_dir: /opt/goat-map-certs
+# The CN the router admits for this reader: <anchor>.g1.
+goat_map_cert_cn: ""
+
+goat_map_attest_dir: /opt/goat-map-attest
+
+# Fence (oauth2-proxy). false runs the map with no authentication in front of
+# it, which the role refuses unless goat_map_allow_unfenced is also true.
+goat_map_fenced: true
+goat_map_allow_unfenced: false
+goat_map_hostname: ""
+goat_map_oidc_issuer_url: ""
+goat_map_oidc_host_entry: "invalid.invalid:127.0.0.1"
+goat_map_oauth2_client_id: oauth2-proxy-goat-map
+goat_map_oauth2_allowed_groups: ""
+
+# Secrets come from the deploying environment. When one is empty the role keeps
+# the copy already on the host and fails if there is none.
+goat_map_oauth2_client_secret: "{{ lookup('env', 'GOATMAP_OAUTH2_CLIENT_SECRET') }}"
+goat_map_oauth2_cookie_secret: "{{ lookup('env', 'GOATMAP_OAUTH2_COOKIE_SECRET') }}"
+goat_map_portal_token: "{{ lookup('env', 'GOATMAP_PORTAL_TOKEN') }}"
+
+# The simulated-track publisher. Off unless a goatnet has no real producer.
+goat_map_synth: false
+goat_map_synth_cert_dir: /opt/goat-map-synth-certs
+goat_map_synth_radius_km: 60
+goat_map_synth_tracks: 6
+goat_map_synth_seed: 42
+
+# Files from the deploying tree that the public image does not carry: basemap
+# extracts and the estate (sites/regions) file. Paths are relative to the tree
+# root (the directory above ops/). Basemaps mount at /app/web/basemap/<name>,
+# estate files at /estate/<name>.
+goat_map_basemaps: []
+goat_map_estate_files: []
+
+# Every GOATMAP_* setting the service reads, as a mapping. Rendered verbatim
+# into goat-map.env. Secrets never go here.
+goat_map_env: {}
