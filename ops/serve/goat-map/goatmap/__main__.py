@@ -83,6 +83,10 @@ PUBLISH_PREFIX = _env("GOATMAP_PUBLISH_PREFIX")
 # subscription spans every producer and the ACL -- not this pattern -- decides
 # which of them actually arrive.
 FABRIC_SUBSCRIBE = _env("GOATMAP_FABRIC_SUBSCRIBE", "*/geo/track/v1/*")
+# Comma-separated: one key expression per producer shape. Each message on any
+# of them may be one goat.geo.track.v1, a goat.geo.trackset.v1 (tracks[]), or
+# a CoT event, and is told apart by its bytes, not by which pattern matched.
+FABRIC_SUBSCRIBES = [k.strip() for k in FABRIC_SUBSCRIBE.split(",") if k.strip()]
 
 # Site availability (docs/design/goat-map-site-availability.md, step 1). A JSON
 # file declaring what exists where; empty means the endpoint reports an empty
@@ -200,6 +204,14 @@ def _session(endpoint: str, mode: str, tls: dict[str, str] | None = None) -> zen
     return zenoh.open(conf)
 
 
+def _null_island(track: dict[str, Any]) -> bool:
+    """A placeholder fix at exactly 0,0 (a radar's empty track slot), not a contact."""
+    try:
+        return float(track.get("lat")) == 0.0 and float(track.get("lon")) == 0.0
+    except (TypeError, ValueError):
+        return True
+
+
 class Service:
     def __init__(self, store: TrackStore, hub: Hub, loop: asyncio.AbstractEventLoop) -> None:
         self.store = store
@@ -264,11 +276,15 @@ class Service:
         while True:
             await asyncio.sleep(delay)
             reopened = False
+            # zenoh.open blocks until it connects or its open timeout expires
+            # (10 s). Run on the event loop, every failed retry froze every
+            # HTTP request for that long, so the opens go to a worker thread.
+            loop = asyncio.get_running_loop()
             if INGEST_ENDPOINT and self.ingest is None:
-                self._open_ingest()
+                await loop.run_in_executor(None, self._open_ingest)
                 reopened = self.ingest is not None
             if FABRIC_ENABLED and self.fabric is None:
-                self._open_fabric()
+                await loop.run_in_executor(None, self._open_fabric)
                 reopened = reopened or self.fabric is not None
             # Back off while a leg stays down so a long outage does not spin,
             # and snap back to a short interval once something reconnects.
@@ -292,8 +308,9 @@ class Service:
             return
 
         if STORE_FROM_FABRIC:
-            self.fabric.declare_subscriber(FABRIC_SUBSCRIBE, self._on_fabric)
-            LOG.info("store fed from fabric subscription %s", FABRIC_SUBSCRIBE)
+            for key_expr in FABRIC_SUBSCRIBES:
+                self.fabric.declare_subscriber(key_expr, self._on_fabric)
+                LOG.info("store fed from fabric subscription %s", key_expr)
 
         # Site-availability health join (step 2). Rides the SAME fabric session
         # and identity as the track leg — no second cert, no second subject. The
@@ -409,18 +426,49 @@ class Service:
     def _handle_fabric(self, key: str, payload: bytes) -> None:
         self.fabric_msgs += 1
         self.last_recv_at = time.monotonic()
+        anchor = key.split("/", 1)[0]
+        if payload.lstrip()[:1] == b"<":
+            track = self._fabric_cot(key, anchor, payload)
+            if track is not None:
+                self._store_fabric(anchor, track)
+            return
         try:
-            track = json.loads(payload)
+            body = json.loads(payload)
         except ValueError:
             return
-        if not isinstance(track, dict) or "id" not in track:
+        if not isinstance(body, dict):
             return
+        # goat.geo.trackset.v1: one stable key carrying every current track
+        # (the cardinality-budget pattern a sensor node publishes on the WAN).
+        tracks = body.get("tracks") if body.get("schema") == "goat.geo.trackset.v1" else [body]
+        for track in tracks or []:
+            if isinstance(track, dict) and "id" in track and not _null_island(track):
+                self._store_fabric(anchor, track)
+
+    def _fabric_cot(self, key: str, anchor: str, payload: bytes) -> dict[str, Any] | None:
+        """A CoT event read from the fabric, provenance from the key."""
+        parts = key.split("/")
+        org = self.orgs.get(anchor)
+        track = COT_PARSE(
+            payload,
+            kind="track" if "track" in key else parts[-1],
+            source={"sensor": parts[2] if len(parts) > 2 else parts[-1],
+                    "site": "", "node": parts[1] if len(parts) > 1 else "", "goatnet": GOATNET},
+            producer_anchor=anchor,
+            synthetic=bool(org["synthetic"]) if org else False,
+            org=org["display_name"] if org else None,
+        )
+        if track is None or _null_island(track):
+            self.unmappable += 1
+            return None
+        return track
+
+    def _store_fabric(self, anchor: str, track: dict[str, Any]) -> None:
 
         # PROVENANCE IS STRUCTURAL, NOT ASSERTED. The anchor is the key's first
         # chunk, and the router ACL admits writes nowhere but a peer's own
         # anchor -- so this cannot be forged by the payload. Whatever the body
         # claimed is discarded.
-        anchor = key.split("/", 1)[0]
         track["producer_anchor"] = anchor
 
         # Likewise `synthetic` and `org`: taken from the REGISTRY, never from
