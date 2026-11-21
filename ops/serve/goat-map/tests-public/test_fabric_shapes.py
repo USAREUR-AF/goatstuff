@@ -79,3 +79,16 @@ def test_cot_event_is_parsed_with_provenance_from_the_key(svc):
     assert len(store) == 1
     (t,) = store._tracks.values()
     assert t["producer_anchor"] == ANCHOR and t["id"].startswith(ANCHOR[:8] + ":")
+
+
+def test_every_shape_records_its_key_and_standard(svc):
+    _, s, store = svc
+    s._handle_fabric(f"{ANCHOR}/geo/track/v1/t1", json.dumps(_track("t1", 45.1, 29.6)).encode())
+    body = {"schema": "goat.geo.trackset.v1", "tracks": [_track("t2", 45.2, 29.7)]}
+    s._handle_fabric(f"{ANCHOR}/node/site/geo/v1", json.dumps(body).encode())
+    s._handle_fabric(f"{ANCHOR}/node/cot", _cot("u1", 44.3, 28.4))
+    origins = {t["id"].split(":", 1)[1]: t["origin"] for t in store._tracks.values()}
+    assert origins["t1"] == {"key": f"{ANCHOR}/geo/track/v1/t1", "standard": "goat.geo.track.v1 (JSON)"}
+    assert origins["t2"] == {"key": f"{ANCHOR}/node/site/geo/v1", "standard": "goat.geo.trackset.v1 (JSON)"}
+    (cot_id,) = [k for k in origins if k not in ("t1", "t2")]
+    assert origins[cot_id] == {"key": f"{ANCHOR}/node/cot", "standard": "Cursor-on-Target (CoT XML)"}
