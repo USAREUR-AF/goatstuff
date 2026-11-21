@@ -130,7 +130,7 @@ class Weekly(unittest.TestCase):
         rc, out = self.run_tool("list", "--workflows", os.path.join(REPO, ".github/workflows"))
         self.assertEqual(rc, 0, out)
         not_covered = [l.split()[-1] for l in out.splitlines() if l.startswith("NOT COVERED")]
-        with open(os.path.join(REPO, "ops/ci/weekly-path-filtered-exceptions.txt"), encoding="utf-8") as fh:
+        with open(os.path.join(REPO, ".github/weekly-path-filtered-exceptions.txt"), encoding="utf-8") as fh:
             allowed = set(fh.read().split())
         self.assertEqual(sorted(set(not_covered) - allowed), [], "add workflow_dispatch, or list the workflow with its reason")
 

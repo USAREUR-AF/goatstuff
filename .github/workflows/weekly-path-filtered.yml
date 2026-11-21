@@ -5,7 +5,7 @@ name: weekly-path-filtered
 # (a package withdrawn from a mirror, an image tag removed) breaks it silently until an
 # unrelated pull request touches those paths. This run finds it the same week and opens
 # one issue per red workflow; a workflow green again closes its issue. Path-filtered
-# workflows it cannot start are listed in ops/ci/weekly-path-filtered-exceptions.txt.
+# workflows it cannot start are listed in .github/weekly-path-filtered-exceptions.txt.
 
 on:
   schedule:
