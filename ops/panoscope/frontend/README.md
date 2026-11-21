@@ -77,10 +77,9 @@ resolve under `/access/`.
 | Edge opacity | Fades to ~0.08 when projected EPS approaches zero |
 | Packet dot | One per `publish_sampled` event; travels source → sink in 800 ms; colored by the edge's schema family |
 
-## What this does not do (v1)
+## Initial frontend scope
 
-Per `docs/design/panoscope.md`
-§"v1 scope cuts":
+The initial frontend scope excluded:
 
 - No lineage edges (gated on Block 23 schema discipline).
 - No timeline scrub / replay (gated on Block 37 replay substrate).
