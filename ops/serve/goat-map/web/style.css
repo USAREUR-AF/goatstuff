@@ -439,3 +439,75 @@ html, body {
   background: rgba(100, 116, 139, 0.10);
   color: #94a3b8; font-size: 11px; line-height: 1.45;
 }
+
+/* ---- Layout regions --------------------------------------------------------
+   Every overlay belongs to one region, and each region is a flex container, so
+   a banner that appears pushes its neighbours instead of landing on them.
+     toolbar   under the bar, left; stops short of the right panel
+     notices   centred under the toolbar; banners stack top to bottom
+     left-col  under the toolbar, left; sensor readout then the detail card
+     panel     right, under the bar (Tracks or Readiness)
+   The rules below override the per-element absolute positions above. */
+:root { --toolbar-top: 52px; --below-toolbar: 96px; --panel-w: 268px; }
+
+.toolbar {
+  position: absolute; z-index: 7;
+  top: var(--toolbar-top); left: 16px; right: calc(var(--panel-w) + 32px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+.toolbar > * { pointer-events: auto; }
+.toolbar .mode-tabs, .toolbar .lasso-controls { position: static; top: auto; left: auto; right: auto; }
+
+.history-ctl {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 4px 3px 12px; border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.45); background: rgba(8, 34, 52, 0.92);
+  color: #38bdf8; font-size: 11.5px; letter-spacing: 0.02em; backdrop-filter: blur(12px);
+}
+.history-ctl select {
+  background: transparent; color: var(--ink); border: 0; font: inherit;
+  padding: 3px 6px; border-radius: 999px; cursor: pointer;
+}
+.history-ctl select:focus-visible { outline: 2px solid var(--aff-friend); }
+.history-ctl select option { background: #0f1722; color: var(--ink); }
+
+.notices {
+  position: absolute; z-index: 6;
+  top: var(--below-toolbar); left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: min(560px, calc(100vw - 2 * (var(--panel-w) + 48px)));
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none;
+}
+.notices > * { pointer-events: auto; max-width: 100%; }
+.notices .provenance, .notices .provenance.scope, .notices .provenance.lasso {
+  position: static; top: auto; left: auto; right: auto; transform: none;
+}
+.notices .provenance { white-space: normal; text-align: center; }
+
+.left-col {
+  position: absolute; z-index: 5;
+  top: var(--below-toolbar); left: 16px; bottom: 150px; width: 296px;
+  display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
+  pointer-events: none;
+}
+.left-col > * { pointer-events: auto; flex: none; }
+.left-col .detail, .left-col .readout.sensor {
+  position: static; top: auto; left: auto; width: auto; max-width: none;
+}
+
+.panel { top: var(--toolbar-top); bottom: 150px; }  /* clears the zoom and scale controls */
+
+/* History readout: informational, square-edged like every other readout. */
+.readout.history {
+  padding: 5px 10px; border-radius: 2px; border: 0; border-left: 3px solid #38bdf8;
+  background: rgba(10, 14, 20, 0.86); backdrop-filter: blur(12px);
+  color: var(--ink-dim); font-size: 11.5px; cursor: default;
+}
+
+@media (max-width: 1000px) {
+  .toolbar { right: 16px; }
+  .panel { top: 132px; }
+  :root { --below-toolbar: 132px; }
+  .notices { max-width: calc(100vw - 32px); }
+}
