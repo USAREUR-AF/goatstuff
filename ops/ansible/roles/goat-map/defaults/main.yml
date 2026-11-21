@@ -33,11 +33,12 @@ goat_map_oidc_host_entry: "invalid.invalid:127.0.0.1"
 goat_map_oauth2_client_id: oauth2-proxy-goat-map
 goat_map_oauth2_allowed_groups: ""
 
-# Secrets come from the deploying environment. When one is empty the role keeps
-# the copy already on the host and fails if there is none.
-goat_map_oauth2_client_secret: "{{ lookup('env', 'GOATMAP_OAUTH2_CLIENT_SECRET') }}"
-goat_map_oauth2_cookie_secret: "{{ lookup('env', 'GOATMAP_OAUTH2_COOKIE_SECRET') }}"
-goat_map_portal_token: "{{ lookup('env', 'GOATMAP_PORTAL_TOKEN') }}"
+# Secrets. Each goatnet's group_vars set these from its own credential
+# references (an env lookup of <GOATNET>_GOAT_MAP_*). The fence secrets are
+# required; the portal token is optional (without it producers show unverified).
+goat_map_oauth2_client_secret: ""
+goat_map_oauth2_cookie_secret: ""
+goat_map_portal_token: ""
 
 # The simulated-track publisher. Off unless a goatnet has no real producer.
 goat_map_synth: false
