@@ -1,0 +1,88 @@
+# Rendered by the goat-map role. Do not edit on the host.
+services:
+  goat-map:
+    image: "{{ goat_map_image }}"
+    container_name: "{{ goat_map_container }}"
+    restart: unless-stopped
+    env_file:
+      - goat-map.env
+      - secrets/portal.env
+    volumes:
+      - "{{ goat_map_cert_dir }}:/certs:ro"
+      - "./estate:/estate:ro"
+      - "{{ goat_map_attest_dir }}:/attest:rw"
+{% for f in goat_map_basemaps %}
+      - "./basemap/{{ f | basename }}:/app/web/basemap/{{ f | basename }}:ro"
+{% endfor %}
+{% if not goat_map_fenced | bool %}
+    ports:
+      - "{{ goat_map_bind_ip }}:{{ goat_map_port }}:8080"
+{% endif %}
+    mem_limit: 256m
+    cpus: 0.50
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+{% if goat_map_fenced | bool %}
+
+  oauth2-proxy:
+    image: "{{ goat_map_oauth2_proxy_image }}"
+    container_name: "{{ goat_map_oauth2_container }}"
+    restart: unless-stopped
+    depends_on:
+      - goat-map
+    extra_hosts:
+      - "{{ goat_map_oidc_host_entry }}"
+    env_file:
+      - secrets/oauth2-proxy.env
+    ports:
+      - "{{ goat_map_bind_ip }}:{{ goat_map_port }}:4180"
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+{% endif %}
+{% if goat_map_synth | bool %}
+
+  synth:
+    image: "{{ goat_map_image }}"
+    container_name: goat-map-synth
+    restart: unless-stopped
+    command:
+      - python
+      - tools/synth_tracks.py
+      - --bundle
+      - /synth-certs
+      - --endpoint
+      - "{{ goat_map_env.GOATMAP_FABRIC_ENDPOINT }}"
+      - --center
+      - "{{ goat_map_env.GOATMAP_CENTER }}"
+      - --radius-km
+      - "{{ goat_map_synth_radius_km }}"
+      - --tracks
+      - "{{ goat_map_synth_tracks }}"
+      - --site
+      - "{{ goat_map_env.GOATMAP_SITE }}"
+      - --seed
+      - "{{ goat_map_synth_seed }}"
+    volumes:
+      - "{{ goat_map_synth_cert_dir }}:/synth-certs:ro"
+    mem_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+{% endif %}

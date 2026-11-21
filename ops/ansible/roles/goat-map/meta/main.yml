@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: goat_map
+  description: >-
+    goat-map, the geographic track surface (docs/design/goat-map.md), from a
+    pinned CI image, behind its oauth2-proxy fence.
+
+# Every deploying role carries a rollback ledger (ADR 1060), so a bad image is
+# one `rollback.sh goat-map` away.
+dependencies:
+  - role: rollback-ledger
+    vars:
+      rollback_component: goat-map
+      rollback_artifact_type: image
+      rollback_ref: "{{ goat_map_image }}"
+    when: inventory_hostname == goat_map_host

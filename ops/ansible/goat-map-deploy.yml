@@ -1,0 +1,25 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy goat-map, the geographic track surface (docs/design/goat-map.md).
+#
+#   cd <assembled tree>/ops/ansible
+#   ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#     goat-map-deploy.yml -e target=<goatnet>_hosts
+#
+# Normally run by ops/scripts/deploy-component.sh goat-map --goatnet <g>, which
+# reads the image from ops/pins/fleet-pins.yaml and checks the deploy ledger.
+#
+# The role runs on the one host named by goat_map_host and ends every other host
+# in the group, so a goatnet whose group holds an active/standby pair runs one map.
+#
+# Before the first run on a host, its fabric leaf (CN <anchor>.g1) must be at
+# goat_map_cert_dir. The role checks the CN and stops on a mismatch: the router
+# denies any other name silently.
+
+- name: Deploy goat-map
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: false
+  roles:
+    - role: goat-map
