@@ -49,10 +49,16 @@
     <button id="lasso-view" type="button" title="Search everything currently on screen">Search visible area</button>
     <button id="lasso-clear" type="button" title="Remove the drawn area and its results">Clear</button>
   </div>
+  <div id="viewer" class="viewer" hidden>
+    <span id="viewer-who"></span>
+    <span id="viewer-view" class="viewer-view"></span>
+    <a id="viewer-signout" href="/oauth2/sign_out?rd=%2F" hidden>Sign out</a>
+  </div>
 </div>
 
 <div class="notices">
   <div id="scope-banner" class="provenance scope" hidden></div>
+  <div id="access-note" class="readout access" hidden></div>
   <div id="provenance" class="provenance" hidden></div>
   <div id="history-note" class="readout history" hidden></div>
   <div id="lasso-hint" class="provenance lasso" hidden></div>
@@ -94,6 +100,7 @@
 <script src="vendor/maplibre-gl.js"></script>
 <script src="vendor/pmtiles.js"></script>
 <script src="overlay.js"></script>
+<script src="viewer.js"></script>
 <script src="app.js"></script>
 <script src="lasso.js"></script>
 <script src="readiness.js"></script>
