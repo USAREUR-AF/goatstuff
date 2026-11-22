@@ -122,10 +122,11 @@
   ansible.builtin.assert:
     that:
       - goat_map_oauth2_client_secret | length >= 32
-      - goat_map_oauth2_cookie_secret | length >= 16
+      - (goat_map_oauth2_cookie_secret | length) in [16, 24, 32]
     fail_msg: >-
       The fence needs goat_map_oauth2_client_secret (32+ characters) and
-      goat_map_oauth2_cookie_secret (16+ characters), set in
+      goat_map_oauth2_cookie_secret (exactly 16, 24 or 32 characters; oauth2-proxy
+      crash-loops on any other length), set in
       group_vars/<group>/goat-map.yml from the goatnet's credential references.
   no_log: true
   when: goat_map_fenced | bool
