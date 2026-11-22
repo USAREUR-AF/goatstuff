@@ -31,8 +31,18 @@ on the mesh (a warrant rule).
 | `server.go` | the API, `/healthz`, `/metrics`, the embedded page |
 | `web/` | the page: plain HTML, CSS and JavaScript, no framework, no build step |
 
+Tests, in three layers (all run in CI, `.github/workflows/goat-feeds.yml`):
+
+| Layer | What it covers | Run |
+|---|---|---|
+| Unit | config, permissions for every action, role and state, validation, health, pipe commands, supervisor with a fake pipe | `go test ./...` |
+| Integration | the Postgres store (including migration from the first schema) and the HTTP API over it | `GOAT_FEEDS_TEST_DSN=postgres://… go test -p 1 -run 'TestPG\|TestAPI' ./...` |
+| Browser (e2e) | the real binary and page in Chromium: send and receive flows, approvals, actions, audit; no console errors, no missing-value text, no overflow at 390 and 1440 px, light and dark, keyboard reach | `go build -o goat-feeds . && cd e2e && npm ci && npx playwright install chromium && GOAT_FEEDS_E2E_DSN=postgres://… npx playwright test` |
+
+The integration and browser tests wipe the database they are given.
+
 ```
-go test ./...                       # policy, validation, grouping, restarts, health, expiry
+go test ./...                       # unit layer
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o goat-feeds .
 ```
 
