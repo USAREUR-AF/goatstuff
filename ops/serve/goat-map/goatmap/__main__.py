@@ -827,6 +827,21 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
             site_orgs={s.site_id: getattr(s, "org", "") for s in site_inventory},
         )
 
+    async def whoami(request: web.Request) -> web.Response:
+        # Who the map thinks the viewer is and how much they may see, so the page
+        # can say so. The groups behind it ride the sign-in session, which the
+        # proxy keeps for hours: a person granted access since signing in still
+        # gets the old view until they sign out, and the page has to tell them.
+        v = _viewer(request)
+        fenced = any(k.lower() == scope_mod.EMAIL_HEADER for k in request.headers)
+        return web.json_response({
+            "email": v.email or None,
+            "view": v.kind,                       # full | scoped | floor
+            "enforced": RBAC_MODE == scope_mod.ENFORCE,
+            "grants": len(v.orgs) + len(v.producers),
+            "sign_out": "/oauth2/sign_out?rd=%2F" if fenced else None,
+        })
+
     async def tracks(request: web.Request) -> web.Response:
         return web.json_response(
             scope_mod.track_envelope(store.snapshot(), _viewer(request), svc.stats())
@@ -1247,6 +1262,7 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
     app.router.add_get("/api/find", find)
     app.router.add_get("/api/sites", sites)
     app.router.add_get("/api/meta", meta)
+    app.router.add_get("/api/whoami", whoami)
     app.router.add_get("/api/tracks", tracks)
     app.router.add_get("/api/history", history)
     app.router.add_get("/api/stream", stream)

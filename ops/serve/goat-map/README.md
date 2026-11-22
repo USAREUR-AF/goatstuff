@@ -84,6 +84,7 @@ downstream.
 | `/` | the map |
 | `/api/meta` | schema, source labels, subscribed key, publish prefix, TTL, initial view |
 | `/api/tracks` | full snapshot + counters |
+| `/api/whoami` | the signed-in viewer's email, view level (`full`, `scoped` with a grant count, or `floor`) and the sign-out link; drives the toolbar's viewer chip and the no-access notice |
 | `/api/history?window_s=N` | every track's path over the last N seconds (60 s up to `GOATMAP_HISTORY_S`), scoped like `/api/tracks`; drawn by the History control |
 | `/api/stream` | SSE: `snapshot`, `upsert`, `expire`, `stats` |
 | `/healthz` | `status: up` plus counters, `store_source` and `fabric` state |
