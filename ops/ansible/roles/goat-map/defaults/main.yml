@@ -9,7 +9,7 @@ goat_map_host: ""
 goat_map_compose_dir: /opt/goat-map
 goat_map_container: goat-map
 goat_map_oauth2_container: oauth2-proxy-goat-map
-goat_map_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.7.1"
+goat_map_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.7.1@sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3"
 
 # Where the fence listens. Must be the host's mesh IP: mesh membership is the
 # outer gate, and 0.0.0.0 would also publish the surface on the host's LAN.
