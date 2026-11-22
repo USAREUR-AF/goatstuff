@@ -17,7 +17,7 @@
   </div>
   <nav id="nav" aria-label="Sections">
     <a href="#feeds" data-view="feeds">Feeds</a>
-    <a href="#request" data-view="request">Request a feed</a>
+    <a href="#request" data-view="request">New feed</a>
     <a href="#approvals" data-view="approvals" id="nav-approvals" hidden>Approvals <span class="count" id="approvals-count"></span></a>
     <a href="#audit" data-view="audit">Audit</a>
   </nav>
@@ -35,9 +35,9 @@
     <div class="view-head">
       <div>
         <h1>Feeds</h1>
-        <p class="lede">Each feed sends one fabric topic, converted, to one system on the mesh.</p>
+        <p class="lede">An OUT feed sends a fabric topic, converted, to a system on the mesh. An IN feed receives a system's data and publishes it on the fabric.</p>
       </div>
-      <a class="btn primary" href="#request">Request a feed</a>
+      <div class="row"><a class="btn" href="#request?dir=in">Receive a system's data</a><a class="btn primary" href="#request?dir=out">Send a topic</a></div>
     </div>
     <div class="toolbar">
       <div class="chips" role="group" aria-label="Filter">
@@ -56,12 +56,13 @@
   <section class="view narrow">
     <div class="view-head">
       <div>
-        <h1>Request a feed</h1>
-        <p class="lede">Choose what to send, where, and how. You'll see before submitting whether it starts at once or waits for an approver.</p>
+        <h1>New feed</h1>
+        <p class="lede">You'll see before submitting whether it starts at once or waits for an approver.</p>
       </div>
     </div>
+    <div class="seg dirseg" id="dir-seg" role="group" aria-label="Direction"></div>
     <ol class="steps" id="steps">
-      <li data-step="1">Topic</li><li data-step="2">Destination</li><li data-step="3">Delivery</li><li data-step="4">Review</li>
+      <li data-step="1"></li><li data-step="2"></li><li data-step="3"></li><li data-step="4"></li>
     </ol>
     <div id="step-body"></div>
     <div class="step-nav">
@@ -108,7 +109,7 @@
     </div>
     <div class="grid2">
       <div class="panel">
-        <h2>Delivery</h2>
+        <h2 id="flow-title">Delivery</h2>
         <dl class="stats" id="feed-stats"></dl>
         <div class="check">
           <button class="btn" id="check-btn" type="button">Check destination</button>

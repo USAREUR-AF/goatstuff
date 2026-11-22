@@ -119,6 +119,11 @@ type FeedRequest struct {
 	Transport  string `json:"transport"`
 	Days       any    `json:"days"`
 	Purpose    string `json:"purpose"`
+	// Receive side (direction "in"): FormatID names an intake format, Label names the
+	// published feed, DestName/DestIP are the sending system, Port is on this core node.
+	Direction string `json:"direction"`
+	FormatID  string `json:"format_id"`
+	Label     string `json:"label"`
 }
 
 func toInt(v any) (int, bool) {
@@ -134,6 +139,12 @@ func toInt(v any) (int, bool) {
 
 // ValidateRequest checks a request and returns the feed to store with its first state.
 func ValidateRequest(ctx context.Context, req FeedRequest, v *Viewer, cfg *Config, reg Registry, now time.Time) (Feed, error) {
+	if req.Direction == "in" {
+		return validateIntake(ctx, req, v, cfg, reg, now)
+	}
+	if req.Direction != "" && req.Direction != "out" {
+		return Feed{}, refuse(400, "Direction is out (send a topic) or in (receive a system's data).")
+	}
 	topic := cfg.Topic(req.TopicID)
 	if topic == nil {
 		return Feed{}, refuse(400, "Choose a topic from the list.")
@@ -191,7 +202,8 @@ func ValidateRequest(ctx context.Context, req FeedRequest, v *Viewer, cfg *Confi
 		return Feed{}, refuse(400, "Keep the purpose under 500 characters.")
 	}
 	f := Feed{TopicID: topic.ID, OutputID: out.ID, DestName: name, DestIP: ip.String(), DestPeerID: req.DestPeerID,
-		Port: port, Transport: transport, Purpose: purpose, Owner: v.Email, EndAt: now.Add(time.Duration(days) * 24 * time.Hour)}
+		Port: port, Transport: transport, Purpose: purpose, Owner: v.Email, EndAt: now.Add(time.Duration(days) * 24 * time.Hour),
+		Direction: "out"}
 	// The first state. Real data needs an admin; a synthetic topic may be self-service.
 	switch {
 	case v.IsAdmin:
@@ -208,4 +220,78 @@ func ValidateRequest(ctx context.Context, req FeedRequest, v *Viewer, cfg *Confi
 
 func WaitsFor(cfg *Config) string {
 	return "a tactical or platform admin (" + strings.Join(append(append([]string{}, cfg.TacticalGroups...), cfg.PlatformGroups...), ", ") + ")"
+}
+
+// validateIntake checks a request to receive a system's data on this core node.
+func validateIntake(ctx context.Context, req FeedRequest, v *Viewer, cfg *Config, reg Registry, now time.Time) (Feed, error) {
+	in := cfg.Intake
+	if !in.Enabled() {
+		return Feed{}, refuse(400, "This site does not receive data from systems yet: no receive ports are configured.")
+	}
+	format := in.Format(req.FormatID)
+	if format == nil {
+		return Feed{}, refuse(400, "Choose the standard the system sends.")
+	}
+	label := strings.TrimSpace(req.Label)
+	if !nameRE.MatchString(label) {
+		return Feed{}, refuse(400, "Name what the system sends, for example \"Blue C-UAS drone position\" (letters, digits, spaces, . _ - / ( )).")
+	}
+	name := strings.TrimSpace(req.DestName)
+	if !nameRE.MatchString(name) {
+		return Feed{}, refuse(400, "Give the sending system a name (letters, digits, spaces, . _ - / ( )).")
+	}
+	ip, err := netip.ParseAddr(strings.TrimSpace(req.DestIP))
+	if err != nil {
+		return Feed{}, refuse(400, "The sending system's address is not an IP address.")
+	}
+	if !cfg.allowed.Contains(ip) {
+		return Feed{}, refuse(400, "The sending system must be on the mesh (%s); %s is not.", cfg.AllowedCIDR, ip)
+	}
+	port, ok := toInt(req.Port)
+	if !ok || !in.HasPort(port) {
+		return Feed{}, refuse(400, "Choose one of this site's receive ports: %v.", in.Ports)
+	}
+	transport := "udp"
+	if req.Transport != "" && req.Transport != "udp" {
+		return Feed{}, refuse(400, "Receiving is over UDP.")
+	}
+	used, err := reg.ListenPortInUse(ctx, port, transport)
+	if err != nil {
+		return Feed{}, err
+	}
+	if used {
+		return Feed{}, refuse(409, "Receive port %d is already taken by another feed. Choose a free one.", port)
+	}
+	days := cfg.DefaultDays
+	if req.Days != nil && req.Days != "" {
+		if days, ok = toInt(req.Days); !ok {
+			return Feed{}, refuse(400, "The end date must be a number of days.")
+		}
+	}
+	if days < 1 || days > cfg.MaxDays {
+		return Feed{}, refuse(400, "A feed runs for 1 to %d days, then is renewed.", cfg.MaxDays)
+	}
+	purpose := strings.TrimSpace(req.Purpose)
+	if len(purpose) < 3 {
+		return Feed{}, refuse(400, "Say what the data is and who uses it, so an approver can decide.")
+	}
+	if len(purpose) > 500 {
+		return Feed{}, refuse(400, "Keep the purpose under 500 characters.")
+	}
+	f := Feed{TopicID: "intake", OutputID: format.ID, DestName: name, DestIP: ip.String(), DestPeerID: req.DestPeerID,
+		Port: port, Transport: transport, Purpose: purpose, Owner: v.Email, EndAt: now.Add(time.Duration(days) * 24 * time.Hour),
+		Direction: "in", Label: label}
+	// Data from a system is real data: an admin switches it on; anyone else's request waits.
+	if v.IsAdmin {
+		f.Status, f.DecidedBy, f.DecidedAt = "active", v.Email, &now
+		f.DecisionNote = "switched on by its requester (" + v.Role + ")"
+	} else {
+		f.Status = "pending"
+	}
+	return f, nil
+}
+
+// PublishedKey is where a received feed is published on the fabric.
+func PublishedKey(cfg *Config, f Feed) string {
+	return strings.TrimRight(cfg.Intake.KeyPrefix, "/") + "/" + f.ID
 }

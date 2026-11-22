@@ -3,7 +3,7 @@
 // Every value from the server is placed with textContent; nothing is parsed as HTML.
 "use strict";
 
-const state = { me: null, catalog: [], feeds: [], filter: "mine", search: "", timer: null, req: null };
+const state = { me: null, catalog: [], intake: { enabled: false }, feeds: [], filter: "mine", search: "", timer: null, req: null };
 
 // ---------- small helpers ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -52,12 +52,14 @@ function daysLeft(s) { const d = Math.round((new Date(s) - Date.now()) / 8640000
 const health = (h) => el("span", { class: `h ${h}`, text: h });
 const cls = (c) => el("span", { class: `cls ${c}`, text: c === "real" ? "Real data" : "Synthetic" });
 const dest = (f) => `${f.dest_name} · ${f.dest_ip}:${f.port}/${f.transport}`;
+const isIn = (f) => f.direction === "in";
+const title = (f) => isIn(f) ? `${f.topic_label}  ←  ${f.dest_name}` : `${f.topic_label || f.topic_id}  →  ${f.dest_name}`;
 const verb = { approve: "Approve", decline: "Decline", pause: "Pause", resume: "Resume", renew: "Renew", remove: "Remove", check: "Check destination" };
 
 // ---------- routing ----------
 function route() {
   clearInterval(state.timer);
-  const h = (location.hash || "#feeds").slice(1);
+  const h = (location.hash || "#feeds").slice(1).split("?")[0];
   const [view, id] = h.split("/");
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.dataset.view === view || (view === "feed" && a.dataset.view === "feeds")));
   const main = $("#main");
@@ -80,8 +82,12 @@ async function loadMe() {
   $("#who").replaceChildren(el("b", { text: v.email }), el("span", { class: "role", text: roleText }), el("br"),
     el("a", { href: "/oauth2/sign_out", text: "Sign out" }));
   $("#nav-approvals").hidden = !v.is_admin;
-  const cat = await api("/api/catalog");
+  await loadCatalog();
+}
+async function loadCatalog() {
+  const [cat, intake] = await Promise.all([api("/api/catalog"), api("/api/intake")]);
   state.catalog = cat.topics || [];
+  state.intake = intake;
 }
 async function refreshFeeds() {
   const d = await api("/api/feeds");
@@ -102,16 +108,19 @@ function matches(f) {
   if (state.filter === "all" && f.status === "removed") return false;
   const q = state.search.toLowerCase();
   if (!q) return true;
-  return [f.topic_label, f.dest_name, f.dest_ip, String(f.port), f.owner, f.output_label, f.id].some((x) => (x || "").toLowerCase().includes(q));
+  return [f.topic_label, f.dest_name, f.dest_ip, String(f.port), f.owner, f.output_label, f.id, f.label].some((x) => (x || "").toLowerCase().includes(q));
 }
 function feedCard(f) {
   const d = f.delivery;
-  const side = f.status === "active" && d && d.stats ? `${d.stats.in} in · ${d.sent_estimate} sent` : f.status === "pending" ? `asked ${ago(f.created_at)}` : "";
+  const side = f.status === "active" && d && d.stats ? (isIn(f) ? `${d.stats.in} received · ${d.stats.converted} published` : `${d.stats.in} in · ${d.sent_estimate} sent`)
+    : f.status === "pending" ? `asked ${ago(f.created_at)}` : "";
+  const line2 = isIn(f) ? `${f.output_label} from ${f.dest_ip}, received on ${f.listen_at || "port " + f.port} · ${f.owner} · ${daysLeft(f.end_at)}`
+    : `${f.output_label || f.output_id} to ${f.dest_ip}:${f.port}/${f.transport} · ${f.owner} · ${daysLeft(f.end_at)}`;
   return el("a", { class: "card", href: `#feed/${f.id}` },
     health(f.health),
     el("div", { class: "main" },
-      el("div", { class: "line1", text: `${f.topic_label || f.topic_id}  →  ${f.dest_name}` }),
-      el("div", { class: "line2", text: `${f.output_label || f.output_id} to ${f.dest_ip}:${f.port}/${f.transport} · ${f.owner} · ${daysLeft(f.end_at)}` }),
+      el("div", { class: "line1" }, el("span", { class: "dir", text: isIn(f) ? "IN" : "OUT" }), title(f)),
+      el("div", { class: "line2", text: line2 }),
       f.health_note ? el("div", { class: "line2", text: f.health_note }) : null),
     el("div", { class: "side" }, cls(f.data_class), el("br"), side));
 }
@@ -120,7 +129,7 @@ function renderList() {
   if (!list) return;
   const rows = state.feeds.filter(matches);
   list.replaceChildren(...(rows.length ? rows.map(feedCard) : [el("p", { class: "empty", text:
-    state.filter === "mine" ? "You have no feeds yet. Request one to send a topic to a system on the mesh." : "No feeds match." })]));
+    state.filter === "mine" ? "You have no feeds yet. Request one to send a topic to a system, or to bring a system's data into the fabric." : "No feeds match." })]));
   document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.filter === state.filter));
 }
 async function showFeeds(main) {
@@ -136,18 +145,40 @@ async function showFeeds(main) {
 }
 
 // ---------- request flow ----------
-function newReq() {
-  return { step: 1, topic: null, output: null, peer: null, manual: false, dest_name: "", dest_ip: "",
+function newReq(dir) {
+  return { dir: dir || "out", step: 1, topic: null, output: null, format: null, label: "", peer: null, manual: false, dest_name: "", dest_ip: "",
            transport: "udp", port: "", days: state.me.default_days, purpose: "", error: "" };
 }
-function showRequest(main) {
+const STEP_NAMES = { out: ["Topic", "Destination", "Delivery", "Review"], in: ["What it sends", "Sending system", "Receive port", "Review"] };
+async function showRequest(main) {
   mount(main, "#tpl-request");
-  if (!state.req) state.req = newReq();
+  try { await loadCatalog(); } catch { /* keep the last copy */ }
+  const want = new URLSearchParams(location.hash.split("?")[1] || "").get("dir");
+  if (!state.req || (want && want !== state.req.dir)) state.req = newReq(want);
+  const seg = $("#dir-seg");
+  seg.className = "seg dirseg";
+  seg.replaceChildren(...[["out", "Send a topic to a system"], ["in", "Receive a system's data"]].map(([d, label]) => el("button", {
+    type: "button", class: state.req.dir === d ? "on" : "", text: label,
+    onclick: () => { if (state.req.dir !== d) { state.req = newReq(d); seg.querySelectorAll("button").forEach((b, i) => b.classList.toggle("on", ["out", "in"][i] === d)); renderStep(); } } })));
   $("#step-back").addEventListener("click", () => { state.req.error = ""; state.req.step = Math.max(1, state.req.step - 1); renderStep(); });
   $("#step-next").addEventListener("click", nextStep);
   renderStep();
 }
 function stepValid(r) {
+  if (r.dir === "in") {
+    if (r.step === 1) {
+      if (!r.format) return "Choose the standard the system sends.";
+      return r.label.trim().length >= 3 ? "" : "Name what the system sends, for example \"Blue C-UAS drone position\".";
+    }
+    if (r.step === 2) {
+      if (!r.dest_name.trim()) return "Choose the sending system, or enter its name.";
+      if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(r.dest_ip.trim())) return "Enter the sending system's mesh IP address.";
+      return "";
+    }
+    if (r.step === 3) return r.port ? "" : "Choose a free receive port.";
+    if (r.step === 4) return r.purpose.trim().length >= 3 ? "" : "Say what the data is and who uses it, so an approver can decide.";
+    return "";
+  }
   if (r.step === 1) return r.topic ? "" : "Choose a topic.";
   if (r.step === 2) {
     if (!r.dest_name.trim()) return "Choose the receiving system, or enter its name.";
@@ -171,11 +202,13 @@ async function nextStep() {
   if (r.step < 4) { r.step++; return renderStep(); }
   $("#step-next").disabled = true;
   try {
-    const f = await api("/api/feeds", { body: { topic_id: r.topic.id, output_id: r.output.id, dest_name: r.dest_name.trim(),
-      dest_ip: r.dest_ip.trim(), dest_peer_id: r.peer ? r.peer.id : "", port: Number(r.port), transport: r.transport,
-      days: Number(r.days), purpose: r.purpose.trim() } });
+    const common = { dest_name: r.dest_name.trim(), dest_ip: r.dest_ip.trim(), dest_peer_id: r.peer ? r.peer.id : "",
+      port: Number(r.port), days: Number(r.days), purpose: r.purpose.trim() };
+    const body = r.dir === "in" ? { ...common, direction: "in", format_id: r.format.id, label: r.label.trim(), transport: "udp" }
+      : { ...common, direction: "out", topic_id: r.topic.id, output_id: r.output.id, transport: r.transport };
+    const f = await api("/api/feeds", { body });
     state.req = null;
-    toast(f.status === "active" ? "Feed is on. Delivery starts within a few seconds." : "Request sent. It waits for an approver.");
+    toast(f.status === "active" ? (isIn(f) ? "Receiving is on. The system can send now." : "Feed is on. Delivery starts within a few seconds.") : "Request sent. It waits for an approver.");
     location.hash = `#feed/${f.id}`;
   } catch (e) {
     r.error = e.message;
@@ -187,6 +220,7 @@ function renderStep() {
   const r = state.req;
   document.querySelectorAll("#steps li").forEach((li) => {
     const n = Number(li.dataset.step);
+    li.textContent = STEP_NAMES[r.dir][n - 1];
     li.classList.toggle("on", n === r.step);
     li.classList.toggle("done", n < r.step);
   });
@@ -195,10 +229,14 @@ function renderStep() {
   $("#step-next").disabled = false;
   const body = $("#step-body");
   const err = r.error ? el("div", { class: "err", role: "alert", text: r.error }) : null;
-  body.replaceChildren(err, ...[stepTopic, stepDest, stepDelivery, stepReview][r.step - 1](r));
+  const steps = r.dir === "in" ? [stepInWhat, stepDest, stepInPort, stepInReview] : [stepTopic, stepDest, stepDelivery, stepReview];
+  if (r.dir === "in" && !state.intake.enabled) {
+    return body.replaceChildren(el("p", { class: "empty", text: "This site does not receive data from systems yet. A platform admin sets its receive ports." }));
+  }
+  body.replaceChildren(...[err, ...steps[r.step - 1](r)].filter(Boolean));
 }
 function stepTopic(r) {
-  const groups = [["processed", "Processed pictures (correlated, fused, filtered)"], ["raw", "Raw sensor topics"]];
+  const groups = [["processed", "Processed pictures (correlated, fused, filtered)"], ["raw", "Raw sensor topics"], ["published", "Received from systems (published by goat-feeds)"]];
   const out = [];
   for (const [kind, label] of groups) {
     const topics = state.catalog.filter((t) => t.kind === kind);
@@ -234,7 +272,7 @@ function stepDest(r) {
     };
     let t;
     search.addEventListener("input", () => { clearTimeout(t); t = setTimeout(run, 250); });
-    out.push(el("div", { class: "field" }, el("label", { text: "Receiving system" }), search,
+    out.push(el("div", { class: "field" }, el("label", { text: r.dir === "in" ? "Sending system" : "Receiving system" }), search,
       el("span", { class: "hint", text: "Systems on this goatnet's mesh. The address fills in from the one you choose." })));
     if (r.peer) out.push(el("div", { class: "next-box" }, "Selected: ", el("b", { text: r.peer.name }), ` (${r.peer.ip})`));
     out.push(results);
@@ -243,7 +281,7 @@ function stepDest(r) {
   } else {
     const name = el("input", { type: "text", value: r.dest_name, id: "dest-name", oninput: (e) => (r.dest_name = e.target.value) });
     const ip = el("input", { type: "text", value: r.dest_ip, id: "dest-ip", placeholder: "100.64.x.y", oninput: (e) => { r.dest_ip = e.target.value; r.peer = null; } });
-    out.push(el("div", { class: "field" }, el("label", { for: "dest-name", text: "Receiving system's name" }), name,
+    out.push(el("div", { class: "field" }, el("label", { for: "dest-name", text: r.dir === "in" ? "Sending system's name" : "Receiving system's name" }), name,
       el("span", { class: "hint", text: "As people know it, for example the NetBird peer name." })));
     out.push(el("div", { class: "field" }, el("label", { for: "dest-ip", text: "Its mesh (NetBird) IP address" }), ip));
     if (state.me.peers_enabled) out.push(el("p", {}, el("a", { href: "#request", onclick: (e) => { e.preventDefault(); r.manual = false; renderStep(); }, text: "Search the mesh instead" })));
@@ -287,6 +325,56 @@ function stepReview(r) {
     next];
 }
 
+// ---------- receive steps ----------
+function stepInWhat(r) {
+  const label = el("input", { type: "text", id: "in-label", value: r.label, placeholder: "Blue C-UAS drone position", oninput: (e) => (r.label = e.target.value) });
+  return [
+    el("div", { class: "field" }, el("label", { for: "in-label", text: "What does the system send?" }), label,
+      el("span", { class: "hint", text: "This becomes the topic's name in the catalog, so others can find it and request it." })),
+    el("div", { class: "group-label", text: "The standard it sends" }),
+    el("div", { class: "picks" }, state.intake.formats.map((f) => el("button", {
+      type: "button", class: "pick" + (r.format && r.format.id === f.id ? " on" : ""), onclick: () => { r.format = f; renderStep(); } },
+      el("span", { class: "t", text: f.label }),
+      f.note ? el("span", { class: "d", text: f.note }) : null,
+      el("span", { class: "d mono", text: f.from_format })))),
+    el("p", { class: "hint", text: "Not sure what it sends? A platform admin can run a capture receiver to identify it first." })];
+}
+function stepInPort(r) {
+  const it = state.intake;
+  const free = it.ports.filter((p) => p.free);
+  if (!r.port && free.length) r.port = String(free[0].port);
+  return [
+    el("div", { class: "group-label", text: `Receive port on this site's core node (${it.listen_ip})` }),
+    el("div", { class: "seg wrap", role: "group", "aria-label": "Receive port" }, it.ports.map((p) => el("button", {
+      type: "button", class: String(p.port) === String(r.port) ? "on" : "", disabled: !p.free,
+      title: p.free ? "free" : "taken by another feed", onclick: () => { r.port = String(p.port); renderStep(); },
+      text: p.free ? String(p.port) : `${p.port} (taken)` }))),
+    free.length ? null : el("div", { class: "err", text: "Every receive port is taken. Remove a feed you no longer need, or ask a platform admin for more ports." }),
+    el("div", { class: "next-box" }, "The system will send ", el("b", { text: r.format ? r.format.label : "its data" }),
+      " over UDP to ", el("b", { class: "mono", text: `${it.listen_ip}:${r.port || "…"}` }), ".")];
+}
+function stepInReview(r) {
+  const me = state.me, it = state.intake;
+  const sum = el("dl", { class: "summary" },
+    el("dt", { text: "Receive" }), el("dd", {}, r.label, " ", cls("real")),
+    el("dt", { text: "From" }), el("dd", { text: `${r.dest_name} (${r.dest_ip})` }),
+    el("dt", { text: "Standard" }), el("dd", { text: r.format.label }),
+    el("dt", { text: "Sent to" }), el("dd", { class: "mono", text: `${it.listen_ip}:${r.port} UDP` }),
+    el("dt", { text: "Published as" }), el("dd", { text: `a topic in the catalog, offered as ${it.outputs.map((o) => o.label).join(", ")}` }));
+  const purpose = el("textarea", { id: "purpose", rows: 3, oninput: (e) => (r.purpose = e.target.value) });
+  purpose.value = r.purpose;
+  const days = el("input", { type: "number", id: "days", min: 1, max: me.max_days, value: r.days, oninput: (e) => (r.days = e.target.value) });
+  const next = el("div", { class: "next-box" }, me.viewer.is_admin
+    ? `As a ${me.viewer.role.replace("-", " ")}, receiving switches on as soon as you submit. Then tell the system's operator to send to ${it.listen_ip}:${r.port} over UDP.`
+    : `Data from a system is real data, so this waits for ${me.waits_for}. Once approved, the system sends to ${it.listen_ip}:${r.port} over UDP.`);
+  return [sum,
+    el("div", { class: "field" }, el("label", { for: "purpose", text: "What is it, and who uses it?" }), purpose,
+      el("span", { class: "hint", text: "The approver reads this." })),
+    el("div", { class: "field" }, el("label", { for: "days", text: "Run for (days)" }), days,
+      el("span", { class: "hint", text: `Up to ${me.max_days} days. It stops on its end date unless an admin renews it.` })),
+    next];
+}
+
 // ---------- feed page ----------
 async function showFeed(main, id) {
   mount(main, "#tpl-feed");
@@ -324,9 +412,10 @@ async function showFeed(main, id) {
     out.textContent = "Checking…";
     try {
       const r = await api(`/api/feeds/${id}/check`, { body: {} });
-      const lines = [r.ping_ok ? "Ping: the destination answers." : `Ping: no answer (${r.ping_detail || "timeout"}). The system may be off, or block ping.`];
+      const lines = [r.ping_ok ? "Ping: the system answers." : `Ping: no answer (${r.ping_detail || "timeout"}). The system may be off, or block ping.`];
       if (r.tcp_ok !== undefined) lines.push(r.tcp_ok ? "TCP: the port accepts a connection." : `TCP: the port refused or timed out (${r.tcp_detail}).`);
-      if (r.udp_note) lines.push(r.udp_note);
+      if (r.receive_note) lines.push(r.receive_note);
+      else if (r.udp_note) lines.push(r.udp_note);
       out.replaceChildren(...lines.map((l) => el("div", { text: l })));
     } catch (e) { out.textContent = e.message; }
   });
@@ -335,24 +424,29 @@ async function showFeed(main, id) {
 }
 function renderFeed(f, events, onAction) {
   $("#feed-head").replaceChildren(
-    el("h1", { text: `${f.topic_label || f.topic_id}  →  ${f.dest_name}` }),
+    el("h1", { text: title(f) }),
     el("div", { class: "meta" }, health(f.health), cls(f.data_class), el("span", { class: "mono", text: f.id })),
     f.health_note ? el("p", { class: "why", text: f.health_note }) : null);
   $("#feed-actions").replaceChildren(...f.actions.filter((a) => a !== "check").map((a) =>
     el("button", { type: "button", class: "btn" + (a === "approve" ? " primary" : ""), onclick: () => onAction(a), text: verb[a] })));
   const d = f.delivery;
   const stat = (k, v) => el("div", {}, el("dt", { text: k }), el("dd", { text: v }));
+  $("#check-btn").textContent = isIn(f) ? "Check sender" : "Check destination";
+  $("#flow-title").textContent = isIn(f) ? "Receiving" : "Delivery";
   $("#feed-stats").replaceChildren(
-    stat("In from topic", d ? String(d.stats.in) : "—"),
-    stat("Sent", d ? String(d.sent_estimate) : "—"),
-    stat("Failed to convert", d ? String(d.stats.failed) : "—"),
+    stat(isIn(f) ? "Received" : "In from topic", d ? String(d.stats.in) : "—"),
+    stat(isIn(f) ? "Published" : "Sent", d ? String(isIn(f) ? d.stats.converted : d.sent_estimate) : "—"),
+    stat(isIn(f) ? "Not readable" : "Failed to convert", d ? String(d.stats.failed) : "—"),
     stat("Last message", d ? ago(d.last_in_change_at) : "—"),
     stat("Running since", d && d.running ? ago(d.started_at).replace(" ago", "") : "not running"),
     stat("Restarts", d ? String(d.restarts) : "—"));
   const kv = (k, v) => [el("dt", { text: k }), el("dd", { text: v })];
+  const where = isIn(f)
+    ? [...kv("Sender", `${f.dest_name} · ${f.dest_ip}`), ...kv("Sends to", `${f.listen_at || f.port} (${f.output_label}, ${f.to_format})`),
+       ...kv("Published on", f.published_key || "—"), ...kv("Offered as topic", f.published_topic_id ? `${f.topic_label} (${f.published_topic_id})` : "—")]
+    : [...kv("Destination", dest(f)), ...kv("Format", `${f.output_label} (${f.to_format})`)];
   $("#feed-details").replaceChildren(
-    ...kv("Destination", dest(f)),
-    ...kv("Format", `${f.output_label} (${f.to_format})`),
+    ...where,
     ...kv("Owner", f.owner),
     ...kv("Purpose", f.purpose),
     ...kv("State", f.status),
@@ -364,11 +458,12 @@ function renderFeed(f, events, onAction) {
     tr.replaceChildren(el("p", { class: "empty", text: f.status === "active" ? "The delivery loop has not picked this feed up yet; it runs every few seconds." : "Nothing is being delivered: the feed is " + f.status + "." }));
   } else {
     tr.replaceChildren(
+      isIn(f) ? el("p", { text: `This feed has its own receiving process. "Received" counts datagrams from the sender; "Not readable" counts ones that did not read as ${f.output_label}. The receive port accepts from any address the mesh lets through.` }) :
       el("p", {}, d.shared_with ? `This feed shares one delivery process with ${d.shared_with} other feed(s) of the same topic and format. Counters are for that process; "Sent" is its conversions divided by its outputs.` : "This feed has its own delivery process."),
-      d.last_error ? el("div", { class: "err" }, el("b", { text: "Last error " + ago(d.last_error_at) + ": " }), d.last_error) : el("p", { text: "No error lines from the delivery process." }),
+      d.last_error ? el("div", { class: "err" }, el("b", { text: "Last error " + ago(d.last_error_at) + ": " }), d.last_error) : el("p", { text: isIn(f) ? "No error lines from the receiving process." : "No error lines from the delivery process." }),
       el("div", { class: "group-label", text: "Command" }),
       el("pre", { class: "cmd", text: (d.command || []).join(" ") }),
-      el("div", { class: "group-label", text: "Recent output of the delivery process" }),
+      el("div", { class: "group-label", text: isIn(f) ? "Recent output of the receiving process" : "Recent output of the delivery process" }),
       el("pre", { class: "log", text: (d.lines || []).join("\n") || "(no output yet)" }));
   }
   $("#timeline").replaceChildren(...events.map((e) => el("li", {},
@@ -390,8 +485,9 @@ async function showApprovals(main) {
       };
       return el("div", { class: "card" }, health(f.health),
         el("div", { class: "main" },
-          el("div", { class: "line1" }, el("a", { href: `#feed/${f.id}`, text: `${f.topic_label} → ${f.dest_name}` })),
-          el("div", { class: "line2", text: `${f.output_label} to ${f.dest_ip}:${f.port}/${f.transport} · asked by ${f.owner} ${ago(f.created_at)}` }),
+          el("div", { class: "line1" }, el("span", { class: "dir", text: isIn(f) ? "IN" : "OUT" }), el("a", { href: `#feed/${f.id}`, text: title(f) })),
+          el("div", { class: "line2", text: isIn(f) ? `${f.output_label} from ${f.dest_ip}, received on port ${f.port} · asked by ${f.owner} ${ago(f.created_at)}`
+            : `${f.output_label} to ${f.dest_ip}:${f.port}/${f.transport} · asked by ${f.owner} ${ago(f.created_at)}` }),
           el("div", { class: "line2", text: `Purpose: ${f.purpose}` })),
         el("div", { class: "side" }, cls(f.data_class)),
         el("div", { class: "acts" }, note,

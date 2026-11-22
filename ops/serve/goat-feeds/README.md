@@ -4,9 +4,21 @@ Self-service, approved delivery of fabric topics to systems on the mesh. Decisio
 [ADR 1259](https://github.com/USAREUR-AF/goatcore/blob/main/docs/adr/1259-fabric-feeds-self-service-approved-delivery-of-fabric-topics-to-mesh-systems.md),
 design `docs/design/fabric-feeds.md` in goatcore. **Status: WIP**, on trial.
 
-A person picks a topic from the site's catalog, the receiving system, the port, transport
-and output format. A tactical admin for the site or a platform admin switches it on. One
-`goat-xf-pipe-zenoh` process per topic and output form sends to every feed that shares it.
+Two directions:
+
+- **OUT (send a topic):** a person picks a topic from the site's catalog, the receiving
+  system, the port, transport and output format. One `goat-xf-pipe-zenoh` process per topic
+  and output form sends to every feed that shares it.
+- **IN (receive a system's data):** a person names what a system sends, its standard
+  (MAVLink 2, ASTERIX, CoT, SAPIENT, …) and picks a free receive port on the core node. One
+  process per received feed listens on `udp://<core mesh IP>:<port>`, converts each message to
+  the site's canonical form (`goat-processors-system-track`) and publishes it on
+  `<key_prefix>/<feed id>`. While it is live it appears in the catalog as a topic, so anyone
+  can request it out as CoT, CAT062 or SAPIENT.
+
+A tactical admin for the site or a platform admin switches either kind on; anyone else's
+request waits for one of them. The receive ports must be reachable from the sending systems
+on the mesh (a warrant rule).
 
 | File | What it is |
 |---|---|

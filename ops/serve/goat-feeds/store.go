@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS feed_events (
 );
 CREATE INDEX IF NOT EXISTS feed_events_feed ON feed_events(feed_id, at);
 CREATE INDEX IF NOT EXISTS feeds_status ON feeds(status);
+ALTER TABLE feeds ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'out';
+ALTER TABLE feeds ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT '';
 `
 
 // Live states hold a destination port; the others release it.
@@ -66,6 +68,10 @@ type Feed struct {
 	DecidedAt    *time.Time `json:"decided_at"`
 	DecisionNote string     `json:"decision_note"`
 	EndAt        time.Time  `json:"end_at"`
+	// Direction "out" sends a topic to DestIP:Port. Direction "in" receives from the system
+	// at DestIP on this core node's Port and publishes it as Label.
+	Direction string `json:"direction"`
+	Label     string `json:"label"`
 }
 
 type Event struct {
@@ -78,7 +84,7 @@ type Event struct {
 }
 
 const feedCols = `id, topic_id, output_id, dest_name, dest_ip, dest_peer_id, port, transport, purpose, owner,
-  status, created_at, updated_at, decided_by, decided_at, decision_note, end_at`
+  status, created_at, updated_at, decided_by, decided_at, decision_note, end_at, direction, label`
 
 // Registry is what the server and supervisor need from storage.
 type Registry interface {
@@ -86,6 +92,7 @@ type Registry interface {
 	Get(ctx context.Context, id string) (Feed, error)
 	List(ctx context.Context, statuses ...string) ([]Feed, error)
 	PortInUse(ctx context.Context, ip string, port int, transport string) (bool, error)
+	ListenPortInUse(ctx context.Context, port int, transport string) (bool, error)
 	Transition(ctx context.Context, id, status, actor, action, note string, decision bool, endAt *time.Time) (Feed, error)
 	Events(ctx context.Context, feedID string, limit int) ([]Event, error)
 	ExpireDue(ctx context.Context, now time.Time) ([]string, error)
@@ -117,7 +124,8 @@ func newID() string {
 func scanFeed(row pgx.Row) (Feed, error) {
 	var f Feed
 	err := row.Scan(&f.ID, &f.TopicID, &f.OutputID, &f.DestName, &f.DestIP, &f.DestPeerID, &f.Port, &f.Transport,
-		&f.Purpose, &f.Owner, &f.Status, &f.CreatedAt, &f.UpdatedAt, &f.DecidedBy, &f.DecidedAt, &f.DecisionNote, &f.EndAt)
+		&f.Purpose, &f.Owner, &f.Status, &f.CreatedAt, &f.UpdatedAt, &f.DecidedBy, &f.DecidedAt, &f.DecisionNote, &f.EndAt,
+		&f.Direction, &f.Label)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return f, ErrNotFound
 	}
@@ -131,9 +139,9 @@ func (s *PGStore) Create(ctx context.Context, f Feed, actor, detail string) (Fee
 		return Feed{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	_, err = tx.Exec(ctx, `INSERT INTO feeds (`+feedCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now(),$12,$13,$14,$15)`,
+	_, err = tx.Exec(ctx, `INSERT INTO feeds (`+feedCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now(),$12,$13,$14,$15,$16,$17)`,
 		f.ID, f.TopicID, f.OutputID, f.DestName, f.DestIP, f.DestPeerID, f.Port, f.Transport, f.Purpose, f.Owner,
-		f.Status, f.DecidedBy, f.DecidedAt, f.DecisionNote, f.EndAt)
+		f.Status, f.DecidedBy, f.DecidedAt, f.DecisionNote, f.EndAt, f.Direction, f.Label)
 	if err != nil {
 		return Feed{}, err
 	}
@@ -182,8 +190,16 @@ func (s *PGStore) List(ctx context.Context, statuses ...string) ([]Feed, error) 
 
 func (s *PGStore) PortInUse(ctx context.Context, ip string, port int, transport string) (bool, error) {
 	var n int
-	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM feeds WHERE dest_ip=$1 AND port=$2 AND transport=$3 AND status = ANY($4)`,
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM feeds WHERE direction='out' AND dest_ip=$1 AND port=$2 AND transport=$3 AND status = ANY($4)`,
 		ip, port, transport, liveStates).Scan(&n)
+	return n > 0, err
+}
+
+// ListenPortInUse: one receive port on the core node takes one live received feed.
+func (s *PGStore) ListenPortInUse(ctx context.Context, port int, transport string) (bool, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM feeds WHERE direction='in' AND port=$1 AND transport=$2 AND status = ANY($3)`,
+		port, transport, liveStates).Scan(&n)
 	return n > 0, err
 }
 

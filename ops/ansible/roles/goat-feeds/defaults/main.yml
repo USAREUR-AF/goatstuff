@@ -47,3 +47,12 @@ goat_feeds_oidc_host_entry: "invalid.invalid:127.0.0.1"
 goat_feeds_oauth2_client_id: oauth2-proxy-goat-feeds
 goat_feeds_oauth2_allowed_groups: ""
 goat_feeds_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.7.1@sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3"
+
+# Receive side (ADR 1259): systems send to a port on this host's mesh address and each received
+# feed is published on the fabric. Empty = the site receives nothing. Shape:
+#   listen_ip: <this host's mesh IP>
+#   ports: [7100, ...]          # must match the mesh rule that lets gear reach them
+#   key_prefix: volatile/<slot>/stream/feeds-in
+#   formats: [{id, label, from_format, in_frame?, set?, note?}]
+#   outputs: [{id, label, to_format, frame?, set?}]   # how others may pull a received feed
+goat_feeds_intake: {}
