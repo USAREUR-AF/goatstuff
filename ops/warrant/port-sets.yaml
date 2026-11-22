@@ -152,3 +152,18 @@ port_sets:
     members:
       - { protocol: tcp, ports: ["443"] }
     required_by:
+
+  - name: feed-intake
+    purpose: >
+      Receive ports for fabric feeds (ADR 1259): a system on the mesh sends its
+      own data (a position, its tracks) over UDP to one of these ports on the
+      goatnet's core node, and goat-feeds publishes it on the fabric. One port
+      per received feed, assigned and approved in goat-feeds; a port with no
+      approved feed has nothing listening.
+    owner: platform-admin
+    members:
+      - { protocol: udp, ports: ["7100", "7101", "7102", "7103", "7104", "7105", "7106", "7107", "7108", "7109"] }
+    required_by:
+      - { src: EFFECTOR-CUE, dst: INFRA }
+      - { src: EFFECTOR-ARBITER, dst: INFRA }
+      - { src: CONTROL, dst: INFRA }
