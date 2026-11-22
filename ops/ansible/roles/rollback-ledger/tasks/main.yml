@@ -153,6 +153,16 @@
     _rbl_row: "{{ _rbl_row | combine({'source': 'offline'}) }}"
   when: lookup('env', 'GOAT_DEPLOY_OFFLINE') == '1'
 
+# A deploy that went past the release-ladder gate with --skip-rung (ADR 1120,
+# GB-373; ops/release/ladder_gate.py) carries the operator's reason and ack in its
+# row, so the ledger shows which deploys skipped the rung below and why.
+# deploy-component.sh and ansible-preflight.sh export GOAT_DEPLOY_LADDER_SKIP as
+# {"reason": …, "ack": …}.
+- name: rollback-ledger | a run that skipped the rung below says so in its row
+  ansible.builtin.set_fact:
+    _rbl_row: "{{ _rbl_row | combine({'ladder_skip': (lookup('env', 'GOAT_DEPLOY_LADDER_SKIP') | from_json)}) }}"
+  when: (lookup('env', 'GOAT_DEPLOY_LADDER_SKIP') | default('', true) | length) > 0
+
 # The source of record the play rendered from, in one key: `source_tree`.
 # {"commit": <sha>} from a clone; {"goatcore": <sha>, "goatcore_ref": …,
 # "overlay": <sha>, "goatcore_export_of": <sha>?, "goatstuff": <sha>?,
