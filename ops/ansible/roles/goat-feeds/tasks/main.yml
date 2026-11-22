@@ -87,6 +87,30 @@
   changed_when: "'changed' in gf_db.stdout"
   no_log: true
 
+- name: goat-feeds | pg_hba admits the goat_feeds role to its database
+  # Same pattern as goat-zenoh-portal-store: the file the server reads (SHOW hba_file),
+  # grep-then-append, reload. Re-asserted every run so a postgres-a recreate is healed.
+  ansible.builtin.shell: |
+    set -eu
+    HBA=$(docker exec {{ goat_feeds_pg_container }} psql -U postgres -tAc 'SHOW hba_file')
+    if ! docker exec {{ goat_feeds_pg_container }} grep -qE "^host[[:space:]]+{{ goat_feeds_db }}[[:space:]]+{{ goat_feeds_db_user }}[[:space:]]" "$HBA"; then
+      docker exec -u 0 {{ goat_feeds_pg_container }} sh -c "echo 'host {{ goat_feeds_db }} {{ goat_feeds_db_user }} 0.0.0.0/0 scram-sha-256' >> '$HBA'"
+      docker exec {{ goat_feeds_pg_container }} psql -U postgres -tAc 'SELECT pg_reload_conf();' >/dev/null
+      echo changed
+    fi
+  args:
+    executable: /bin/bash
+  register: gf_hba
+  changed_when: "'changed' in gf_hba.stdout"
+
+- name: goat-feeds | the loaded pg_hba rules include the goat_feeds line, without errors
+  ansible.builtin.command:
+    argv: [docker, exec, "{{ goat_feeds_pg_container }}", psql, -U, postgres, -tAc,
+           "SELECT count(*) FROM pg_hba_file_rules WHERE '{{ goat_feeds_db_user }}' = ANY(user_name) AND error IS NULL"]
+  register: gf_hba_loaded
+  changed_when: false
+  failed_when: gf_hba_loaded.rc != 0 or (gf_hba_loaded.stdout | trim | int) < 1
+
 - name: goat-feeds | database connection string
   ansible.builtin.copy:
     content: "postgres://{{ goat_feeds_db_user }}:{{ gf_dbpw.content | b64decode | trim }}@{{ goat_feeds_pg_host }}:{{ goat_feeds_pg_port }}/{{ goat_feeds_db }}?sslmode=disable\n"
