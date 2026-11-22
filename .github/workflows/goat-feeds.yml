@@ -30,7 +30,13 @@ jobs:
       - name: unit tests (integration tests skip without a database)
         run: go test -count=1 ./...
       - run: node --check web/app.js
-      - run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/goat-feeds .
+      - name: build for every fleet platform (linux/amd64, linux/arm64)
+        run: ./build.sh "ci-${GITHUB_SHA::7}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goat-feeds-binaries
+          path: ops/serve/goat-feeds/dist/
+          retention-days: 14
 
   integration:
     runs-on: ubuntu-24.04

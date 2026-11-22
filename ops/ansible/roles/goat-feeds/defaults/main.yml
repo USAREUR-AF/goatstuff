@@ -3,6 +3,9 @@
 goat_feeds_host: ""
 goat_feeds_version: "0.1.0"
 # The linux binary on the controller (built by CI, or `go build` for a trial).
+# The linux binary to install. "{arch}" is replaced by amd64 or arm64 from the host's
+# architecture, so one value serves a mixed fleet: e.g. .../dist/goat-feeds-0.2.0-linux-{arch}
+# (ops/serve/goat-feeds/build.sh builds both).
 goat_feeds_binary_src: ""
 goat_feeds_dir: /opt/goat-feeds
 goat_feeds_etc: /etc/goat-feeds
