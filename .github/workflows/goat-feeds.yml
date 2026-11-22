@@ -1,0 +1,27 @@
+name: goat-feeds
+on:
+  push:
+    branches: [main]
+    paths: ['ops/serve/goat-feeds/**', '.github/workflows/goat-feeds.yml']
+  pull_request:
+    paths: ['ops/serve/goat-feeds/**', '.github/workflows/goat-feeds.yml']
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ops/serve/goat-feeds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ops/serve/goat-feeds/go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - run: node --check web/app.js
+      - run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/goat-feeds .

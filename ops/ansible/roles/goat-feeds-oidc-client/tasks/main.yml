@@ -1,0 +1,58 @@
+---
+# Registers goat-feeds' fence client at the site Hydra (upsert). The secret is the one the
+# goat-feeds role generated on this host. Mirrors roles/goat-map-oidc-client.
+- name: goat-feeds-oidc-client | read the client secret from the host
+  ansible.builtin.slurp:
+    src: "{{ goat_feeds_etc | default('/etc/goat-feeds') }}/secrets/oauth2-client-secret"
+  register: gf_cs
+  no_log: true
+
+- name: goat-feeds-oidc-client | Hydra admin is reachable
+  ansible.builtin.uri:
+    url: "{{ goat_feeds_oidc_hydra_admin }}/health/ready"
+    status_code: 200
+  retries: 5
+  delay: 2
+
+- name: goat-feeds-oidc-client | desired client
+  ansible.builtin.set_fact:
+    gf_client:
+      client_id: "{{ goat_feeds_oauth2_client_id }}"
+      client_name: "{{ goat_feeds_oidc_client_name }}"
+      client_secret: "{{ gf_cs.content | b64decode | trim }}"
+      grant_types: [authorization_code, refresh_token]
+      response_types: [code]
+      scope: "openid profile email groups offline_access"
+      redirect_uris: ["{{ goat_feeds_public_url }}/oauth2/callback"]
+      token_endpoint_auth_method: client_secret_post
+      skip_consent: true
+      access_token_strategy: jwt
+      audience: ["{{ goat_feeds_oauth2_client_id }}"]
+  no_log: true
+
+- name: goat-feeds-oidc-client | read the client
+  ansible.builtin.uri:
+    url: "{{ goat_feeds_oidc_hydra_admin }}/admin/clients/{{ goat_feeds_oauth2_client_id }}"
+    status_code: [200, 404]
+  register: gf_get
+  no_log: true
+
+- name: goat-feeds-oidc-client | create the client
+  ansible.builtin.uri:
+    url: "{{ goat_feeds_oidc_hydra_admin }}/admin/clients"
+    method: POST
+    body_format: json
+    body: "{{ gf_client }}"
+    status_code: 201
+  when: gf_get.status == 404
+  no_log: true
+
+- name: goat-feeds-oidc-client | update the client
+  ansible.builtin.uri:
+    url: "{{ goat_feeds_oidc_hydra_admin }}/admin/clients/{{ goat_feeds_oauth2_client_id }}"
+    method: PUT
+    body_format: json
+    body: "{{ gf_client }}"
+    status_code: 200
+  when: gf_get.status == 200
+  no_log: true

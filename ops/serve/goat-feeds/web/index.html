@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fabric feeds</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <div>
+      <div class="title">Fabric feeds</div>
+      <div class="sub" id="site">…</div>
+    </div>
+  </div>
+  <nav id="nav" aria-label="Sections">
+    <a href="#feeds" data-view="feeds">Feeds</a>
+    <a href="#request" data-view="request">Request a feed</a>
+    <a href="#approvals" data-view="approvals" id="nav-approvals" hidden>Approvals <span class="count" id="approvals-count"></span></a>
+    <a href="#audit" data-view="audit">Audit</a>
+  </nav>
+  <div class="who" id="who"></div>
+</header>
+
+<main id="main">
+  <p class="loading">Loading…</p>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<template id="tpl-feeds">
+  <section class="view">
+    <div class="view-head">
+      <div>
+        <h1>Feeds</h1>
+        <p class="lede">Each feed sends one fabric topic, converted, to one system on the mesh.</p>
+      </div>
+      <a class="btn primary" href="#request">Request a feed</a>
+    </div>
+    <div class="toolbar">
+      <div class="chips" role="group" aria-label="Filter">
+        <button class="chip" data-filter="mine">Mine</button>
+        <button class="chip" data-filter="waiting">Waiting for approval</button>
+        <button class="chip" data-filter="live">On</button>
+        <button class="chip" data-filter="all">All</button>
+      </div>
+      <input type="search" id="feed-search" placeholder="Search topic, system, address, owner" aria-label="Search feeds">
+    </div>
+    <div class="list" id="feed-list"></div>
+  </section>
+</template>
+
+<template id="tpl-request">
+  <section class="view narrow">
+    <div class="view-head">
+      <div>
+        <h1>Request a feed</h1>
+        <p class="lede">Choose what to send, where, and how. You'll see before submitting whether it starts at once or waits for an approver.</p>
+      </div>
+    </div>
+    <ol class="steps" id="steps">
+      <li data-step="1">Topic</li><li data-step="2">Destination</li><li data-step="3">Delivery</li><li data-step="4">Review</li>
+    </ol>
+    <div id="step-body"></div>
+    <div class="step-nav">
+      <button class="btn" id="step-back" type="button">Back</button>
+      <span class="grow"></span>
+      <button class="btn primary" id="step-next" type="button">Next</button>
+    </div>
+  </section>
+</template>
+
+<template id="tpl-approvals">
+  <section class="view">
+    <div class="view-head">
+      <div>
+        <h1>Approvals</h1>
+        <p class="lede">Requests at this site waiting for a tactical or platform admin. Approving switches the feed on at once.</p>
+      </div>
+    </div>
+    <div class="list" id="approval-list"></div>
+  </section>
+</template>
+
+<template id="tpl-audit">
+  <section class="view">
+    <div class="view-head">
+      <div>
+        <h1>Audit</h1>
+        <p class="lede">Every request, decision and change at this site, newest first.</p>
+      </div>
+    </div>
+    <div class="table-wrap"><table class="audit"><thead><tr><th>When (UTC)</th><th>Who</th><th>Action</th><th>Feed</th><th>Detail</th></tr></thead><tbody id="audit-body"></tbody></table></div>
+  </section>
+</template>
+
+<template id="tpl-feed">
+  <section class="view">
+    <a class="back" href="#feeds">← Feeds</a>
+    <div class="feed-head" id="feed-head"></div>
+    <div class="actions" id="feed-actions"></div>
+    <div class="note-box" id="note-box" hidden>
+      <label for="note-input" id="note-label">Note</label>
+      <textarea id="note-input" rows="2"></textarea>
+      <div class="row"><button class="btn primary" id="note-ok" type="button">Confirm</button><button class="btn" id="note-cancel" type="button">Cancel</button></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h2>Delivery</h2>
+        <dl class="stats" id="feed-stats"></dl>
+        <div class="check">
+          <button class="btn" id="check-btn" type="button">Check destination</button>
+          <div id="check-result" class="check-result"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Details</h2>
+        <dl class="kv" id="feed-details"></dl>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Troubleshooting</h2>
+      <div id="trouble"></div>
+    </div>
+    <div class="panel">
+      <h2>Timeline</h2>
+      <ol class="timeline" id="timeline"></ol>
+    </div>
+  </section>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>

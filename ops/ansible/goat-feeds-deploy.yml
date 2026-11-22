@@ -1,0 +1,21 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+#
+# Deploy goat-feeds, self-service approved delivery of fabric topics to mesh systems
+# (ADR 1259, docs/design/fabric-feeds.md). Runs on goat_feeds_host only.
+#
+#   cd <assembled tree>/ops/ansible
+#   ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini \
+#     goat-feeds-deploy.yml -e target=<goatnet>_hosts -e goat_feeds_binary_src=<path to linux binary>
+
+- name: Deploy goat-feeds
+  hosts: "{{ target | mandatory }}"
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Run on the feeds host only
+      ansible.builtin.meta: end_host
+      when: inventory_hostname != (goat_feeds_host | mandatory)
+  roles:
+    - role: goat-feeds
+    - role: goat-feeds-oidc-client

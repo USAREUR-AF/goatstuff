@@ -1,0 +1,5 @@
+---
+galaxy_info:
+  role_name: goat_feeds
+  description: goat-feeds (ADR 1259) and its sign-in fence.
+dependencies: []
