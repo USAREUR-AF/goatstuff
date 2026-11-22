@@ -218,7 +218,9 @@ function onMapLoad() {
     },
   });
 
-  map.on('click', 'track-dot', (e) => select(e.features[0].properties.id, true));
+  // A track clicked on the map is already on screen: select it without moving the camera. Moving it
+  // made the lasso report the view as changed and not searched.
+  map.on('click', 'track-dot', (e) => select(e.features[0].properties.id, false));
   map.on('mouseenter', 'track-dot', () => (map.getCanvas().style.cursor = 'pointer'));
   map.on('mouseleave', 'track-dot', () => (map.getCanvas().style.cursor = ''));
 
@@ -285,7 +287,8 @@ function renderList() {
 function select(id, fly) {
   state.selected = state.selected === id ? null : id;
   const t = state.tracks.get(id);
-  if (fly && mapReady && state.selected && t) map.easeTo({ center: [t.lon, t.lat], duration: 600 });
+  // From the list, move only when the track is off screen, so it can be found.
+  if (fly && mapReady && state.selected && t && !map.getBounds().contains([t.lon, t.lat])) map.easeTo({ center: [t.lon, t.lat], duration: 600 });
   render();
 }
 
