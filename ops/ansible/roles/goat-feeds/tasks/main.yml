@@ -16,6 +16,19 @@
       Set goat_feeds_binary_src (the linux binary), goat_feeds_bind_ip (this host's mesh IP)
       and goat_feeds_oidc_issuer_url in group_vars or on the command line.
 
+- name: goat-feeds | read the host's architecture (the play does not gather facts)
+  ansible.builtin.setup:
+    filter: ansible_architecture
+
+- name: goat-feeds | this host's binary architecture
+  ansible.builtin.set_fact:
+    gf_arch: "{{ {'x86_64': 'amd64', 'amd64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}[ansible_architecture] | default('') }}"
+
+- name: goat-feeds | the host's architecture is one goat-feeds is built for
+  ansible.builtin.assert:
+    that: gf_arch | length > 0
+    fail_msg: "goat-feeds is built for linux/amd64 and linux/arm64; this host reports {{ ansible_architecture }}."
+
 - name: goat-feeds | directories
   ansible.builtin.file:
     path: "{{ item.path }}"
@@ -31,7 +44,7 @@
 
 - name: goat-feeds | binary
   ansible.builtin.copy:
-    src: "{{ goat_feeds_binary_src }}"
+    src: "{{ goat_feeds_binary_src | replace('{arch}', gf_arch) }}"
     dest: "{{ goat_feeds_dir }}/goat-feeds-{{ goat_feeds_version }}"
     owner: root
     group: root

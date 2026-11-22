@@ -43,7 +43,7 @@ The integration and browser tests wipe the database they are given.
 
 ```
 go test ./...                       # unit layer
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o goat-feeds .
+./build.sh 0.2.0                    # dist/goat-feeds-0.2.0-linux-{amd64,arm64} + SHA256SUMS
 ```
 
 Deploy: `ops/ansible/goat-feeds-deploy.yml` (roles `goat-feeds`, `goat-feeds-oidc-client`).
