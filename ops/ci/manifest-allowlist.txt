@@ -57,6 +57,7 @@ ops/serve/zenoh-sandbox/vendor-tool/go.mod | @USAREUR-AF/goat-owners | Go: one-s
 
 # --- Python (goatcore ADR 0112)
 ops/serve/goat-map/requirements.txt | @USAREUR-AF/goat-owners | Python: Zenoh client and aiohttp for the goat-map service
+ops/serve/goat-feeds/go.mod | @USAREUR-AF/goat-owners | Go: goat-feeds, the control-plane service of ADR 1259 (registry, approvals, API, delivery supervisor); Go per ADR 0112; one dependency, pgx, the Postgres driver goatcore's portal uses
 
 # --- npm: frontend tests
 ops/panoscope/frontend/package.json | @USAREUR-AF/goat-owners | npm: Playwright tests only (@playwright/test, exact version)
