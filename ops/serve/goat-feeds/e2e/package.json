@@ -1,0 +1,14 @@
+{
+  "name": "goat-feeds-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Browser tests for the goat-feeds page. The page is plain JavaScript embedded in the Go binary; npm is used only to run these tests.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

@@ -1,4 +1,9 @@
 name: goat-feeds
+# Three layers for goat-feeds (ADR 1259):
+#   unit         policy, validation, health, commands, supervisor with a fake pipe
+#   integration  the Postgres store and the HTTP API over it (real Postgres service)
+#   e2e          the real binary and page in Chromium, every screen driven, at phone and desktop
+#                widths, light and dark (Playwright; npm only for the tests)
 on:
   push:
     branches: [main]
@@ -10,7 +15,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
-  test:
+  unit:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -22,6 +27,76 @@ jobs:
         with:
           go-version-file: ops/serve/goat-feeds/go.mod
       - run: go vet ./...
-      - run: go test ./...
+      - name: unit tests (integration tests skip without a database)
+        run: go test -count=1 ./...
       - run: node --check web/app.js
       - run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/goat-feeds .
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: goat_feeds_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+    defaults:
+      run:
+        working-directory: ops/serve/goat-feeds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ops/serve/goat-feeds/go.mod
+      - name: store and API against Postgres
+        env:
+          GOAT_FEEDS_TEST_DSN: postgres://postgres:test@127.0.0.1:5432/goat_feeds_test?sslmode=disable
+        run: go test -count=1 -p 1 -v -run 'TestPG|TestAPI' ./...
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: goat_feeds_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+    defaults:
+      run:
+        working-directory: ops/serve/goat-feeds/e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ops/serve/goat-feeds/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ops/serve/goat-feeds/e2e/package-lock.json
+      - name: build the binary under test
+        working-directory: ops/serve/goat-feeds
+        run: go build -o goat-feeds .
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: browser tests
+        env:
+          GOAT_FEEDS_E2E_DSN: postgres://postgres:test@127.0.0.1:5432/goat_feeds_e2e?sslmode=disable
+        run: npx playwright test --reporter=list,html
+      - name: screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goat-feeds-e2e
+          path: |
+            ops/serve/goat-feeds/e2e/test-results/
+            ops/serve/goat-feeds/e2e/playwright-report/
+          retention-days: 14
