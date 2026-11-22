@@ -2,4 +2,13 @@
 galaxy_info:
   role_name: goat_feeds
   description: goat-feeds (ADR 1259) and its sign-in fence.
-dependencies: []
+
+# Every deploying role carries a rollback ledger (ADR 1060). goat-feeds ships a versioned
+# binary (/opt/goat-feeds/goat-feeds-<version>, with goat-feeds a link to the current one),
+# so the ref is that version; rolling back points the link at the previous binary.
+dependencies:
+  - role: rollback-ledger
+    vars:
+      rollback_component: goat-feeds
+      rollback_artifact_type: config
+      rollback_ref: "goat-feeds-{{ goat_feeds_version }}"
