@@ -12,6 +12,7 @@ updates:
     directories:
       - /ops/base-images/node-build
       - /ops/serve/dataflows
+      - /ops/goat-topology
     schedule:
       interval: weekly
       day: monday

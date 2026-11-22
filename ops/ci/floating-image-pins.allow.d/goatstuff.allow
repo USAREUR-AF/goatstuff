@@ -7,7 +7,6 @@ ops/ansible/roles/netvis/defaults/main.yml netvis_oauth2_proxy_image   # 2026-09
 ops/ansible/roles/openobserve/defaults/main.yml openobserve_image   # 2026-09-22 seed
 ops/ansible/roles/zenoh-synth-vendors/defaults/main.yml synth_vendor_image   # 2026-09-22 seed
 ops/flashlight/Dockerfile rust:1-bookworm   # 2026-09-22 seed
-ops/goat-topology/Dockerfile gcr.io/distroless/cc-debian12:nonroot   # 2026-09-22 seed
 ops/goat-topology/Dockerfile rust:1-bookworm   # 2026-09-22 seed
 ops/panoscope/docker-compose.dev.yml eclipse/zenoh:1.9.0   # 2026-09-22 seed
 ops/panoscope/docker-compose.dev.yml panoscope:dev   # 2026-09-22 seed
