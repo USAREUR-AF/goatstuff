@@ -1,0 +1,210 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# goat-feeds (ADR 1259): binary, config, database, systemd unit, sign-in fence.
+# Secrets (database password, fence client and cookie secrets) are generated on the host
+# on first run and stay there; the oidc-client role reads the client secret back to
+# register it with Hydra.
+
+- name: goat-feeds | require the binary and the fence settings
+  ansible.builtin.assert:
+    that:
+      - goat_feeds_binary_src | length > 0
+      - goat_feeds_bind_ip | length > 0
+      - goat_feeds_bind_ip != '0.0.0.0'
+      - goat_feeds_oidc_issuer_url | length > 0
+    fail_msg: >-
+      Set goat_feeds_binary_src (the linux binary), goat_feeds_bind_ip (this host's mesh IP)
+      and goat_feeds_oidc_issuer_url in group_vars or on the command line.
+
+- name: goat-feeds | directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ goat_feeds_dir }}", mode: "0755" }
+    - { path: "{{ goat_feeds_dir }}/fence", mode: "0755" }
+    - { path: "{{ goat_feeds_etc }}", mode: "0750", group: "{{ goat_feeds_user }}" }
+    - { path: "{{ goat_feeds_etc }}/secrets", mode: "0750", group: "{{ goat_feeds_user }}" }
+
+- name: goat-feeds | binary
+  ansible.builtin.copy:
+    src: "{{ goat_feeds_binary_src }}"
+    dest: "{{ goat_feeds_dir }}/goat-feeds-{{ goat_feeds_version }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart goat-feeds
+
+- name: goat-feeds | current binary
+  ansible.builtin.file:
+    src: "{{ goat_feeds_dir }}/goat-feeds-{{ goat_feeds_version }}"
+    dest: "{{ goat_feeds_dir }}/goat-feeds"
+    state: link
+    force: true
+  notify: restart goat-feeds
+
+- name: goat-feeds | generate host-held secrets on first run
+  ansible.builtin.shell: |
+    set -eu
+    umask 027
+    f={{ goat_feeds_etc }}/secrets/{{ item.name }}
+    [ -s "$f" ] || openssl rand -hex {{ item.bytes }} > "$f"
+    chgrp {{ goat_feeds_user }} "$f"; chmod 0640 "$f"
+  args:
+    executable: /bin/bash
+    creates: "{{ goat_feeds_etc }}/secrets/{{ item.name }}"
+  loop:
+    - { name: db.pw, bytes: 24 }
+    - { name: oauth2-client-secret, bytes: 32 }
+    - { name: oauth2-cookie-secret, bytes: 16 }
+  no_log: true
+
+- name: goat-feeds | read the database password
+  ansible.builtin.slurp:
+    src: "{{ goat_feeds_etc }}/secrets/db.pw"
+  register: gf_dbpw
+  no_log: true
+
+- name: goat-feeds | database role and database
+  ansible.builtin.shell: |
+    set -eu
+    pw="$(cat {{ goat_feeds_etc }}/secrets/db.pw)"
+    psql() { docker exec -i {{ goat_feeds_pg_container }} psql -U postgres -v ON_ERROR_STOP=1 -At "$@"; }
+    if [ -z "$(psql -c "SELECT 1 FROM pg_roles WHERE rolname='{{ goat_feeds_db_user }}'")" ]; then
+      printf "CREATE ROLE {{ goat_feeds_db_user }} LOGIN PASSWORD '%s';\n" "$pw" | psql >/dev/null; echo changed
+    else
+      printf "ALTER ROLE {{ goat_feeds_db_user }} LOGIN PASSWORD '%s';\n" "$pw" | psql >/dev/null
+    fi
+    if [ -z "$(psql -c "SELECT 1 FROM pg_database WHERE datname='{{ goat_feeds_db }}'")" ]; then
+      psql -c "CREATE DATABASE {{ goat_feeds_db }} OWNER {{ goat_feeds_db_user }}" >/dev/null; echo changed
+    fi
+  args:
+    executable: /bin/bash
+  register: gf_db
+  changed_when: "'changed' in gf_db.stdout"
+  no_log: true
+
+- name: goat-feeds | database connection string
+  ansible.builtin.copy:
+    content: "postgres://{{ goat_feeds_db_user }}:{{ gf_dbpw.content | b64decode | trim }}@{{ goat_feeds_pg_host }}:{{ goat_feeds_pg_port }}/{{ goat_feeds_db }}?sslmode=disable\n"
+    dest: "{{ goat_feeds_etc }}/secrets/db.dsn"
+    owner: root
+    group: "{{ goat_feeds_user }}"
+    mode: "0640"
+  no_log: true
+  notify: restart goat-feeds
+
+- name: goat-feeds | NetBird API token for the destination picker
+  ansible.builtin.copy:
+    content: "{{ goat_feeds_nb_api_token }}\n"
+    dest: "{{ goat_feeds_etc }}/secrets/nb-token"
+    owner: root
+    group: "{{ goat_feeds_user }}"
+    mode: "0640"
+  no_log: true
+  when: goat_feeds_nb_api_token | length > 0
+  notify: restart goat-feeds
+
+- name: goat-feeds | site configuration
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ goat_feeds_etc }}/config.json"
+    owner: root
+    group: "{{ goat_feeds_user }}"
+    mode: "0640"
+  notify: restart goat-feeds
+
+- name: goat-feeds | systemd unit
+  ansible.builtin.template:
+    src: goat-feeds.service.j2
+    dest: /etc/systemd/system/goat-feeds.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart goat-feeds
+
+- name: goat-feeds | enable and start
+  ansible.builtin.systemd:
+    name: goat-feeds
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: goat-feeds | fence settings
+  ansible.builtin.shell: |
+    set -eu
+    umask 077
+    cs="$(cat {{ goat_feeds_etc }}/secrets/oauth2-client-secret)"
+    ck="$(cat {{ goat_feeds_etc }}/secrets/oauth2-cookie-secret)"
+    cat > {{ goat_feeds_dir }}/fence/oauth2-proxy.env.new <<ENV
+    OAUTH2_PROXY_PROVIDER=oidc
+    OAUTH2_PROXY_OIDC_ISSUER_URL={{ goat_feeds_oidc_issuer_url }}
+    OAUTH2_PROXY_CLIENT_ID={{ goat_feeds_oauth2_client_id }}
+    OAUTH2_PROXY_CLIENT_SECRET=$cs
+    OAUTH2_PROXY_COOKIE_SECRET=$ck
+    OAUTH2_PROXY_SCOPE=openid profile email groups
+    OAUTH2_PROXY_EMAIL_DOMAINS=*
+    OAUTH2_PROXY_ALLOWED_GROUPS={{ goat_feeds_oauth2_allowed_groups }}
+    OAUTH2_PROXY_COOKIE_NAME=_goat_feeds
+    OAUTH2_PROXY_COOKIE_SECURE=false
+    OAUTH2_PROXY_COOKIE_HTTPONLY=true
+    OAUTH2_PROXY_COOKIE_SAMESITE=lax
+    OAUTH2_PROXY_COOKIE_EXPIRE=8h
+    OAUTH2_PROXY_SESSION_COOKIE_MINIMAL=true
+    OAUTH2_PROXY_HTTP_ADDRESS={{ goat_feeds_bind_ip }}:{{ goat_feeds_port }}
+    OAUTH2_PROXY_REVERSE_PROXY=true
+    OAUTH2_PROXY_REDIRECT_URL={{ goat_feeds_public_url }}/oauth2/callback
+    OAUTH2_PROXY_UPSTREAMS=http://{{ goat_feeds_listen }}
+    OAUTH2_PROXY_PASS_USER_HEADERS=true
+    OAUTH2_PROXY_SET_XAUTHREQUEST=false
+    OAUTH2_PROXY_SKIP_PROVIDER_BUTTON=true
+    OAUTH2_PROXY_SKIP_AUTH_ROUTES=^/healthz$
+    OAUTH2_PROXY_REQUEST_LOGGING=true
+    ENV
+    if cmp -s {{ goat_feeds_dir }}/fence/oauth2-proxy.env.new {{ goat_feeds_dir }}/fence/oauth2-proxy.env; then
+      rm {{ goat_feeds_dir }}/fence/oauth2-proxy.env.new
+    else
+      mv {{ goat_feeds_dir }}/fence/oauth2-proxy.env.new {{ goat_feeds_dir }}/fence/oauth2-proxy.env; echo changed
+    fi
+  args:
+    executable: /bin/bash
+  register: gf_fence_env
+  changed_when: "'changed' in gf_fence_env.stdout"
+  no_log: true
+
+- name: goat-feeds | fence compose file
+  ansible.builtin.template:
+    src: fence-compose.yml.j2
+    dest: "{{ goat_feeds_dir }}/fence/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: gf_fence_compose
+
+- name: goat-feeds | fence up
+  community.docker.docker_compose_v2:
+    project_src: "{{ goat_feeds_dir }}/fence"
+    project_name: goat-feeds-fence
+    recreate: "{{ 'always' if (gf_fence_env.changed or gf_fence_compose.changed) else 'auto' }}"
+
+- name: goat-feeds | flush restarts before the health check
+  ansible.builtin.meta: flush_handlers
+
+- name: goat-feeds | wait for health
+  ansible.builtin.uri:
+    url: "http://{{ goat_feeds_listen }}/healthz"
+    status_code: [200, 503]
+    return_content: true
+  register: gf_health
+  until: gf_health.status in [200, 503]
+  retries: 20
+  delay: 2
+
+- name: goat-feeds | report
+  ansible.builtin.debug:
+    msg: >-
+      goat-feeds {{ goat_feeds_version }} on {{ inventory_hostname }}: {{ (gf_health.json | default({})).status | default('?') }};
+      reasons {{ (gf_health.json | default({})).reasons | default([]) }}; open {{ goat_feeds_public_url }}/

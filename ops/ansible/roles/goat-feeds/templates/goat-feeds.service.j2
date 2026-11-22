@@ -1,0 +1,23 @@
+# Rendered by the goat-feeds role (ADR 1259). Do not edit on the host.
+[Unit]
+Description=goat-feeds: approved delivery of fabric topics to mesh systems
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User={{ goat_feeds_user }}
+Group={{ goat_feeds_user }}
+ExecStart={{ goat_feeds_dir }}/goat-feeds -config {{ goat_feeds_etc }}/config.json
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths={{ goat_feeds_etc }} /etc/goat-xf /etc/goat-processors/tls /opt/goat-xf
+# ping for the destination check
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

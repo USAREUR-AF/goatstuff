@@ -1,0 +1,49 @@
+---
+# The one host per goatnet that runs goat-feeds. Required.
+goat_feeds_host: ""
+goat_feeds_version: "0.1.0"
+# The linux binary on the controller (built by CI, or `go build` for a trial).
+goat_feeds_binary_src: ""
+goat_feeds_dir: /opt/goat-feeds
+goat_feeds_etc: /etc/goat-feeds
+# The service runs as the processors pipeline's user, so its delivery processes read
+# the fabric exactly as the pipeline's goat-xf-pipe units do.
+goat_feeds_user: goat-processors
+goat_feeds_listen: "127.0.0.1:8098"
+
+# Site settings, rendered into config.json.
+goat_feeds_site: "{{ site_id | default(inventory_hostname) }}"
+goat_feeds_goatnet: "{{ goat_feeds_site }}"
+goat_feeds_platform_groups: [PLATFORM-ADMIN]
+goat_feeds_tactical_groups: []
+goat_feeds_self_service_synthetic: true
+goat_feeds_port_min: 1024
+goat_feeds_port_max: 65535
+goat_feeds_default_days: 30
+goat_feeds_max_days: 180
+goat_feeds_pipe_binary: /opt/goat-xf/current/goat-xf-pipe-zenoh
+goat_feeds_pipe_packs: /opt/goat-xf/current/packs
+goat_feeds_zenoh_config: /etc/goat-xf/zenoh-client.json5
+goat_feeds_catalog: []
+
+# Mesh peers for the destination picker (optional). The token is a secret from the
+# deploying environment; empty leaves the picker off and the form takes a name and IP.
+goat_feeds_peers_api: ""
+goat_feeds_nb_api_token: ""
+
+# Database: its own database and role in the site's postgres container.
+goat_feeds_pg_container: postgres-a
+goat_feeds_pg_host: 127.0.0.1
+goat_feeds_pg_port: 5432
+goat_feeds_db: goat_feeds
+goat_feeds_db_user: goat_feeds
+
+# Sign-in fence (oauth2-proxy) on the host's mesh address.
+goat_feeds_bind_ip: ""
+goat_feeds_port: 8099
+goat_feeds_public_url: "http://{{ goat_feeds_bind_ip }}:{{ goat_feeds_port }}"
+goat_feeds_oidc_issuer_url: ""
+goat_feeds_oidc_host_entry: "invalid.invalid:127.0.0.1"
+goat_feeds_oauth2_client_id: oauth2-proxy-goat-feeds
+goat_feeds_oauth2_allowed_groups: ""
+goat_feeds_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.7.1@sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3"
