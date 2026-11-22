@@ -22,7 +22,14 @@ const testConfig = `{
                  {"id": "sapient", "to_format": "sapient"}]},
     {"id": "sim", "key": "slot/sim/tracks", "kind": "processed", "data_class": "synthetic",
      "from_format": "goat-processors-system-track", "outputs": [{"id": "cat062", "to_format": "asterix-cat062"}]}
-  ]}`
+  ],
+  "allowed_cidr": "198.51.100.0/24",
+  "intake": {"listen_ip": "198.51.100.9", "ports": [7100, 7101], "key_prefix": "volatile/slot/stream/feeds-in",
+    "formats": [{"id": "mavlink2", "label": "MAVLink 2", "from_format": "mavlink2"},
+                {"id": "cot", "label": "CoT XML", "from_format": "cot-xml"}],
+    "outputs": [{"id": "cot", "label": "CoT", "to_format": "cot-xml", "frame": "newline"},
+                {"id": "cat062", "label": "CAT062", "to_format": "asterix-cat062", "set": {"cat062.sac": "38", "cat062.sic": "210"}}]}
+  }`
 
 func mustConfig(t *testing.T) *Config {
 	t.Helper()
@@ -85,7 +92,17 @@ func (m *memReg) PortInUse(_ context.Context, ip string, port int, tr string) (b
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, f := range m.feeds {
-		if f.DestIP == ip && f.Port == port && f.Transport == tr && contains(liveStates, f.Status) {
+		if f.Direction != "in" && f.DestIP == ip && f.Port == port && f.Transport == tr && contains(liveStates, f.Status) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+func (m *memReg) ListenPortInUse(_ context.Context, port int, tr string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, f := range m.feeds {
+		if f.Direction == "in" && f.Port == port && f.Transport == tr && contains(liveStates, f.Status) {
 			return true, nil
 		}
 	}
@@ -153,7 +170,7 @@ func TestViewerRoles(t *testing.T) {
 }
 
 func good() FeedRequest {
-	return FeedRequest{TopicID: "fused", OutputID: "cat062", DestName: "nav-1", DestIP: "100.64.0.9", Port: float64(7005),
+	return FeedRequest{TopicID: "fused", OutputID: "cat062", DestName: "nav-1", DestIP: "198.51.100.19", Port: float64(7005),
 		Transport: "udp", Days: float64(30), Purpose: "air picture to the console"}
 }
 
@@ -340,5 +357,99 @@ func TestExpiry(t *testing.T) {
 	got, _ := reg.Get(ctx, f.ID)
 	if len(ids) != 1 || got.Status != "expired" {
 		t.Errorf("past end date: %v %s; want expired", ids, got.Status)
+	}
+}
+
+func TestIntakeValidation(t *testing.T) {
+	c, ctx, reg := mustConfig(t), context.Background(), newMem()
+	member := &Viewer{Email: "m@x", Role: RoleMember}
+	admin := &Viewer{Email: "a@x", Role: RoleTactical, IsAdmin: true}
+	req := FeedRequest{Direction: "in", FormatID: "mavlink2", Label: "Blue C-UAS drone position", DestName: "nav-1",
+		DestIP: "198.51.100.42", Port: float64(7100), Purpose: "drone position into the picture"}
+	f, err := ValidateRequest(ctx, req, member, c, reg, time.Now())
+	if err != nil || f.Status != "pending" || f.Direction != "in" {
+		t.Fatalf("member's receive request: %+v %v; want pending", f, err)
+	}
+	f, err = ValidateRequest(ctx, req, admin, c, reg, time.Now())
+	if err != nil || f.Status != "active" {
+		t.Fatalf("tactical admin's receive request: %v %v; want active", f.Status, err)
+	}
+	_, _ = reg.Create(ctx, f, admin.Email, "")
+	if _, err := ValidateRequest(ctx, req, admin, c, reg, time.Now()); err == nil || err.(*Refused).Status != 409 {
+		t.Errorf("second feed on a taken receive port: %v; want 409", err)
+	}
+	bad := req
+	bad.Port = float64(7200)
+	if _, err := ValidateRequest(ctx, bad, admin, c, reg, time.Now()); err == nil {
+		t.Error("a port the site does not offer was accepted")
+	}
+	bad = req
+	bad.FormatID = "nope"
+	if _, err := ValidateRequest(ctx, bad, admin, c, reg, time.Now()); err == nil {
+		t.Error("an unknown standard was accepted")
+	}
+	// A receive port is not a destination port: an outgoing feed to 7100 elsewhere is fine.
+	out := FeedRequest{TopicID: "fused", OutputID: "cat062", DestName: "x", DestIP: "198.51.100.11", Port: float64(7100), Purpose: "abc"}
+	if _, err := ValidateRequest(ctx, out, admin, c, reg, time.Now()); err != nil {
+		t.Errorf("outgoing feed refused because of a receive port: %v", err)
+	}
+}
+
+func TestIntakeRunsAndIsOffered(t *testing.T) {
+	c, ctx, reg := mustConfig(t), context.Background(), newMem()
+	sp := &fakeSpawner{}
+	sup := NewSupervisor(c, reg, sp.spawn, time.Hour)
+	in, _ := reg.Create(ctx, Feed{TopicID: "intake", OutputID: "mavlink2", DestName: "nav-1", DestIP: "198.51.100.42",
+		Port: 7100, Transport: "udp", Status: "active", Direction: "in", Label: "Blue drone", EndAt: time.Now().Add(time.Hour)}, "t", "")
+	if err := sup.Converge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(sp.procs) != 1 {
+		t.Fatalf("one received feed: %d processes, want 1", len(sp.procs))
+	}
+	joined := strings.Join(sp.procs[0].argv, " ")
+	for _, want := range []string{"--from-format mavlink2", "--in udp://198.51.100.9:7100", "--to-format goat-processors-system-track",
+		"--out zenoh:volatile/slot/stream/feeds-in/" + in.ID, "--set track.source_id=" + in.ID} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("receive command lacks %q: %s", want, joined)
+		}
+	}
+	topic := c.Topic("in-" + in.ID)
+	if topic == nil || topic.Key != "volatile/slot/stream/feeds-in/"+in.ID || len(topic.Outputs) != 2 {
+		t.Fatalf("the received feed is not offered as a topic: %+v", topic)
+	}
+	// Someone requests the received feed out to their system; it runs as an ordinary delivery.
+	_, _ = reg.Create(ctx, Feed{TopicID: topic.ID, OutputID: "cot", DestIP: "198.51.100.55", Port: 4242, Transport: "udp",
+		Status: "active", Direction: "out", EndAt: time.Now().Add(time.Hour)}, "t", "")
+	_ = sup.Converge(ctx)
+	if len(sp.procs) != 2 {
+		t.Fatalf("received feed plus one reader: %d processes, want 2", len(sp.procs))
+	}
+	if !strings.Contains(strings.Join(sp.procs[1].argv, " "), "--in zenoh:volatile/slot/stream/feeds-in/"+in.ID) {
+		t.Error("the reader does not subscribe to the received feed's key")
+	}
+	// Pausing the received feed keeps it offered; removing it withdraws it.
+	_, _ = reg.Transition(ctx, in.ID, "paused", "t", "pause", "", false, nil)
+	_ = sup.Converge(ctx)
+	if c.Topic("in-"+in.ID) == nil {
+		t.Error("a paused received feed stopped being offered")
+	}
+	_, _ = reg.Transition(ctx, in.ID, "removed", "t", "remove", "", false, nil)
+	_ = sup.Converge(ctx)
+	if c.Topic("in-"+in.ID) != nil {
+		t.Error("a removed received feed is still offered")
+	}
+}
+
+func TestIntakeHealth(t *testing.T) {
+	f := Feed{Status: "active", Direction: "in"}
+	if h, _ := intakeHealth(f, &GroupView{Running: true}, false); h != "listening" {
+		t.Errorf("nothing received yet: %s; want listening", h)
+	}
+	if h, _ := intakeHealth(f, &GroupView{Running: true, Stats: Stats{In: 5, Failed: 5}, StatsAt: time.Now(), LastInChange: time.Now()}, false); h != "broken" {
+		t.Errorf("all messages fail: %s; want broken", h)
+	}
+	if h, _ := intakeHealth(f, &GroupView{Running: true, Stats: Stats{In: 5, Converted: 5}, StatsAt: time.Now(), LastInChange: time.Now()}, false); h != "receiving" {
+		t.Errorf("messages convert: %s; want receiving", h)
 	}
 }

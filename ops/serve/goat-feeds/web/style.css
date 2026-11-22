@@ -152,3 +152,9 @@ table.audit th { color: var(--muted); font-weight: 600; font-size: 12px; }
   .timeline li { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* receive side */
+.seg.dirseg { margin: 0 0 16px; }
+.seg.wrap { flex-wrap: wrap; }
+.seg button:disabled { color: var(--muted); cursor: not-allowed; text-decoration: line-through; }
+.dir { display: inline-block; font: 600 11px/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .04em; border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; margin-right: 8px; color: var(--muted); vertical-align: 1px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }

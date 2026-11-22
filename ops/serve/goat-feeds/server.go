@@ -36,6 +36,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /api/me", s.auth(s.me))
 	mux.HandleFunc("GET /api/catalog", s.auth(s.catalog))
+	mux.HandleFunc("GET /api/intake", s.auth(s.intake))
 	mux.HandleFunc("GET /api/peers", s.auth(s.peersSearch))
 	mux.HandleFunc("GET /api/feeds", s.auth(s.listFeeds))
 	mux.HandleFunc("POST /api/feeds", s.auth(s.createFeed))
@@ -161,7 +162,27 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, v *Viewer) {
 }
 
 func (s *Server) catalog(w http.ResponseWriter, r *http.Request, v *Viewer) {
-	writeJSON(w, 200, map[string]any{"topics": s.cfg.Catalog})
+	writeJSON(w, 200, map[string]any{"topics": s.cfg.AllTopics()})
+}
+
+// intake describes the receive side: where systems send, which ports are free, which standards.
+func (s *Server) intake(w http.ResponseWriter, r *http.Request, v *Viewer) {
+	in := s.cfg.Intake
+	if !in.Enabled() {
+		writeJSON(w, 200, map[string]any{"enabled": false})
+		return
+	}
+	ports := []map[string]any{}
+	for _, p := range in.Ports {
+		used, err := s.reg.ListenPortInUse(r.Context(), p, "udp")
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		ports = append(ports, map[string]any{"port": p, "free": !used})
+	}
+	writeJSON(w, 200, map[string]any{"enabled": true, "listen_ip": in.ListenIP, "ports": ports,
+		"formats": in.Formats, "outputs": in.Outputs, "publishes_as": in.ToFormat})
 }
 
 func (s *Server) peersSearch(w http.ResponseWriter, r *http.Request, v *Viewer) {
@@ -180,10 +201,33 @@ type feedOut struct {
 	Delivery    *GroupView `json:"delivery"`
 	Health      string     `json:"health"`
 	HealthNote  string     `json:"health_note"`
+	// Receive side only.
+	ListenAt     string `json:"listen_at,omitempty"`
+	PublishedKey string `json:"published_key,omitempty"`
+	PublishedAs  string `json:"published_as,omitempty"`
+	TopicID      string `json:"published_topic_id,omitempty"`
+	ReadersCount int    `json:"readers,omitempty"`
 }
 
 func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 	o := feedOut{Feed: f, Actions: ActionsFor(v, f)}
+	if f.Direction == "in" {
+		o.TopicLabel, o.DataClass, o.Kind = f.Label, "real", "received"
+		if s.cfg.Intake.Enabled() {
+			if ft := s.cfg.Intake.Format(f.OutputID); ft != nil {
+				o.OutputLabel, o.ToFormat = ft.Label, ft.FromFormat
+			}
+			o.ListenAt = fmt.Sprintf("%s:%d/udp", s.cfg.Intake.ListenIP, f.Port)
+			o.PublishedKey, o.PublishedAs, o.TopicID = PublishedKey(s.cfg, f), s.cfg.Intake.ToFormat, "in-"+f.ID
+		}
+		d := s.sup.FeedView(f.ID)
+		o.Health, o.HealthNote = intakeHealth(f, d, o.OutputLabel == "")
+		if !detail && d != nil {
+			d.Lines, d.Command = nil, nil
+		}
+		o.Delivery = d
+		return o
+	}
 	if t := s.cfg.Topic(f.TopicID); t != nil {
 		o.TopicLabel, o.DataClass, o.Kind = t.Label, t.DataClass, t.Kind
 		if out := t.Output(f.OutputID); out != nil {
@@ -235,6 +279,37 @@ func feedHealth(f Feed, d *GroupView, topicGone bool) (string, string) {
 	return "sending", "Sending over TCP."
 }
 
+// intakeHealth is feedHealth for the receive side.
+func intakeHealth(f Feed, d *GroupView, formatGone bool) (string, string) {
+	switch f.Status {
+	case "pending":
+		return "waiting", "Waiting for approval."
+	case "paused":
+		return "paused", "Paused; nothing is received or published."
+	case "declined", "expired", "removed":
+		return f.Status, ""
+	}
+	if formatGone {
+		return "broken", "Its standard is no longer offered at this site."
+	}
+	if d == nil {
+		return "starting", "The loop has not picked it up yet (a few seconds)."
+	}
+	if !d.Running {
+		return "broken", "The receiving process is not running: " + d.LastError
+	}
+	if d.StatsAt.IsZero() || d.Stats.In == 0 {
+		return "listening", "Listening; nothing has arrived from the sender yet. Check the sender is sending to the address shown."
+	}
+	if d.Stats.Failed > 0 && d.Stats.Converted == 0 {
+		return "broken", "Data arrives but none of it reads as the chosen standard. Last error: " + d.LastError
+	}
+	if time.Since(d.LastInChange) > 60*time.Second {
+		return "quiet", "Data arrived earlier, but nothing in the last minute."
+	}
+	return "receiving", "Receiving and publishing on the fabric."
+}
+
 func (s *Server) listFeeds(w http.ResponseWriter, r *http.Request, v *Viewer) {
 	feeds, err := s.reg.List(r.Context())
 	if err != nil {
@@ -264,7 +339,11 @@ func (s *Server) createFeed(w http.ResponseWriter, r *http.Request, v *Viewer) {
 		s.fail(w, err)
 		return
 	}
-	created, err := s.reg.Create(r.Context(), f, v.Email, fmt.Sprintf("%s → %s %s:%d/%s: %s", f.TopicID, f.DestName, f.DestIP, f.Port, f.Transport, f.Purpose))
+	detail := fmt.Sprintf("%s → %s %s:%d/%s: %s", f.TopicID, f.DestName, f.DestIP, f.Port, f.Transport, f.Purpose)
+	if f.Direction == "in" {
+		detail = fmt.Sprintf("receive %q (%s) from %s %s on port %d/%s: %s", f.Label, f.OutputID, f.DestName, f.DestIP, f.Port, f.Transport, f.Purpose)
+	}
+	created, err := s.reg.Create(r.Context(), f, v.Email, detail)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -341,7 +420,12 @@ func (s *Server) feedAction(w http.ResponseWriter, r *http.Request, v *Viewer) {
 		}
 		out, err = s.reg.Transition(ctx, f.ID, status, v.Email, "renew", fmt.Sprintf("%d days. %s", days, note), false, &end)
 	case "check":
-		writeJSON(w, 200, checkDestination(ctx, f))
+		res := checkDestination(ctx, f)
+		if f.Direction == "in" {
+			delete(res, "udp_note")
+			res["receive_note"] = "The sender must send to this core node over UDP; the counters above show whether anything arrives. A ping only shows the sender is on the mesh."
+		}
+		writeJSON(w, 200, res)
 		return
 	default:
 		writeErr(w, 404, "Unknown action.")

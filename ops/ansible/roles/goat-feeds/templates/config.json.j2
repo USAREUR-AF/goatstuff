@@ -13,5 +13,6 @@
   "pipe": {"binary": goat_feeds_pipe_binary, "packs": goat_feeds_pipe_packs, "zenoh_config": goat_feeds_zenoh_config},
   "peers": {"api": goat_feeds_peers_api if goat_feeds_nb_api_token | length > 0 else "",
             "token_file": (goat_feeds_etc ~ "/secrets/nb-token") if goat_feeds_nb_api_token | length > 0 else ""},
-  "catalog": goat_feeds_catalog
+  "catalog": goat_feeds_catalog,
+  "intake": goat_feeds_intake
 } | to_nice_json }}

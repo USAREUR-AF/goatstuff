@@ -39,6 +39,36 @@ func groupKey(t *Topic, o *Output) string {
 
 func outURI(f Feed) string { return fmt.Sprintf("%s://%s:%d", f.Transport, f.DestIP, f.Port) }
 
+// intakeCommand receives one system's datagrams on this core node and publishes each message,
+// converted to the site's canonical form, on the fabric.
+func intakeCommand(cfg *Config, f Feed, ft *IntakeFormat) []string {
+	in := cfg.Intake
+	cmd := []string{cfg.Pipe.Binary, "--packs", cfg.Pipe.Packs, "--packs-only", "--from-format", ft.FromFormat,
+		"--in", fmt.Sprintf("udp://%s:%d", in.ListenIP, f.Port)}
+	if ft.InFrame != "" {
+		cmd = append(cmd, "--in-frame", ft.InFrame)
+	}
+	keys := make([]string, 0, len(ft.Set))
+	for k := range ft.Set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		cmd = append(cmd, "--set", k+"="+ft.Set[k])
+	}
+	cmd = append(cmd, "--set", "track.source_id="+f.ID, "--to-format", in.ToFormat, "--out-frame", in.OutFrame,
+		"--out", "zenoh:"+PublishedKey(cfg, f)+"?config="+cfg.Pipe.ZenohConfig)
+	return cmd
+}
+
+// publishedTopic is a live received feed offered like a catalog topic.
+func publishedTopic(cfg *Config, f Feed) Topic {
+	return Topic{ID: "in-" + f.ID, Label: f.Label, Key: PublishedKey(cfg, f), Kind: "published", DataClass: "real",
+		FromFormat: cfg.Intake.ToFormat, InFrame: cfg.Intake.OutFrame,
+		Description: fmt.Sprintf("Received from %s (%s), published by goat-feeds.", f.DestName, f.DestIP),
+		Outputs:     cfg.Intake.Outputs}
+}
+
 func pipeCommand(cfg *Config, t *Topic, o *Output, outs []string) []string {
 	cmd := []string{cfg.Pipe.Binary, "--packs", cfg.Pipe.Packs, "--packs-only", "--from-format", t.FromFormat,
 		"--in", "zenoh:" + t.Key + "?config=" + cfg.Pipe.ZenohConfig}
@@ -122,25 +152,25 @@ type Stats struct {
 }
 
 type Group struct {
-	Key           string
-	Topic         *Topic
-	Output        *Output
-	Outs          []string
-	Feeds         []string
-	Cmd           []string
-	proc          Process
-	running       bool
-	StartedAt     time.Time
-	Restarts      int
-	LastExit      string
-	backoffUntil  time.Time
-	Lines         []string
-	LastError     string
-	LastErrorAt   time.Time
-	Stats         Stats
-	StatsAt       time.Time
-	LastInChange  time.Time
-	gen           int
+	Key          string
+	Topic        *Topic
+	Output       *Output
+	Outs         []string
+	Feeds        []string
+	Cmd          []string
+	proc         Process
+	running      bool
+	StartedAt    time.Time
+	Restarts     int
+	LastExit     string
+	backoffUntil time.Time
+	Lines        []string
+	LastError    string
+	LastErrorAt  time.Time
+	Stats        Stats
+	StatsAt      time.Time
+	LastInChange time.Time
+	gen          int
 }
 
 type GroupView struct {
@@ -184,6 +214,20 @@ func (s *Supervisor) desired(feeds []Feed) map[string]*Group {
 	want := map[string]*Group{}
 	members := map[string][]member{}
 	for _, f := range feeds {
+		if f.Direction == "in" {
+			if !s.cfg.Intake.Enabled() {
+				continue
+			}
+			ft := s.cfg.Intake.Format(f.OutputID)
+			if ft == nil {
+				continue
+			}
+			k := "in:" + f.ID
+			want[k] = &Group{Key: k, Topic: &Topic{ID: "intake", Label: f.Label}, Output: &Output{ID: ft.ID, ToFormat: ft.FromFormat},
+				Outs: []string{fmt.Sprintf("udp://%s:%d", s.cfg.Intake.ListenIP, f.Port)}, Feeds: []string{f.ID},
+				Cmd: intakeCommand(s.cfg, f, ft)}
+			continue
+		}
 		t := s.cfg.Topic(f.TopicID)
 		if t == nil {
 			continue
@@ -227,10 +271,22 @@ func sameOuts(a, b []string) bool {
 
 // Converge brings running processes in line with the active feeds.
 func (s *Supervisor) Converge(ctx context.Context) error {
-	feeds, err := s.reg.List(ctx, "active")
+	live, err := s.reg.List(ctx, "active", "paused")
 	if err != nil {
 		return err
 	}
+	var feeds []Feed
+	var pub []Topic
+	for _, f := range live {
+		if f.Direction == "in" && s.cfg.Intake.Enabled() {
+			pub = append(pub, publishedTopic(s.cfg, f))
+		}
+		if f.Status == "active" {
+			feeds = append(feeds, f)
+		}
+	}
+	// Publish first, so a feed reading a received topic resolves it in this same pass.
+	s.cfg.SetPublished(pub)
 	want := s.desired(feeds)
 	now := time.Now()
 	s.mu.Lock()

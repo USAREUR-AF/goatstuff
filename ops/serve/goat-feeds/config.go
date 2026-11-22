@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"sync"
 )
 
 // Output is one output form a topic offers: a goat-xf conversion and its framing.
@@ -40,6 +41,48 @@ func (t *Topic) Output(id string) *Output {
 	return nil
 }
 
+// IntakeFormat is a standard a sending system may use: how goat-xf reads it.
+type IntakeFormat struct {
+	ID         string            `json:"id"`
+	Label      string            `json:"label"`
+	FromFormat string            `json:"from_format"`
+	InFrame    string            `json:"in_frame,omitempty"`
+	Set        map[string]string `json:"set,omitempty"`
+	Note       string            `json:"note,omitempty"`
+}
+
+// Intake is the receive side: systems send to a port on this core node, and each received
+// feed is published on the fabric in one canonical form and offered in the catalog.
+type Intake struct {
+	ListenIP  string         `json:"listen_ip"`
+	Ports     []int          `json:"ports"`
+	KeyPrefix string         `json:"key_prefix"`
+	ToFormat  string         `json:"to_format"`
+	OutFrame  string         `json:"out_frame"`
+	Formats   []IntakeFormat `json:"formats"`
+	Outputs   []Output       `json:"outputs"`
+}
+
+func (in *Intake) Enabled() bool { return in != nil && in.ListenIP != "" && len(in.Ports) > 0 }
+
+func (in *Intake) Format(id string) *IntakeFormat {
+	for i := range in.Formats {
+		if in.Formats[i].ID == id {
+			return &in.Formats[i]
+		}
+	}
+	return nil
+}
+
+func (in *Intake) HasPort(p int) bool {
+	for _, q := range in.Ports {
+		if q == p {
+			return true
+		}
+	}
+	return false
+}
+
 type PipeConfig struct {
 	Binary      string `json:"binary"`
 	Packs       string `json:"packs"`
@@ -68,8 +111,12 @@ type Config struct {
 	Pipe                 PipeConfig  `json:"pipe"`
 	Peers                PeersConfig `json:"peers"`
 	Catalog              []Topic     `json:"catalog"`
+	Intake               *Intake     `json:"intake"`
 
 	allowed netip.Prefix
+
+	pubMu     sync.RWMutex
+	published []Topic // received feeds now on the fabric, offered like catalog topics
 }
 
 func (c *Config) Topic(id string) *Topic {
@@ -78,7 +125,30 @@ func (c *Config) Topic(id string) *Topic {
 			return &c.Catalog[i]
 		}
 	}
+	c.pubMu.RLock()
+	defer c.pubMu.RUnlock()
+	for i := range c.published {
+		if c.published[i].ID == id {
+			t := c.published[i]
+			return &t
+		}
+	}
 	return nil
+}
+
+// AllTopics is the catalog plus the received feeds currently published.
+func (c *Config) AllTopics() []Topic {
+	c.pubMu.RLock()
+	defer c.pubMu.RUnlock()
+	return append(append([]Topic{}, c.Catalog...), c.published...)
+}
+
+// SetPublished replaces the published topics. A topic stays offered while its received feed
+// is live (on or paused), so a pause does not break the feeds that read it.
+func (c *Config) SetPublished(ts []Topic) {
+	c.pubMu.Lock()
+	defer c.pubMu.Unlock()
+	c.published = ts
 }
 
 func ParseConfig(b []byte) (*Config, error) {
@@ -135,6 +205,40 @@ func ParseConfig(b []byte) (*Config, error) {
 		}
 		if t.Label == "" {
 			c.Catalog[i].Label = t.ID
+		}
+	}
+	if c.Intake != nil && (c.Intake.ListenIP != "" || len(c.Intake.Ports) > 0) {
+		in := c.Intake
+		if _, err := netip.ParseAddr(in.ListenIP); err != nil {
+			return nil, fmt.Errorf("config: intake.listen_ip: %w", err)
+		}
+		if len(in.Ports) == 0 || len(in.Formats) == 0 || len(in.Outputs) == 0 {
+			return nil, fmt.Errorf("config: intake needs ports, formats and outputs")
+		}
+		if in.KeyPrefix == "" {
+			return nil, fmt.Errorf("config: intake.key_prefix is required")
+		}
+		if in.ToFormat == "" {
+			in.ToFormat = "goat-processors-system-track"
+		}
+		if in.OutFrame == "" {
+			in.OutFrame = "newline"
+		}
+		for i, f := range in.Formats {
+			if f.ID == "" || f.FromFormat == "" {
+				return nil, fmt.Errorf("config: intake.formats[%d]: id and from_format are required", i)
+			}
+			if f.Label == "" {
+				in.Formats[i].Label = f.ID
+			}
+		}
+		for j, o := range in.Outputs {
+			if o.ID == "" || o.ToFormat == "" {
+				return nil, fmt.Errorf("config: intake.outputs[%d]: id and to_format are required", j)
+			}
+			if o.Label == "" {
+				in.Outputs[j].Label = o.ID
+			}
 		}
 	}
 	return c, nil
