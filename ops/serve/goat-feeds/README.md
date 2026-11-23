@@ -28,6 +28,7 @@ on the mesh (a warrant rule).
 | `policy.go` | roles from the sign-in fence, who may do what, request validation, first state |
 | `supervisor.go` | delivery: groups feeds by topic and output form, runs and restarts the pipes, keeps counters and output |
 | `signals.go` | the two facts per feed: Integrated, and Sending or Receiving, each yes or no with its reason |
+| `facets.go` | facets from the estate (region, site, system, receiving role), needs-attention rules, filters and counts (fabric-feeds.md §11) |
 | `declared.go` | links started by deployment files (ADR 1260): reads their manifests and polls each unit every 10 s, shown read-only beside requested feeds |
 | `peers.go` | mesh peers from the NetBird API for the destination picker |
 | `server.go` | the API, `/healthz`, `/metrics`, the embedded page |

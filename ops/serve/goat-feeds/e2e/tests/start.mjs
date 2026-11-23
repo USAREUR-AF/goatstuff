@@ -55,10 +55,20 @@ const declDir = join(dir, "declared.d");
 mkdirSync(declDir);
 writeFileSync(join(declDir, "pipeline-test.json"), JSON.stringify({ owner: "processors pipeline test", links: [
   { id: "fused-to-console", unit: "goat-xf-pipe@fused-test.service", direction: "out", source_key: "slot/stream/fused/tracks",
-    source_label: "Fused air picture (declared)", sources: ["Radar A", "Radar B"], to_format: "asterix-cat062", output_label: "ASTERIX CAT062 (SAC 38 / SIC 204)",
+    source_label: "Fused air picture (declared)", sources: [{ label: "Radar A", site: "alpha", system: "radar-a" }, { label: "Radar B", site: "alpha", system: "radar-b" }], to_format: "asterix-cat062", output_label: "ASTERIX CAT062 (SAC 38 / SIC 204)",
     dest: "udp://198.51.100.70:7005", data_class: "real", controlled_by: "destinations.test.enabled in the pipeline declaration", enabled: true },
 ] }));
 cfg.declared_dir = declDir;
+// Facets: a small estate, one console declared in the settings, and sources on the raw topic.
+const estatePath = join(dir, "estate.json");
+writeFileSync(estatePath, JSON.stringify({
+  regions: [{ region_id: "north", label: "North" }],
+  sites: [{ site_id: "alpha", label: "Alpha", region_id: "north", systems: [
+    { name: "radar-a", class: "radar" }, { name: "radar-b", class: "radar" }, { name: "radar-c", class: "radar", duty_cycled: true }] }],
+}));
+cfg.estate_file = estatePath;
+cfg.systems = [{ name: "console-70", label: "Console 70", site: "alpha", class: "console", peer: "198.51.100.70" }];
+for (const t of cfg.catalog) if (t.id === "radar") t.sources = [{ label: "Radar C", site: "alpha", system: "radar-c" }];
 cfg.declared_probe = { systemctl: join(here, "fake-systemctl.sh"), journalctl: join(here, "fake-journalctl.sh") };
 const cfgPath = join(dir, "config.json");
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));

@@ -65,3 +65,11 @@ goat_feeds_intake: {}
 # requested feeds. Empty switches it off (and drops the journal read access).
 goat_feeds_declared_dir: /etc/goat-links/declared.d
 
+# Facets (fabric-feeds.md §11). The goatnet's estate file (goat-map's declaration of
+# regions, sites and systems), receiving systems it does not list (each placed in an
+# estate site: {name, label, site, class, peer}), and the goatnet's mesh group prefix,
+# stripped from role names. An empty estate turns the estate checks off.
+goat_feeds_estate_src: ""
+goat_feeds_systems: []
+goat_feeds_group_prefix: ""
+

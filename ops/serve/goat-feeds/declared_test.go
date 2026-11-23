@@ -66,7 +66,7 @@ func TestDeclaredRows(t *testing.T) {
 	if rows[0].DestIP != "198.51.100.20" || rows[0].Port != 7005 || rows[0].Transport != "udp" || rows[0].ControlledBy == "" {
 		t.Errorf("fused row: %+v", rows[0].Feed)
 	}
-	if len(rows[0].Sources) != 2 || rows[0].Sources[1] != "Radar B" {
+	if len(rows[0].Sources) != 2 || rows[0].Sources[1].Label != "Radar B" {
 		t.Errorf("sources: %v", rows[0].Sources)
 	}
 	if !strings.Contains(rows[3].Integrated.Note, "Switched off") {

@@ -209,3 +209,17 @@ table.audit th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .flegend .lg.off::before { border-top: 2px dotted var(--muted); }
 .flegend .lg.hint::before { display: none; }
 
+
+/* Facets, groups and attention (fabric-feeds.md §11). */
+.toolbar.facets { gap: 10px 16px; font-size: 13px; color: var(--muted); }
+.toolbar.facets label { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar.facets select { padding: 5px 8px; }
+.toolbar.facets .counts { margin-left: auto; color: var(--ink); font-weight: 600; }
+details.group { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+details.group + details.group { margin-top: 8px; }
+details.group > summary { cursor: pointer; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding: 4px 2px; list-style-position: inside; }
+details.group > summary .gkey { font-weight: 700; }
+details.group > summary .gcount { font-size: 13px; color: var(--muted); }
+details.group > .list { margin: 6px 0 4px; }
+.facetline .why { color: var(--ink); font-weight: 600; }
+.flowsvg .fcount { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }

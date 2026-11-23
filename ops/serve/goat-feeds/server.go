@@ -26,6 +26,7 @@ type Server struct {
 	sup   *Supervisor
 	peers *Peers
 	decl  *Declared
+	est   *Estate
 	start time.Time
 }
 
@@ -41,6 +42,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/peers", s.auth(s.peersSearch))
 	mux.HandleFunc("GET /api/feeds", s.auth(s.listFeeds))
 	mux.HandleFunc("POST /api/feeds", s.auth(s.createFeed))
+	mux.HandleFunc("GET /api/feeds/summary", s.auth(s.summary))
 	mux.HandleFunc("GET /api/feeds/{id}", s.auth(s.getFeed))
 	mux.HandleFunc("POST /api/feeds/{id}/{action}", s.auth(s.feedAction))
 	mux.HandleFunc("GET /api/audit", s.auth(s.audit))
@@ -214,8 +216,9 @@ type feedOut struct {
 	// Declared links only (ADR 1260): started by a deployment file, shown read-only.
 	ControlledBy string `json:"controlled_by,omitempty"`
 	// The sensors or systems a declared link's data comes from (flow view).
-	Sources  []string `json:"sources,omitempty"`
-	Manifest string   `json:"manifest,omitempty"`
+	Sources  []SourceRef `json:"sources,omitempty"`
+	Facets   Facets      `json:"facets"`
+	Manifest string      `json:"manifest,omitempty"`
 }
 
 func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
@@ -232,6 +235,7 @@ func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 		d := s.sup.FeedView(f.ID)
 		o.Health, o.HealthNote = intakeHealth(f, d, o.OutputLabel == "")
 		o.Integrated, o.Flowing = linkSignals(f, d, o.OutputLabel == "", true, time.Now())
+		o.Facets = facetsFor(s.est, &o, nil, s.peerByIP(f.DestIP), s.cfg.GroupPrefix)
 		if !detail && d != nil {
 			d.Lines, d.Command = nil, nil
 		}
@@ -247,6 +251,10 @@ func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 	d := s.sup.FeedView(f.ID)
 	o.Health, o.HealthNote = feedHealth(f, d, o.TopicLabel == "")
 	o.Integrated, o.Flowing = linkSignals(f, d, o.TopicLabel == "", false, time.Now())
+	if t := s.cfg.Topic(f.TopicID); t != nil {
+		o.Sources = labelSources(s.est, t.Sources)
+	}
+	o.Facets = facetsFor(s.est, &o, o.Sources, s.peerByIP(f.DestIP), s.cfg.GroupPrefix)
 	if detail {
 		o.Delivery = d
 	} else if d != nil {
@@ -332,7 +340,7 @@ func (s *Server) listFeeds(w http.ResponseWriter, r *http.Request, v *Viewer) {
 		out = append(out, s.decorate(f, v, false))
 	}
 	out = append(out, s.declaredRows(r.Context(), time.Now())...)
-	writeJSON(w, 200, map[string]any{"feeds": out})
+	writeJSON(w, 200, map[string]any{"feeds": filterRows(out, r.URL.Query())})
 }
 
 func (s *Server) createFeed(w http.ResponseWriter, r *http.Request, v *Viewer) {
@@ -511,7 +519,7 @@ func (s *Server) declaredRows(ctx context.Context, now time.Time) []feedOut {
 		}
 		o := feedOut{Feed: f, TopicLabel: l.SourceLabel, OutputLabel: l.OutputLabel, ToFormat: l.ToFormat,
 			DataClass: l.DataClass, Kind: "declared", Delivery: ds.View, ControlledBy: l.ControlledBy, Manifest: ds.Source,
-			Sources: l.Sources}
+			Sources: labelSources(s.est, l.Sources)}
 		if o.OutputLabel == "" {
 			o.OutputLabel = l.ToFormat
 		}
@@ -522,7 +530,143 @@ func (s *Server) declaredRows(ctx context.Context, now time.Time) []feedOut {
 		if !l.Enabled {
 			o.Integrated = no("Switched off in its declaration.")
 		}
+		o.Facets = facetsFor(s.est, &o, l.Sources, s.peerByIP(ip), s.cfg.GroupPrefix)
 		out = append(out, o)
 	}
 	return out
+}
+
+// peerByIP is the mesh peer at an address, when a peer source is configured.
+func (s *Server) peerByIP(ip string) *Peer {
+	if s.peers == nil || !s.peers.Enabled() || ip == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.peers.ByIP(ctx, ip)
+}
+
+// filterFacets are the query parameters /api/feeds and /api/feeds/summary accept.
+var filterFacets = []string{"site", "source_site", "region", "system", "source", "dest_site", "dest_system",
+	"dest_role", "dest_class", "format", "owner", "kind", "direction", "state"}
+
+// filterRows keeps the rows that match every facet given (case-insensitive; a facet
+// matches when any of the row's values for it equals the parameter) and the free text q.
+func filterRows(rows []feedOut, q map[string][]string) []feedOut {
+	out := make([]feedOut, 0, len(rows))
+	text := strings.ToLower(strings.TrimSpace(first(q["q"])))
+rows:
+	for _, o := range rows {
+		for _, k := range filterFacets {
+			want := strings.ToLower(strings.TrimSpace(first(q[k])))
+			if want == "" {
+				continue
+			}
+			hit := false
+			for _, v := range facetValues(o, k) {
+				if strings.ToLower(v) == want {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				continue rows
+			}
+		}
+		if text != "" {
+			hay := strings.ToLower(strings.Join(append([]string{o.TopicLabel, o.DestName, o.DestIP, o.Owner, o.OutputLabel, o.ID, o.Label},
+				append(o.Facets.SourceSystems, o.Facets.DestSystem)...), " "))
+			if !strings.Contains(hay, text) {
+				continue
+			}
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+func first(xs []string) string {
+	if len(xs) == 0 {
+		return ""
+	}
+	return xs[0]
+}
+
+// GroupCount is one group's counts by state.
+type GroupCount struct {
+	Key       string `json:"key"`
+	Total     int    `json:"total"`
+	Attention int    `json:"attention"`
+	Sending   int    `json:"sending"`
+	AtRest    int    `json:"at_rest"`
+	Idle      int    `json:"idle"`
+	Off       int    `json:"off"`
+}
+
+// summarize counts rows by one facet; a row with several values counts in each group.
+func summarize(rows []feedOut, facet string) []GroupCount {
+	idx := map[string]*GroupCount{}
+	var keys []string
+	for _, o := range rows {
+		vals := uniq(facetValues(o, facet))
+		if len(vals) == 0 {
+			vals = []string{"(undeclared)"}
+		}
+		for _, v := range vals {
+			g, ok := idx[v]
+			if !ok {
+				g = &GroupCount{Key: v}
+				idx[v] = g
+				keys = append(keys, v)
+			}
+			// Independent counts: a link can be sending and still need attention.
+			g.Total++
+			if o.Facets.Attention {
+				g.Attention++
+			}
+			switch {
+			case o.Flowing.On:
+				g.Sending++
+			case o.Facets.AtRest:
+				g.AtRest++
+			case o.Integrated.On:
+				g.Idle++
+			default:
+				g.Off++
+			}
+		}
+	}
+	sort.Strings(keys)
+	out := make([]GroupCount, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, *idx[k])
+	}
+	return out
+}
+
+func (s *Server) summary(w http.ResponseWriter, r *http.Request, v *Viewer) {
+	group := r.URL.Query().Get("group")
+	ok := false
+	for _, f := range filterFacets {
+		ok = ok || f == group
+	}
+	if !ok {
+		writeErr(w, 400, "group must be one of: "+strings.Join(filterFacets, ", "))
+		return
+	}
+	feeds, err := s.reg.List(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	rows := make([]feedOut, 0, len(feeds))
+	for _, f := range feeds {
+		if f.Status == "removed" {
+			continue
+		}
+		rows = append(rows, s.decorate(f, v, false))
+	}
+	rows = append(rows, s.declaredRows(r.Context(), time.Now())...)
+	rows = filterRows(rows, r.URL.Query())
+	writeJSON(w, 200, map[string]any{"group": group, "total": len(rows), "groups": summarize(rows, group)})
 }

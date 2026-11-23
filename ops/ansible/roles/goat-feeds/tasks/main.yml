@@ -145,6 +145,16 @@
   when: goat_feeds_nb_api_token | length > 0
   notify: restart goat-feeds
 
+- name: goat-feeds | estate declaration (regions, sites, systems; fabric-feeds.md §11)
+  ansible.builtin.copy:
+    src: "{{ goat_feeds_estate_src }}"
+    dest: "{{ goat_feeds_etc }}/estate.json"
+    owner: root
+    group: "{{ goat_feeds_user }}"
+    mode: "0640"
+  when: goat_feeds_estate_src | length > 0
+  notify: restart goat-feeds
+
 - name: goat-feeds | site configuration
   ansible.builtin.template:
     src: config.json.j2
