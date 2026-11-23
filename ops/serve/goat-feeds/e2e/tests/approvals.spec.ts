@@ -11,7 +11,7 @@ test("a member's real-data request waits, a tactical admin approves it on the Ap
   const mp = await memberCtx.newPage();
   await mp.goto("/#feeds");
   await expect(mp.locator("#nav-approvals")).toBeHidden();
-  await expect(mp.locator(".card", { hasText: "approval-target" }).locator(".h")).toHaveText("waiting");
+  await expect(mp.locator(".card", { hasText: "approval-target" }).locator(".sig.int .n")).toHaveText("Waiting for approval.");
   await memberCtx.close();
 
   const ctx = await as(browser, "tactical");
@@ -26,7 +26,7 @@ test("a member's real-data request waits, a tactical admin approves it on the Ap
   await expect(page.locator("#toast")).toContainText("Approve: done.");
   await expect(page.locator(".card", { hasText: "approval-target" })).toHaveCount(0);
   await page.goto(`/#feed/${f.id}`);
-  await expect(page.locator("#feed-head .h")).toHaveText(/starting|sending/);
+  await expect(page.locator("#feed-head .sig.int .n")).toHaveText(/Starting|Process running/);
   await expect(page.locator("#timeline")).toContainText("approve by tactical@example.test");
   w.check();
   await ctx.close();
