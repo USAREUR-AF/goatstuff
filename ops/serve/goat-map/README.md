@@ -116,7 +116,8 @@ A declared key may carry goat-processors reports or system tracks (JSON lines),
 which hold no schema id and are read from declared keys only. On a relayed
 stream, `accept` lists the `track.source_id` values to draw and names each one's
 own producer slot (`anchor`), so per-viewer access follows the radar's owner and
-not the relay.
+not the relay. `yield_to` names the key of another copy of the same tracks: the
+source is read only while that key has been silent for 30 seconds.
 
 ## Basemap
 

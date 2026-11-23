@@ -189,3 +189,27 @@ def test_stream_ticks_every_interval_and_is_scoped(svc):
         finally:
             await c.close()
     asyncio.run(go())
+
+
+def test_a_second_copy_is_read_only_while_the_first_is_silent(svc):
+    _, s = svc
+    first = f"{OWNER}/radar/tracks-cot/cot"
+    s.sources[0]["accept"]["radar-x"]["yield_to"] = first
+    s.yields = classes.Yields(s.sources)
+    s._handle_fabric(REPORTS, json.dumps(_report(uid="1")).encode())
+    s._handle_fabric(first, b"{}")
+    s._handle_fabric(REPORTS, json.dumps(_report(uid="2")).encode())
+    assert [t["label"] for t in s.store.snapshot()] == ["1"]
+    s.yields._last[first] -= s.yields.YIELD_S + 1
+    s._handle_fabric(REPORTS, json.dumps(_report(uid="3")).encode())
+    assert sorted(t["label"] for t in s.store.snapshot()) == ["1", "3"]
+
+
+def test_the_page_names_each_script_by_its_content(svc, tmp_path):
+    m, _ = svc
+    (tmp_path / "app.js").write_text("one")
+    (tmp_path / "index.html").write_text('<script src="app.js"></script><a href="https://x/y.js">')
+    a = m._versioned_index(tmp_path)
+    (tmp_path / "app.js").write_text("two")
+    b = m._versioned_index(tmp_path)
+    assert a != b and 'src="app.js?v=' in a and 'href="https://x/y.js"' in a
