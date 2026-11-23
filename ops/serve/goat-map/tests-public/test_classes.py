@@ -242,3 +242,50 @@ def test_a_topic_with_a_portal_record_links_to_it(svc, monkeypatch):
     got = {t["origin"]["key"]: t["origin"].get("record") for t in s.store.snapshot()}
     assert got[REPORTS] is None
     assert got[FEED].startswith("https://portal.example/schema.html?key=" + SLOT + "%2F")
+
+
+def test_a_tag_in_the_data_overrides_the_declared_class(svc):
+    _, s = svc
+    def send(**kw):
+        s._handle_fabric(FEED, json.dumps({"lat": 45.0, "lon": 29.0, **kw}).encode())
+    send(uid="7", type="a-h-A")
+    send(uid="8", type="a-f-A")
+    send(uid="9", type="a-u-A")
+    send()
+    got = {t["label"]: (t["class"], t["class_from"]) for t in s.store.snapshot()}
+    assert got["Blue 7"] == ("hostile", "tagged by the source")
+    assert got["Blue 8"] == ("friendly", "tagged by the source")
+    assert got["Blue 9"] == ("friendly", "declared source")
+    assert got["Blue"] == ("friendly", "declared source")
+    send(uid="7", type="a-f-A")  # the operator at the source changes the tag
+    assert {t["label"]: t["class"] for t in s.store.snapshot()}["Blue 7"] == "friendly"
+
+
+def test_an_untagged_track_of_a_tagging_source_is_unknown(svc):
+    _, s = svc
+    s.sources = classes.load_sources([{"key": FEED, "sensor": "Nav", "tagged": True, "simulated": True}])
+    for uid, typ in (("1", "a-u-A"), ("2", "a-h-A"), ("3", None)):
+        s._handle_fabric(FEED, json.dumps({"lat": 45.0, "lon": 29.0, "uid": uid, "type": typ}).encode())
+    assert {t["label"]: t["class"] for t in s.store.snapshot()} == {"1": "unknown", "2": "hostile", "3": "unknown"}
+    assert all(t["synthetic"] for t in s.store.snapshot())
+    with pytest.raises(ValueError):
+        classes.load_sources([{"key": FEED, "tagged": True, "class": "friendly"}])
+
+
+def test_a_mark_holds_and_the_source_tag_stays_visible(svc):
+    _, s = svc
+    msg = json.dumps({"lat": 45.0, "lon": 29.0, "uid": "7", "type": "a-h-A"}).encode()
+    s._handle_fabric(FEED, msg)
+    (t,) = s.store.snapshot()
+    s.mark(t["id"], "friendly", "someone")
+    s._handle_fabric(FEED, msg)
+    (t,) = s.store.snapshot()
+    assert (t["class"], t["source_class"]) == ("friendly", "hostile")
+
+
+def test_the_card_says_what_the_source_is(svc):
+    _, s = svc
+    s.sources[1]["detail"] = "our aircraft"
+    s._handle_fabric(FEED, json.dumps({"lat": 45.0, "lon": 29.0}).encode())
+    (t,) = s.store.snapshot()
+    assert t["origin"]["detail"] == "our aircraft" and t["label"] == "Blue"

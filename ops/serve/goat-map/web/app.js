@@ -384,6 +384,8 @@ function renderDetail() {
     ['course', t.course_deg == null ? '—' : `${String(Math.round(t.course_deg)).padStart(3, '0')}°`],
     ['speed', t.speed_mps == null ? '—' : `${t.speed_mps.toFixed(1)} m/s · ${(t.speed_mps * 1.94384).toFixed(1)} kn`],
     ['class', `${TRACK_CLASS[classOf(t)].label} (${escHtml(t.class_from || 'message')})`],
+    ...(TRACK_CLASS[t.source_class] && t.source_class !== classOf(t)
+      ? [['source says', TRACK_CLASS[t.source_class].label]] : []),
     ['affiliation', escHtml(t.affiliation)],
     ['dimension', escHtml(t.dimension)],
     ['message', escHtml(t.kind)],
@@ -393,6 +395,7 @@ function renderDetail() {
     ['observed', `${ageOf(t).toFixed(0)}s ago`],
     ['sensor clock', escHtml(t.reported_at || '—')],
     ['from', fromOf(t)],
+    ...(t.origin && t.origin.detail ? [['what it is', escHtml(t.origin.detail)]] : []),
     ['producer', t.org ? escHtml(t.org) : `${(t.producer_anchor || '').slice(0, 8)}… (unverified)`],
     ['data format', escHtml((t.origin && t.origin.standard) || '—')],
     ['data standard', t.origin && /^https?:\/\//.test(t.origin.record || '')
