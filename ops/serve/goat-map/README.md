@@ -119,6 +119,12 @@ own producer slot (`anchor`), so per-viewer access follows the radar's owner and
 not the relay. `yield_to` names the key of another copy of the same tracks: the
 source is read only while that key has been silent for 30 seconds.
 
+## ADS-B
+
+`python -m goatmap.adsb` is a separate publisher: civil aircraft from a public ADS-B
+aggregator (adsb.lol data is ODbL) as one trackset key the map subscribes to. The
+map does not depend on it. Settings are in the module's docstring.
+
 ## Basemap
 
 Self-hosted: a Protomaps extract of the area of interest plus vendored
