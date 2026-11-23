@@ -108,7 +108,7 @@ async function refreshFeeds() {
 // ---------- feeds list ----------
 function matches(f) {
   const me = state.me.viewer.email.toLowerCase();
-  if (state.filter === "mine" && f.owner.toLowerCase() !== me) return false;
+  if (state.filter === "mine" && (f.kind === "declared" || f.owner.toLowerCase() !== me)) return false;
   if (state.filter === "waiting" && f.status !== "pending") return false;
   if (state.filter === "live" && !["active", "paused"].includes(f.status)) return false;
   if (state.filter === "all" && f.status === "removed") return false;
@@ -116,7 +116,19 @@ function matches(f) {
   if (!q) return true;
   return [f.topic_label, f.dest_name, f.dest_ip, String(f.port), f.owner, f.output_label, f.id, f.label].some((x) => (x || "").toLowerCase().includes(q));
 }
+function declaredCard(f) {
+  const d = f.delivery;
+  const side = d && d.stats ? `${d.stats.in} in · ${d.stats.converted} out` : "";
+  return el("div", { class: "card feed-row declared" },
+    ...signals(f),
+    el("div", { class: "main" },
+      el("div", { class: "line1" }, el("span", { class: "dir", text: "OUT" }), el("span", { class: "dir decl", text: "DECLARED" }), title(f)),
+      el("div", { class: "line2", text: `${f.output_label} to ${f.dest_ip}:${f.port}/${f.transport} · ${f.owner}` }),
+      el("div", { class: "line2", text: `Controlled by ${f.controlled_by || "its deployment file"} (manifest ${f.manifest}). Change it there, not here.` })),
+    el("div", { class: "side" }, cls(f.data_class), el("br"), side));
+}
 function feedCard(f) {
+  if (f.kind === "declared") return declaredCard(f);
   const d = f.delivery;
   const side = f.status === "active" && d && d.stats ? (isIn(f) ? `${d.stats.in} received · ${d.stats.converted} published` : `${d.stats.in} in · ${d.sent_estimate} sent`)
     : f.status === "pending" ? `asked ${ago(f.created_at)}` : "";

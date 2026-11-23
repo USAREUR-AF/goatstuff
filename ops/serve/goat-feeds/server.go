@@ -25,6 +25,7 @@ type Server struct {
 	reg   Registry
 	sup   *Supervisor
 	peers *Peers
+	decl  *Declared
 	start time.Time
 }
 
@@ -210,6 +211,9 @@ type feedOut struct {
 	PublishedAs  string `json:"published_as,omitempty"`
 	TopicID      string `json:"published_topic_id,omitempty"`
 	ReadersCount int    `json:"readers,omitempty"`
+	// Declared links only (ADR 1260): started by a deployment file, shown read-only.
+	ControlledBy string `json:"controlled_by,omitempty"`
+	Manifest     string `json:"manifest,omitempty"`
 }
 
 func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
@@ -325,6 +329,7 @@ func (s *Server) listFeeds(w http.ResponseWriter, r *http.Request, v *Viewer) {
 	for _, f := range feeds {
 		out = append(out, s.decorate(f, v, false))
 	}
+	out = append(out, s.declaredRows(r.Context(), time.Now())...)
 	writeJSON(w, 200, map[string]any{"feeds": out})
 }
 
@@ -483,4 +488,38 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request, v *Viewer) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"events": ev})
+}
+
+// declaredRows renders the poller's snapshot as read-only feed rows.
+func (s *Server) declaredRows(ctx context.Context, now time.Time) []feedOut {
+	var out []feedOut
+	for _, ds := range s.decl.Snapshot() {
+		l := ds.Link
+		tr, ip, port := splitDest(l.Dest)
+		f := Feed{ID: "declared:" + l.ID, Direction: l.Direction, Status: "active", DestIP: ip, Port: port,
+			Transport: tr, Owner: l.Owner, TopicID: l.SourceKey, OutputID: l.ToFormat}
+		if !l.Enabled {
+			f.Status = "paused"
+		}
+		f.DestName = ip
+		if s.peers != nil && s.peers.Enabled() {
+			if p := s.peers.ByIP(ctx, ip); p != nil {
+				f.DestName = p.Name
+			}
+		}
+		o := feedOut{Feed: f, TopicLabel: l.SourceLabel, OutputLabel: l.OutputLabel, ToFormat: l.ToFormat,
+			DataClass: l.DataClass, Kind: "declared", Delivery: ds.View, ControlledBy: l.ControlledBy, Manifest: ds.Source}
+		if o.OutputLabel == "" {
+			o.OutputLabel = l.ToFormat
+		}
+		if o.DataClass == "" {
+			o.DataClass = "real"
+		}
+		o.Integrated, o.Flowing = linkSignals(f, ds.View, false, l.Direction == "in", now)
+		if !l.Enabled {
+			o.Integrated = no("Switched off in its declaration.")
+		}
+		out = append(out, o)
+	}
+	return out
 }

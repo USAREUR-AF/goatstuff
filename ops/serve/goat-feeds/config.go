@@ -112,6 +112,9 @@ type Config struct {
 	Peers                PeersConfig `json:"peers"`
 	Catalog              []Topic     `json:"catalog"`
 	Intake               *Intake     `json:"intake"`
+	// Declared links (ADR 1260): manifests written by the roles that start links.
+	DeclaredDir   string        `json:"declared_dir"`
+	DeclaredProbe DeclaredProbe `json:"declared_probe"`
 
 	allowed netip.Prefix
 
@@ -250,4 +253,22 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	return ParseConfig(b)
+}
+
+// DeclaredProbe names the commands that read a declared link's unit; empty means the
+// system's systemctl and journalctl.
+type DeclaredProbe struct {
+	Systemctl  string `json:"systemctl"`
+	Journalctl string `json:"journalctl"`
+}
+
+func (p DeclaredProbe) probe() ExecProbe {
+	e := ExecProbe{Systemctl: p.Systemctl, Journalctl: p.Journalctl}
+	if e.Systemctl == "" {
+		e.Systemctl = "systemctl"
+	}
+	if e.Journalctl == "" {
+		e.Journalctl = "journalctl"
+	}
+	return e
 }

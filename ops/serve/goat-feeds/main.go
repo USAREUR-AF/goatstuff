@@ -61,7 +61,10 @@ func main() {
 	sup := NewSupervisor(cfg, reg, ExecSpawner, 3*time.Second)
 	go sup.Run(ctx)
 
-	srv := &Server{cfg: cfg, reg: reg, sup: sup, peers: NewPeers(cfg.Peers.API, cfg.Peers.TokenFile), start: time.Now()}
+	decl := NewDeclared(cfg.DeclaredDir, cfg.DeclaredProbe.probe())
+	go decl.Run(ctx, 10*time.Second)
+
+	srv := &Server{cfg: cfg, reg: reg, sup: sup, peers: NewPeers(cfg.Peers.API, cfg.Peers.TokenFile), decl: decl, start: time.Now()}
 	hs := &http.Server{Addr: cfg.Listen, Handler: srv.Routes(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
