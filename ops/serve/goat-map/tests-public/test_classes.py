@@ -231,7 +231,7 @@ def test_a_topic_with_a_portal_record_links_to_it(svc, monkeypatch):
     s.orgs = orgs_mod.OrgRegistry("https://portal.example", "t")
 
     def fake(req, timeout):
-        if FEED in req.full_url:
+        if f"render/{FEED.removeprefix('volatile/')}" in req.full_url:
             return io.BytesIO(b"{}")
         raise urllib.error.HTTPError(req.full_url, 404, "no", {}, None)
 
@@ -241,4 +241,4 @@ def test_a_topic_with_a_portal_record_links_to_it(svc, monkeypatch):
     s._handle_fabric(REPORTS, json.dumps(_report()).encode())
     got = {t["origin"]["key"]: t["origin"].get("record") for t in s.store.snapshot()}
     assert got[REPORTS] is None
-    assert got[FEED].startswith("https://portal.example/schema.html?key=volatile%2F")
+    assert got[FEED].startswith("https://portal.example/schema.html?key=" + SLOT + "%2F")
