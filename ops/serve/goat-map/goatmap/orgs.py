@@ -22,10 +22,13 @@ from __future__ import annotations
 import json
 import logging
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
 LOG = logging.getLogger("goat-map.orgs")
+MAX_RECORD_KEYS = 50
 
 
 class OrgRegistry:
@@ -36,6 +39,8 @@ class OrgRegistry:
         self._by_anchor: dict[str, dict[str, Any]] = {}
         self._fetched_at: float | None = None
         self._error: str | None = None
+        # Topics the portal holds a data standard record for.
+        self._records: set[str] = set()
 
     @property
     def enabled(self) -> bool:
@@ -43,6 +48,32 @@ class OrgRegistry:
 
     def get(self, anchor: str) -> dict[str, Any] | None:
         return self._by_anchor.get(anchor)
+
+    def record_url(self, key: str) -> str | None:
+        """The portal page of a topic's data standard record, or None."""
+        if key not in self._records:
+            return None
+        return f"{self._url}/schema.html?key={urllib.parse.quote(key, safe='')}"
+
+    def refresh_records(self, keys: list[str]) -> None:
+        """Ask the portal which of these topics have a record. A topic the
+        portal could not be asked about keeps its last answer."""
+        if not self.enabled:
+            return
+        for key in keys[:MAX_RECORD_KEYS]:
+            req = urllib.request.Request(
+                f"{self._url}/api/schemas/render/{urllib.parse.quote(key)}",
+                headers={"Authorization": f"Bearer {self._token}"},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=5):
+                    self._records.add(key)
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    self._records.discard(key)
+            except Exception as exc:
+                LOG.warning("data standard lookup failed: %s", exc)
+                return
 
     def refresh(self) -> None:
         if not self.enabled:

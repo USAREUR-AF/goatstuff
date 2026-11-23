@@ -213,3 +213,32 @@ def test_the_page_names_each_script_by_its_content(svc, tmp_path):
     (tmp_path / "app.js").write_text("two")
     b = m._versioned_index(tmp_path)
     assert a != b and 'src="app.js?v=' in a and 'href="https://x/y.js"' in a
+
+
+def test_a_track_states_the_format_on_the_topic_and_what_the_sensor_sent(svc):
+    _, s = svc
+    s.sources[1]["native_format"] = "MAVLink 2"
+    s._handle_fabric(FEED, json.dumps({"lat": 45.0, "lon": 29.0}).encode())
+    (t,) = s.store.snapshot()
+    assert t["origin"] == {"key": FEED, "standard": "goat-processors track (JSON lines)", "native": "MAVLink 2"}
+
+
+def test_a_topic_with_a_portal_record_links_to_it(svc, monkeypatch):
+    import io
+    import urllib.error
+    from goatmap import orgs as orgs_mod
+    _, s = svc
+    s.orgs = orgs_mod.OrgRegistry("https://portal.example", "t")
+
+    def fake(req, timeout):
+        if FEED in req.full_url:
+            return io.BytesIO(b"{}")
+        raise urllib.error.HTTPError(req.full_url, 404, "no", {}, None)
+
+    monkeypatch.setattr(orgs_mod.urllib.request, "urlopen", fake)
+    s.orgs.refresh_records([FEED, REPORTS])
+    s._handle_fabric(FEED, json.dumps({"lat": 45.0, "lon": 29.0}).encode())
+    s._handle_fabric(REPORTS, json.dumps(_report()).encode())
+    got = {t["origin"]["key"]: t["origin"].get("record") for t in s.store.snapshot()}
+    assert got[REPORTS] is None
+    assert got[FEED].startswith("https://portal.example/schema.html?key=volatile%2F")
