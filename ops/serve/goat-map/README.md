@@ -117,7 +117,10 @@ which hold no schema id and are read from declared keys only. On a relayed
 stream, `accept` lists the `track.source_id` values to draw and names each one's
 own producer slot (`anchor`), so per-viewer access follows the radar's owner and
 not the relay. `native_format` states what the sensor itself sends; the track card shows
-it beside the format found on the topic. A topic with a data standard record in the portal
+it beside the format found on the topic. `class` is what an untagged message on
+the key is; a tag in the message wins. `tagged` marks a source that tags its own
+tracks, whose untagged ones are unknown. `simulated` draws them as simulation. `detail` is a
+sentence on the track card that says what the source is. A topic with a data standard record in the portal
 links to it. `yield_to` names the key of another copy of the same tracks: the
 source is read only while that key has been silent for 30 seconds.
 

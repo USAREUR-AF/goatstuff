@@ -227,6 +227,8 @@ def _origin(key: str, standard: str, src: dict[str, Any] | None = None) -> dict[
     out = {"key": key, "standard": standard}
     if src and src.get("native_format"):
         out["native"] = str(src["native_format"])
+    if src and src.get("detail"):
+        out["detail"] = str(src["detail"])
     return out
 
 
@@ -530,7 +532,8 @@ class Service:
         sensor = info.get("sensor") or leaf
         uid = rec.get("uid") if rec.get("uid") is not None else rec.get("group")
         # A single-vehicle position feed (MAVLink) carries no track identifier.
-        uid = str(uid) if uid is not None else leaf
+        named = uid is not None
+        uid = str(uid) if named else leaf
         cot_type = str(rec.get("type") or "")
         parts = cot_type.split("-")
         ms = _num(rec.get("time_ms") if rec.get("time_ms") is not None else rec.get("now_ms"))
@@ -539,7 +542,7 @@ class Service:
             reported = datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec="milliseconds")
         self._store_fabric(info.get("anchor") or anchor, {
             "schema": cot_mod.SCHEMA, "id": f"{sensor}:{uid}",
-            "label": str(info.get("label") or rec.get("callsign") or uid), "kind": "track",
+            "label": _label(rec, info, uid, named), "kind": "track",
             "source": {"sensor": sensor, "site": info.get("site", ""),
                        "node": info.get("node", ""), "goatnet": GOATNET},
             "lat": lat, "lon": lon, "alt_m": _num(rec.get("hae")),
@@ -608,6 +611,8 @@ class Service:
         # Namespace the id by producer so two orgs reusing a sensor uid cannot
         # collide into one dot on the map.
         track["id"] = f"{anchor[:8]}:{track['id']}"
+        if (src or {}).get("simulated"):
+            track["synthetic"] = True
         self._store(track, (src or {}).get("class"))
 
     def _store(self, track: dict[str, Any], declared: str | None = None) -> None:
@@ -717,6 +722,17 @@ def _read_estate() -> dict:
     except Exception as exc:  # noqa: BLE001
         LOG.warning("estate declaration unreadable (%s): %s", SITES_FILE, exc)
     return _ESTATE_CACHE
+
+
+def _label(rec: dict, info: dict, uid: str, named: bool) -> str:
+    """The source's call sign, else the declared label with the object's id if
+    the feed gives one, else the id."""
+    if rec.get("callsign"):
+        return str(rec["callsign"])
+    label = info.get("label")
+    if not label:
+        return uid
+    return f"{label} {uid}" if named else str(label)
 
 
 def _versioned_index(root: Path) -> str:

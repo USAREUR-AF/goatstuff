@@ -6,9 +6,13 @@ A track's class comes from the first of these that answers:
   1. a mark: a person allowed to classify set it on the map; it lasts until the
      track expires, because a radar gives an expired track's number to the next
      contact
-  2. the declared source: the operator declared that everything on that key has
-     one class (for example the position feed of our own aircraft)
-  3. the message: the affiliation in the CoT type
+  2. the message: the affiliation its CoT type states, including `unknown`
+     stated by a source that tags its tracks
+  3. the declared source: the operator declared what a message that states no
+     affiliation on that key is (for example the position feed of our own aircraft)
+
+A source that tags its tracks is declared `tagged`: each message's own tag is
+used, and an untagged one is unknown, never the declared class.
 
 A class is never read from a payload's own `class` member.
 """
@@ -40,6 +44,12 @@ def from_message(track: dict[str, Any]) -> str:
     return cls
 
 
+def stated(track: dict[str, Any]) -> bool:
+    """Whether the message itself says what the track is. A bare `a-u-…` from a
+    radar is the absence of an identification, so it does not count."""
+    return from_message(track) != UNKNOWN
+
+
 def key_matches(pattern: str, key: str) -> bool:
     """Zenoh key expression against a key: `*` is one chunk, `**` any number."""
 
@@ -63,6 +73,8 @@ def load_sources(rows: Any) -> list[dict[str, Any]]:
         for r in (row, *(row.get("accept") or {}).values()):
             if r.get("class") is not None and r["class"] not in CLASSES:
                 raise ValueError(f"track source {row['key']}: unknown class {r['class']!r}")
+            if r.get("tagged") and r.get("class"):
+                raise ValueError(f"track source {row['key']}: tagged and class exclude each other")
         out.append(row)
     return out
 
@@ -111,11 +123,15 @@ class Marks:
     def apply(self, track: dict[str, Any], declared: str | None = None) -> dict[str, Any]:
         mark = self._marks.get(track["id"])
         track["declared_class"] = declared
+        # What the source says, kept beside a person's mark so a disagreement shows.
+        track["source_class"] = from_message(track) if stated(track) else declared or UNKNOWN
         if mark:
             track["class"] = mark["class"]
             track["class_from"] = f"marked by {mark['by'] or 'a viewer'}"
+        elif stated(track):
+            track["class"], track["class_from"] = from_message(track), "tagged by the source"
         elif declared:
             track["class"], track["class_from"] = declared, "declared source"
         else:
-            track["class"], track["class_from"] = from_message(track), "message"
+            track["class"], track["class_from"] = UNKNOWN, "message"
         return track
