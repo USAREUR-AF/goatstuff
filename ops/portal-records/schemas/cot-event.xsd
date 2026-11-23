@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="event" type="Event"/>
+  <xs:complexType name="Event">
+    <xs:sequence>
+      <xs:element name="point" type="Point"/>
+      <xs:element name="detail" type="Detail" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="version" type="xs:decimal" use="required"/>
+    <xs:attribute name="uid" type="xs:string" use="required"/>
+    <xs:attribute name="type" type="xs:string" use="required"/>
+    <xs:attribute name="how" type="xs:string" use="required"/>
+    <xs:attribute name="time" type="xs:dateTime" use="required"/>
+    <xs:attribute name="start" type="xs:dateTime" use="required"/>
+    <xs:attribute name="stale" type="xs:dateTime" use="required"/>
+    <xs:anyAttribute processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="Point">
+    <xs:attribute name="lat" type="xs:decimal" use="required"/>
+    <xs:attribute name="lon" type="xs:decimal" use="required"/>
+    <xs:attribute name="hae" type="xs:decimal" use="required"/>
+    <xs:attribute name="ce" type="xs:decimal" use="required"/>
+    <xs:attribute name="le" type="xs:decimal" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="Detail">
+    <xs:sequence>
+      <xs:element name="track" type="Track" minOccurs="0"/>
+      <xs:element name="remarks" type="xs:string" minOccurs="0"/>
+      <xs:any processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="Track">
+    <xs:attribute name="course" type="xs:decimal"/>
+    <xs:attribute name="speed" type="xs:decimal"/>
+  </xs:complexType>
+</xs:schema>

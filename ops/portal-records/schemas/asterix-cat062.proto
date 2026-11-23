@@ -1,0 +1,22 @@
+syntax = "proto3";
+package eurocontrol.asterix.cat062;
+// Data dictionary. The wire format is binary ASTERIX category 062, the
+// EUROCONTROL system track data standard; names below are its data items.
+message SystemTrackRecord {
+  uint32 sac = 1;                 // I062/010 system area code
+  uint32 sic = 2;                 // I062/010 system identification code
+  uint32 track_number = 3;        // I062/040
+  double time_of_track_s = 4;     // I062/070 seconds since midnight UTC
+  uint32 track_status = 5;        // I062/080
+  double lat = 6;                 // I062/105 degrees, WGS 84
+  double lon = 7;                 // I062/105 degrees, WGS 84
+  double x_m = 8;                 // I062/100
+  double y_m = 9;                 // I062/100
+  double vx_mps = 10;             // I062/185
+  double vy_mps = 11;             // I062/185
+  uint32 mode_3a = 12;            // I062/060
+  double flight_level = 13;       // I062/136
+  double geometric_altitude_ft = 14;  // I062/130
+  double rate_of_climb_fpm = 15;  // I062/220
+  string target_identification = 16;  // I062/245
+}
