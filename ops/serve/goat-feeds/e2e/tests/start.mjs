@@ -55,7 +55,7 @@ const declDir = join(dir, "declared.d");
 mkdirSync(declDir);
 writeFileSync(join(declDir, "pipeline-test.json"), JSON.stringify({ owner: "processors pipeline test", links: [
   { id: "fused-to-console", unit: "goat-xf-pipe@fused-test.service", direction: "out", source_key: "slot/stream/fused/tracks",
-    source_label: "Fused air picture (declared)", to_format: "asterix-cat062", output_label: "ASTERIX CAT062 (SAC 38 / SIC 204)",
+    source_label: "Fused air picture (declared)", sources: ["Radar A", "Radar B"], to_format: "asterix-cat062", output_label: "ASTERIX CAT062 (SAC 38 / SIC 204)",
     dest: "udp://198.51.100.70:7005", data_class: "real", controlled_by: "destinations.test.enabled in the pipeline declaration", enabled: true },
 ] }));
 cfg.declared_dir = declDir;

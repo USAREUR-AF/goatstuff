@@ -47,8 +47,13 @@
         <button class="chip" data-filter="all">All</button>
       </div>
       <input type="search" id="feed-search" placeholder="Search topic, system, address, owner" aria-label="Search feeds">
+      <div class="seg viewseg" role="group" aria-label="View">
+        <button type="button" data-view="list">List</button>
+        <button type="button" data-view="flow">Flow</button>
+      </div>
     </div>
     <div class="list" id="feed-list"></div>
+    <div class="flow" id="feed-flow" hidden></div>
   </section>
 </template>
 

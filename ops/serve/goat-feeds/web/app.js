@@ -145,6 +145,12 @@ function renderList() {
   const list = $("#feed-list");
   if (!list) return;
   const rows = state.feeds.filter(matches);
+  const flow = $("#feed-flow");
+  const view = state.view || "list";
+  document.querySelectorAll(".viewseg button").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
+  list.hidden = view !== "list";
+  if (flow) flow.hidden = view !== "flow";
+  if (view === "flow" && flow) renderFlow(flow, rows);
   list.replaceChildren(...(rows.length ? rows.map(feedCard) : [el("p", { class: "empty", text:
     state.filter === "mine" ? "You have no feeds yet. Request one to send a topic to a system, or to bring a system's data into the fabric." : "No feeds match." })]));
   document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.filter === state.filter));
@@ -156,9 +162,92 @@ async function showFeeds(main) {
   const s = $("#feed-search");
   s.value = state.search;
   s.addEventListener("input", () => { state.search = s.value; renderList(); });
+  document.querySelectorAll(".viewseg button").forEach((b) => b.addEventListener("click", () => { state.view = b.dataset.view; renderList(); }));
   await refreshFeeds();
   renderList();
   state.timer = setInterval(async () => { try { await refreshFeeds(); renderList(); } catch { /* shown next time */ } }, 5000);
+}
+
+// ---------- flow view: sensors -> streams -> receiving systems ----------
+const SVGNS = "http://www.w3.org/2000/svg";
+function sv(tag, attrs, ...kids) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+  for (const k of kids) if (k != null) n.append(k);
+  return n;
+}
+const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
+// One sensor name for the same radar however a label spells it ("Radar X tracks, Site", "Radar X, Site (raw)").
+const sensorName = (t) => t.replace(/ tracks,/, ",").replace(/ \(raw\)$/, "").trim();
+const rank = (f) => (f.flowing && f.flowing.on ? 2 : f.integrated && f.integrated.on ? 1 : 0);
+function flowGraph(rows) {
+  const cols = [new Map(), new Map(), new Map()];
+  const edges = new Map();
+  const node = (c, id, l1, l2, search) => { if (!cols[c].has(id)) cols[c].set(id, { id, c, l1, l2, search, best: 0 }); return cols[c].get(id); };
+  const edge = (a, b, st) => { const k = a.c + ":" + a.id + ">" + b.c + ":" + b.id; const e = edges.get(k); if (!e || e.st < st) edges.set(k, { a, b, st }); };
+  for (const f of rows) {
+    if (["removed", "declined", "expired"].includes(f.status)) continue;
+    const st = rank(f);
+    if (isIn(f)) {
+      const snd = node(0, "sys:" + f.dest_ip, f.dest_name || f.dest_ip, f.dest_ip, f.dest_ip);
+      const str = node(1, "in:" + f.id, f.topic_label, `${f.output_label} · received on port ${f.port}`, f.topic_label);
+      const fab = node(2, "fabric", "goat fabric", "offered in the catalog", "IN");
+      edge(snd, str, st); edge(str, fab, st);
+      continue;
+    }
+    const label = f.topic_label || f.topic_id;
+    const str = node(1, "s:" + label + "|" + f.output_label, label, f.output_label || f.output_id, label);
+    const dst = node(2, "d:" + f.dest_ip + ":" + f.port, f.dest_name || f.dest_ip, `${f.dest_ip}:${f.port}/${f.transport}`, f.dest_ip);
+    edge(str, dst, st);
+    const srcs = (f.sources && f.sources.length) ? f.sources : [sensorName(label)];
+    for (const s of srcs) edge(node(0, "src:" + sensorName(s), sensorName(s), "", sensorName(s)), str, st);
+  }
+  for (const e of edges.values()) { e.a.best = Math.max(e.a.best, e.st); e.b.best = Math.max(e.b.best, e.st); }
+  // Order: streams by label; sensors and destinations by the average position of the streams they touch.
+  const order = [[], [...cols[1].values()].sort((x, y) => x.l1.localeCompare(y.l1)), []];
+  order[1].forEach((n, i) => (n.y = i));
+  for (const c of [0, 2]) {
+    const ns = [...cols[c].values()];
+    for (const n of ns) {
+      const ys = [...edges.values()].filter((e) => e.a === n || e.b === n).map((e) => (e.a === n ? e.b : e.a).y).filter((y) => y != null);
+      n.bary = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 0;
+    }
+    order[c] = ns.sort((x, y) => x.bary - y.bary || x.l1.localeCompare(y.l1));
+  }
+  return { order, edges: [...edges.values()] };
+}
+function renderFlow(box, rows) {
+  const { order, edges } = flowGraph(rows);
+  if (!order[1].length) { box.replaceChildren(el("p", { class: "empty", text: "No feeds match." })); return; }
+  const W = 1080, colX = [0, 400, 800], NW = 280, NH = 50, GAP = 16, TOP = 34;
+  const most = Math.max(...order.map((o) => o.length));
+  const H = TOP + most * (NH + GAP);
+  order.forEach((ns) => { const off = TOP + (most - ns.length) * (NH + GAP) / 2; ns.forEach((n, i) => { n.x = colX[n.c]; n.py = off + i * (NH + GAP); }); });
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "flowsvg", role: "img",
+    "aria-label": `Flow of ${rows.length} feeds: sensors and senders, the streams they become, and the systems that receive them.` });
+  ["Sensors and senders", "Streams, as converted", "Receiving systems"].forEach((t, i) =>
+    svg.append(sv("text", { x: colX[i], y: 14, class: "fhead" }, t)));
+  const cls3 = ["off", "idle", "on"];
+  for (const e of edges.sort((p, q) => p.st - q.st)) {
+    const x1 = e.a.x + NW, y1 = e.a.py + NH / 2, x2 = e.b.x, y2 = e.b.py + NH / 2, mx = (x1 + x2) / 2;
+    svg.append(sv("path", { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, class: `fedge ${cls3[e.st]}` }));
+  }
+  for (const ns of order) for (const n of ns) {
+    const g = sv("g", { class: `fnode c${n.c} ${cls3[n.best]}`, tabindex: "0", role: "button", "aria-label": `${n.l1} ${n.l2}: show in the list` },
+      sv("title", {}, `${n.l1}${n.l2 ? " · " + n.l2 : ""}`),
+      sv("rect", { x: n.x, y: n.py, width: NW, height: NH, rx: 8 }),
+      sv("circle", { cx: n.x + 14, cy: n.py + NH / 2, r: 5, class: "fdot" }),
+      sv("text", { x: n.x + 28, y: n.py + (n.l2 ? 21 : 30), class: "fl1" }, clip(n.l1, 34)),
+      n.l2 ? sv("text", { x: n.x + 28, y: n.py + 38, class: "fl2" }, clip(n.l2, 40)) : null);
+    const go = () => { state.search = n.search; $("#feed-search").value = n.search; state.view = "list"; renderList(); };
+    g.addEventListener("click", go);
+    g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } });
+    svg.append(g);
+  }
+  const legend = el("div", { class: "flegend" },
+    el("span", { class: "lg on", text: "Sending" }), el("span", { class: "lg idle", text: "Integrated, nothing sent in the last minute" }),
+    el("span", { class: "lg off", text: "Not integrated" }), el("span", { class: "lg hint", text: "Select a box to see its feeds in the list." }));
+  box.replaceChildren(legend, el("div", { class: "flowwrap" }, svg));
 }
 
 // ---------- request flow ----------

@@ -181,3 +181,31 @@ table.audit th { color: var(--muted); font-weight: 600; font-size: 12px; }
 .seg button:disabled { color: var(--muted); cursor: not-allowed; text-decoration: line-through; }
 .dir { display: inline-block; font: 600 11px/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .04em; border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; margin-right: 8px; color: var(--muted); vertical-align: 1px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Flow view: sensors -> streams -> receiving systems. */
+.viewseg { margin-left: auto; }
+.flow { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.flowwrap { overflow-x: auto; }
+.flowsvg { display: block; width: 100%; min-width: 720px; height: auto; font-family: var(--sans); }
+.flowsvg .fhead { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; fill: var(--muted); }
+.fnode { cursor: pointer; }
+.fnode rect { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.fnode.c1 rect { fill: var(--soft); }
+.fnode.on rect { stroke: var(--accent); stroke-width: 1.6; }
+.fnode:hover rect, .fnode:focus rect { stroke: var(--accent); stroke-width: 2.2; }
+.fnode:focus { outline: none; }
+.fnode .fl1 { font-size: 14px; font-weight: 600; fill: var(--ink); }
+.fnode .fl2 { font-size: 12px; fill: var(--muted); }
+.fnode .fdot { fill: none; stroke: var(--muted); stroke-width: 2; }
+.fnode.on .fdot { fill: var(--accent); stroke: var(--accent); }
+.fnode.idle .fdot { stroke: var(--ink); }
+.fedge { fill: none; }
+.fedge.on { stroke: var(--accent); stroke-width: 2.6; }
+.fedge.idle { stroke: var(--ink); stroke-width: 1.6; stroke-dasharray: 6 5; opacity: .75; }
+.fedge.off { stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 1.5 4; opacity: .7; }
+.flegend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.flegend .lg::before { content: ""; display: inline-block; width: 26px; height: 0; margin-right: 7px; vertical-align: middle; border-top: 2.6px solid var(--accent); }
+.flegend .lg.idle::before { border-top: 1.6px dashed var(--ink); }
+.flegend .lg.off::before { border-top: 2px dotted var(--muted); }
+.flegend .lg.hint::before { display: none; }
+

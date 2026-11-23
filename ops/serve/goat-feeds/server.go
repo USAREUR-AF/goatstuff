@@ -213,7 +213,9 @@ type feedOut struct {
 	ReadersCount int    `json:"readers,omitempty"`
 	// Declared links only (ADR 1260): started by a deployment file, shown read-only.
 	ControlledBy string `json:"controlled_by,omitempty"`
-	Manifest     string `json:"manifest,omitempty"`
+	// The sensors or systems a declared link's data comes from (flow view).
+	Sources  []string `json:"sources,omitempty"`
+	Manifest string   `json:"manifest,omitempty"`
 }
 
 func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
@@ -508,7 +510,8 @@ func (s *Server) declaredRows(ctx context.Context, now time.Time) []feedOut {
 			}
 		}
 		o := feedOut{Feed: f, TopicLabel: l.SourceLabel, OutputLabel: l.OutputLabel, ToFormat: l.ToFormat,
-			DataClass: l.DataClass, Kind: "declared", Delivery: ds.View, ControlledBy: l.ControlledBy, Manifest: ds.Source}
+			DataClass: l.DataClass, Kind: "declared", Delivery: ds.View, ControlledBy: l.ControlledBy, Manifest: ds.Source,
+			Sources: l.Sources}
 		if o.OutputLabel == "" {
 			o.OutputLabel = l.ToFormat
 		}
