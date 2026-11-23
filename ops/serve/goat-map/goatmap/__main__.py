@@ -29,8 +29,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +45,7 @@ from . import envhealth as envhealth_mod
 from . import adapters as adapters_mod
 from . import viewport as viewport_mod
 from . import attest as attest_mod
+from . import classes as classes_mod
 from . import disclosure as disc_mod
 from . import readiness as readiness_mod
 from . import scope as scope_mod
@@ -161,6 +164,11 @@ SITE = _env("GOATMAP_SITE", "unknown-site")
 NODE = _env("GOATMAP_NODE", "unknown-node")
 GOATNET = _env("GOATMAP_GOATNET", "unknown-goatnet")
 TTL_S = float(_env("GOATMAP_TTL_S", "120"))
+# How often the map updates unless the viewer picks another rate (seconds).
+REFRESH_S = float(_env("GOATMAP_REFRESH_S", "1"))
+REFRESH_MIN_S, REFRESH_MAX_S = 0.5, 30.0
+# Tracks in one stream tick; the rest follow on the next, oldest change first.
+TICK_MAX_TRACKS = 1000
 # How far back the history overlay can reach (seconds). 0 turns history off.
 HISTORY_S = float(_env("GOATMAP_HISTORY_S", str(24 * 3600)))
 # Points per track in one /api/history answer; longer histories are thinned.
@@ -207,6 +215,7 @@ def _session(endpoint: str, mode: str, tls: dict[str, str] | None = None) -> zen
 # The message standard each input shape arrived in, as shown on a track's card.
 STANDARD_COT = "Cursor-on-Target (CoT XML)"
 STANDARD_TRACK = "goat.geo.track.v1 (JSON)"
+STANDARD_RECORD = "goat-processors track (JSON lines)"
 STANDARD_TRACKSET = "goat.geo.trackset.v1 (JSON)"
 
 
@@ -221,6 +230,18 @@ def _null_island(track: dict[str, Any]) -> bool:
         return float(track.get("lat")) == 0.0 and float(track.get("lon")) == 0.0
     except (TypeError, ValueError):
         return True
+
+
+def _anchor_of(key: str) -> str:
+    """The producer slot a key belongs to. `volatile/<slot>/**` is the same
+    single-owner root as `<slot>/**`: the router admits writes from its owner only."""
+    parts = key.split("/")
+    return parts[1] if parts[0] == "volatile" and len(parts) > 1 else parts[0]
+
+
+def _num(v: Any) -> float | None:
+    ok = isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    return float(v) if ok else None
 
 
 class Service:
@@ -255,6 +276,10 @@ class Service:
         # Producers seen on the wire that the registry cannot name. Surfaced,
         # never silently rendered as if they were understood.
         self.unverified_anchors: set[str] = set()
+        # Operator-declared sources (estate file, `track_sources`): sensor and
+        # site names, a class, and who a relayed report belongs to.
+        self.sources = _load_track_sources()
+        self.marks = classes_mod.Marks()
 
     # ---------------------------------------------------------------- open --
 
@@ -438,18 +463,28 @@ class Service:
     def _handle_fabric(self, key: str, payload: bytes) -> None:
         self.fabric_msgs += 1
         self.last_recv_at = time.monotonic()
-        anchor = key.split("/", 1)[0]
+        anchor = _anchor_of(key)
+        src = classes_mod.source_for(self.sources, key)
         if payload.lstrip()[:1] == b"<":
-            track = self._fabric_cot(key, anchor, payload)
+            track = self._fabric_cot(key, anchor, payload, src)
             if track is not None:
                 track["origin"] = _origin(key, STANDARD_COT)
-                self._store_fabric(anchor, track)
+                self._store_fabric(anchor, track, src)
             return
         try:
             body = json.loads(payload)
         except ValueError:
+            # JSON lines: several records in one sample.
+            for line in payload.splitlines():
+                try:
+                    self._fabric_record(key, anchor, json.loads(line), src)
+                except ValueError:
+                    continue
             return
         if not isinstance(body, dict):
+            return
+        if src is not None and "schema" not in body:
+            self._fabric_record(key, anchor, body, src)
             return
         # goat.geo.trackset.v1: one stable key carrying every current track
         # (the cardinality-budget pattern a sensor node publishes on the WAN).
@@ -459,17 +494,60 @@ class Service:
         for track in tracks or []:
             if isinstance(track, dict) and "id" in track and not _null_island(track):
                 track["origin"] = _origin(key, standard)
-                self._store_fabric(anchor, track)
+                self._store_fabric(anchor, track, src)
 
-    def _fabric_cot(self, key: str, anchor: str, payload: bytes) -> dict[str, Any] | None:
+    def _fabric_record(self, key: str, anchor: str, rec: Any, src: dict | None) -> None:
+        """A goat-processors report or system track. It carries no schema id, so
+        it is read only from a declared source. `accept` picks sources out of a
+        relayed stream and names each one's own producer."""
+        if src is None or not isinstance(rec, dict) or _null_island(rec):
+            return
+        lat, lon = _num(rec.get("lat")), _num(rec.get("lon"))
+        if lat is None or lon is None:
+            return
+        info = src
+        if src.get("accept") is not None:
+            nested = rec.get("track") if isinstance(rec.get("track"), dict) else {}
+            sid = nested.get("source_id") or rec.get("track.source_id")
+            info = src["accept"].get(sid)
+            if info is None:
+                return
+        leaf = key.rsplit("/", 1)[-1]
+        sensor = info.get("sensor") or leaf
+        uid = rec.get("uid") if rec.get("uid") is not None else rec.get("group")
+        # A single-vehicle position feed (MAVLink) carries no track identifier.
+        uid = str(uid) if uid is not None else leaf
+        cot_type = str(rec.get("type") or "")
+        parts = cot_type.split("-")
+        ms = _num(rec.get("time_ms") if rec.get("time_ms") is not None else rec.get("now_ms"))
+        reported = None
+        if ms is not None and 0 <= ms < 4e12:
+            reported = datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec="milliseconds")
+        self._store_fabric(info.get("anchor") or anchor, {
+            "schema": cot_mod.SCHEMA, "id": f"{sensor}:{uid}",
+            "label": str(info.get("label") or rec.get("callsign") or uid), "kind": "track",
+            "source": {"sensor": sensor, "site": info.get("site", ""),
+                       "node": info.get("node", ""), "goatnet": GOATNET},
+            "lat": lat, "lon": lon, "alt_m": _num(rec.get("hae")),
+            "course_deg": _num(rec.get("course")), "speed_mps": _num(rec.get("speed_ms")),
+            "ce_m": _num(rec.get("ce")), "le_m": None, "cot_type": cot_type or None,
+            "affiliation": cot_mod._AFFILIATION.get(parts[1] if len(parts) > 1 else "", "unknown"),
+            "dimension": cot_mod._DIMENSION.get(parts[2] if len(parts) > 2 else "", "unknown"),
+            "how": None, "descriptor": None, "reported_at": reported, "stale_at": None,
+            "observed_at": now_iso(), "origin": _origin(key, STANDARD_RECORD),
+        }, info)
+
+    def _fabric_cot(self, key: str, anchor: str, payload: bytes,
+                    src: dict[str, Any] | None = None) -> dict[str, Any] | None:
         """A CoT event read from the fabric, provenance from the key."""
         parts = key.split("/")
         org = self.orgs.get(anchor)
+        src = src or {}
         track = COT_PARSE(
             payload,
             kind="track" if "track" in key else parts[-1],
-            source={"sensor": parts[2] if len(parts) > 2 else parts[-1],
-                    "site": "", "node": parts[1] if len(parts) > 1 else "", "goatnet": GOATNET},
+            source={"sensor": src.get("sensor") or (parts[2] if len(parts) > 2 else parts[-1]),
+                    "site": src.get("site", ""), "node": parts[1] if len(parts) > 1 else "", "goatnet": GOATNET},
             producer_anchor=anchor,
             synthetic=bool(org["synthetic"]) if org else False,
             org=org["display_name"] if org else None,
@@ -479,7 +557,8 @@ class Service:
             return None
         return track
 
-    def _store_fabric(self, anchor: str, track: dict[str, Any]) -> None:
+    def _store_fabric(self, anchor: str, track: dict[str, Any],
+                      src: dict[str, Any] | None = None) -> None:
 
         # PROVENANCE IS STRUCTURAL, NOT ASSERTED. The anchor is the key's first
         # chunk, and the router ACL admits writes nowhere but a peer's own
@@ -510,10 +589,20 @@ class Service:
         # Namespace the id by producer so two orgs reusing a sensor uid cannot
         # collide into one dot on the map.
         track["id"] = f"{anchor[:8]}:{track['id']}"
-        self._store(track)
+        self._store(track, (src or {}).get("class"))
 
-    def _store(self, track: dict[str, Any]) -> None:
-        self.hub.broadcast("upsert", self.store.upsert(track))
+    def _store(self, track: dict[str, Any], declared: str | None = None) -> None:
+        self.store.upsert(self.marks.apply(track, declared))
+
+    def mark(self, tid: str, cls: str | None, by: str) -> dict[str, Any] | None:
+        """Set or clear a track's class by hand. None when the track is gone."""
+        track = self.store.get(tid)
+        if track is None:
+            return None
+        self.marks.set(tid, cls, by, now_iso())
+        self.marks.apply(track, track.get("declared_class"))
+        self.store.touch(tid)
+        return track
 
     def _publish(self, track: dict[str, Any]) -> None:
         """Put the normalised form on the fabric.
@@ -609,6 +698,15 @@ def _read_estate() -> dict:
     except Exception as exc:  # noqa: BLE001
         LOG.warning("estate declaration unreadable (%s): %s", SITES_FILE, exc)
     return _ESTATE_CACHE
+
+
+def _load_track_sources() -> list:
+    """Declared track sources; a bad declaration is dropped loudly, not served."""
+    try:
+        return classes_mod.load_sources(_read_estate().get("track_sources"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.error("track_sources unusable, none applied: %s", exc)
+        return []
 
 
 def _load_site_inventory() -> list:
@@ -813,6 +911,8 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
                 "subscribe_key": SUB_KEY,
                 "publish_prefix": PUBLISH_PREFIX or None,
                 "ttl_s": TTL_S,
+                "refresh_s": REFRESH_S,
+                "classes": list(classes_mod.CLASSES),
                 "history_s": HISTORY_S,
                 "center": [float(lon or 0), float(lat or 0)],
                 "zoom": ZOOM,
@@ -839,6 +939,7 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
             "view": v.kind,                       # full | scoped | floor
             "enforced": RBAC_MODE == scope_mod.ENFORCE,
             "grants": len(v.orgs) + len(v.producers),
+            "may_classify": scope_mod.may_classify(dict(request.headers.items()), RBAC_MODE),
             "sign_out": "/oauth2/sign_out?rd=%2F" if fenced else None,
         })
 
@@ -885,7 +986,7 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
         # the browser from a network fault. Registering first lets a refusal be
         # an honest 503 the client can act on.
         try:
-            q = hub.register()
+            slot = hub.register()
         except HubFull as exc:
             LOG.warning("stream refused: %s", exc)
             return web.json_response(
@@ -909,10 +1010,11 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
         except Exception:
             # Never leak the slot if the client vanished between claiming it
             # and the response being prepared.
-            hub.unregister(q)
+            hub.unregister(slot)
             raise
-        # The hub broadcasts one event to every connection, so scoping has to
-        # happen per-connection at send time. The scope is fixed for the life
+        # Each connection reads the store on its own clock and sends what changed
+        # since its last tick, so a slow link gets newer state, not a backlog.
+        # Scoping happens per connection at send time. The scope is fixed for the life
         # of the stream: it comes from the headers oauth2-proxy validated when
         # the connection opened, and a long-lived SSE connection has no way to
         # re-read them. A revoked grant therefore takes effect on reconnect,
@@ -920,38 +1022,48 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
         # cookie (8h) and the browser reconnects, but it IS a lag, so it is
         # written down rather than assumed away.
         viewer = _viewer(request)
-        # Which track ids this connection has actually been sent. An `expire`
-        # for a track the viewer never received would disclose that the id
-        # exists, which is enough to count the hidden estate over time.
-        sent: set[str] = set()
         try:
-            permitted, _w = scope_mod.scope_tracks(store.snapshot(), viewer)
-            sent.update(str(t.get("id")) for t in permitted)
-            await _send(resp, "snapshot",
-                        scope_mod.track_envelope(store.snapshot(), viewer, svc.stats()))
+            interval = float(request.query.get("interval_s", REFRESH_S))
+        except ValueError:
+            interval = REFRESH_S
+        if not math.isfinite(interval):
+            interval = REFRESH_S
+        interval = max(REFRESH_MIN_S, min(interval, REFRESH_MAX_S))
+        # Track id -> revision this connection has been sent. A removal for a
+        # track the viewer never received would disclose that the id exists.
+        try:
+            snap = store.snapshot()
+            permitted, _w = scope_mod.scope_tracks(snap, viewer)
+            sent = {t["id"]: store.rev(t["id"]) for t in permitted}
+            await _send(resp, "snapshot", {
+                **scope_mod.track_envelope(snap, viewer, svc.stats()),
+                "now": now_iso(), "interval_s": interval})
+            last_stats = time.monotonic()
             while True:
-                try:
-                    event, data = await asyncio.wait_for(q.get(), timeout=10.0)
-                except asyncio.TimeoutError:
-                    await resp.write(b": keepalive\n\n")
-                    continue
-                if event == "upsert":
-                    if not viewer.may_see_track(
-                        data.get("org"), data.get("producer_anchor", "")
-                    ):
-                        continue
-                    sent.add(str(data.get("id")))
-                elif event == "expire":
-                    if str(data.get("id")) not in sent:
-                        continue
-                    sent.discard(str(data.get("id")))
-                elif event == "stats":
-                    data = scope_mod.scope_stats(data, viewer, len(sent))
-                await _send(resp, event, data)
+                await asyncio.sleep(interval)
+                permitted, _w = scope_mod.scope_tracks(store.snapshot(), viewer)
+                present = {t["id"] for t in permitted}
+                changed = sorted((t for t in permitted if store.rev(t["id"]) != sent.get(t["id"])),
+                                 key=lambda t: store.rev(t["id"]))[:TICK_MAX_TRACKS]
+                removed = [tid for tid in sent if tid not in present]
+                for tid in removed:
+                    del sent[tid]
+                body: dict[str, Any] = {"now": now_iso(), "upserts": [], "removed": removed}
+                for t in changed:
+                    # The browser extends the trail itself after the first send.
+                    body["upserts"].append(
+                        {k: v for k, v in t.items() if k != "trail"} if t["id"] in sent else t)
+                    sent[t["id"]] = store.rev(t["id"])
+                if time.monotonic() - last_stats >= 5:
+                    last_stats = time.monotonic()
+                    body["stats"] = scope_mod.scope_stats(svc.stats(), viewer, len(present))
+                # Sent even when nothing changed: the page takes a missing tick
+                # as a dead connection and reconnects.
+                await _send(resp, "tick", body)
         except (ConnectionResetError, asyncio.CancelledError):
             pass  # disconnect or task cancellation: unregister the stream in finally
         finally:
-            hub.unregister(q)
+            hub.unregister(slot)
         return resp
 
     @web.middleware
@@ -1253,6 +1365,33 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
 
         return web.json_response(out)
 
+    async def track_class(request: web.Request) -> web.Response:
+        """POST {"id": track id, "class": one of CLASSES, or null to clear}."""
+        if not scope_mod.may_classify(dict(request.headers.items()), RBAC_MODE):
+            return web.json_response(
+                {"error": "your access does not include classifying tracks"}, status=403)
+        # A JSON content type cannot be sent cross-site without a preflight, so
+        # another page cannot post here with the viewer's session.
+        if request.content_type != "application/json":
+            return web.json_response({"error": "expected application/json"}, status=415)
+        try:
+            body = await request.json()
+            tid, cls = str(body["id"]), body["class"]
+        except Exception:  # noqa: BLE001
+            return web.json_response({"error": "expected id and class"}, status=400)
+        if cls is not None and cls not in classes_mod.CLASSES:
+            return web.json_response(
+                {"error": "unknown class", "expected": list(classes_mod.CLASSES)}, status=400)
+        viewer = _viewer(request)
+        t = store.get(tid)
+        # A track the viewer may not see answers exactly like one that is gone.
+        if t is None or not viewer.may_see_track(t.get("org"), t.get("producer_anchor", "")):
+            return web.json_response({"error": "no such track"}, status=404)
+        t = svc.mark(tid, cls, viewer.email)
+        LOG.info("track class: %r = %r by %r", tid, cls, viewer.email)
+        return web.json_response({"id": tid, "class": t["class"], "class_from": t["class_from"]})
+
+    app.router.add_post("/api/track-class", track_class)
     app.router.add_post("/api/query", query)
     app.router.add_get("/api/readiness", readiness)
     app.router.add_get("/api/attestations", attestations)
@@ -1276,12 +1415,11 @@ async def _send(resp: web.StreamResponse, event: str, data: Any) -> None:
     await resp.write(f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
 
 
-async def _reaper(store: TrackStore, hub: Hub, svc: Service) -> None:
+async def _reaper(store: TrackStore, svc: Service) -> None:
     while True:
         await asyncio.sleep(5)
         for tid in store.expire():
-            hub.broadcast("expire", {"id": tid})
-        hub.broadcast("stats", svc.stats())
+            svc.marks.drop(tid)
 
 
 async def main() -> None:
@@ -1302,7 +1440,7 @@ async def main() -> None:
 
     asyncio.create_task(svc.supervise())
     asyncio.create_task(svc.refresh_orgs())
-    await _reaper(store, hub, svc)
+    await _reaper(store, svc)
 
 
 if __name__ == "__main__":

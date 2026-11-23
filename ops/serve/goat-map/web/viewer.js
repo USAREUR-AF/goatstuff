@@ -9,6 +9,7 @@
   async function load() {
     let w;
     try { w = await (await fetch('api/whoami')).json(); } catch (e) { return; }
+    window.viewer = w || {};
     if (!w || !w.enforced) return;            // no per-viewer access on this goatnet
     const box = document.getElementById('viewer');
     document.getElementById('viewer-who').textContent = w.email || 'signed in';

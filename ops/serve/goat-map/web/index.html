@@ -44,10 +44,19 @@
       <option value="86400">last 24 h</option>
     </select>
   </label>
+  <label class="history-ctl" title="How often the map updates">
+    <span>Refresh</span>
+    <select id="refresh-rate">
+      <option value="1">1 s</option>
+      <option value="2">2 s</option>
+      <option value="5">5 s</option>
+      <option value="10">10 s</option>
+    </select>
+  </label>
   <div class="lasso-controls">
     <button id="lasso-btn" type="button" title="Click points to enclose an area; Backspace undoes a point">Draw area</button>
-    <button id="lasso-view" type="button" title="Search everything currently on screen">Search visible area</button>
-    <button id="lasso-clear" type="button" title="Remove the drawn area and its results">Clear</button>
+    <button id="lasso-view" type="button" title="Show every track, updating live">Show all</button>
+    <button id="lasso-clear" type="button" title="Remove the drawn area and show every track">Clear</button>
   </div>
   <div id="viewer" class="viewer" hidden>
     <span id="viewer-who"></span>
@@ -88,6 +97,9 @@
   <section class="detail" id="detail" hidden>
   <button class="close" id="detail-close" aria-label="Close">×</button>
   <h3 id="d-title">—</h3>
+  <div id="d-class" class="d-class" hidden role="group" aria-label="Set class">
+    <span id="d-class-note" class="d-class-note" role="status"></span>
+  </div>
   <dl id="d-body"></dl>
 </section>
 </div>

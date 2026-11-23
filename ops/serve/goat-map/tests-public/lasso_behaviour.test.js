@@ -31,7 +31,8 @@ function instance(opts) {
     response: { tracks: { mode: 'features', tracks: [{ id: 'a' }, { id: 'b' }] } },
   };
 
-  global.state = { tracks: new Map() };
+  global.state = { all: new Map(), tracks: new Map(), area: null, clustered: false };
+  global.applyArea = () => { ctx.applied = (ctx.applied || 0) + 1; };
   global.render = () => {};
   global.setShownTracks = () => {};
   global.document = {
@@ -85,84 +86,44 @@ const R = [];
 const check = (n, c, d) => R.push({ ok: !!c, n, d });
 
 (async () => {
-  // --- the load-time query must leave no mark -------------------------------
+  // --- on load the picture is live: no query, no outline, no claim ----------
   let c = instance(); await c.flush();
-  check('load: one query sent', c.posted.length === 1, 'posted=' + c.posted.length);
-  check('load: polygon is the 4 viewport corners', c.posted[0].polygon.length === 4);
-  check('load: NOTHING is drawn', c.feats().length === 0,
-        JSON.stringify(c.feats().map((f) => f.geometry.type)));
-  check('load: hint states the view', /This view/.test(c.hint), c.hint);
+  check('load: no query sent', c.posted.length === 0, 'posted=' + c.posted.length);
+  check('load: nothing is drawn', c.feats().length === 0);
+  check('load: no hint', c.hint === '', c.hint);
+  check('load: no area', state.area === null);
 
-  // --- the page's own camera move re-asks once, silently --------------------
-  c.bounds = { w: 20, s: 20, e: 40, n: 40 };
-  c.fire('moveend', {});                       // programmatic: no originalEvent
-  await c.flush();
-  check('autofit: re-asked instead of warning', c.posted.length === 2,
-        'posted=' + c.posted.length);
-  check('autofit: did not warn', !/MOVED/.test(c.hint), c.hint);
-
-  c.bounds = { w: 60, s: 60, e: 80, n: 80 };
-  c.fire('moveend', {});
-  await c.flush();
-  check('autofit allowance is one-shot', c.posted.length === 2,
-        'posted=' + c.posted.length);
-  check('a later move warns instead', /MOVED/.test(c.hint), c.hint);
-
-  // --- operator navigation NEVER re-queries (ADR 1123) ----------------------
-  c = instance(); await c.flush();
-  const n = c.posted.length;
+  // --- moving the camera never queries and never warns ----------------------
   c.bounds = { w: 20, s: 20, e: 40, n: 40 };
   c.fire('moveend', { originalEvent: { type: 'mouseup' } });
   await c.flush();
-  check('drag onto new ground: no query', c.posted.length === n,
-        'posted=' + c.posted.length);
-  check('drag onto new ground: warns', /MOVED/.test(c.hint), c.hint);
+  check('pan: no query', c.posted.length === 0);
+  check('pan: no hint', c.hint === '', c.hint);
 
-  // --- zooming IN stays honest: every visible pixel was searched ------------
+  const drawSquare = (k) => {
+    c.buttons['lasso-btn'].click();
+    [[-k, -k], [k, -k], [k, k], [-k, k]].forEach((p) => c.fire('click', { lngLat: { lng: p[0], lat: p[1] } }));
+  };
+
+  // --- a failed area search goes back to every track, and says so -----------
   c = instance(); await c.flush();
-  const n2 = c.posted.length;
-  c.bounds = { w: -2, s: -2, e: 2, n: 2 };
-  c.fire('moveend', { originalEvent: { type: 'wheel' } });
-  await c.flush();
-  check('zoom in: no warning', !/MOVED/.test(c.hint), c.hint);
-  check('zoom in: no query', c.posted.length === n2);
-
-  // --- a failed query asserts nothing --------------------------------------
-  //
-  // Draw a real lasso FIRST, so there is an outline on the map to lose. A
-  // failing load-time query would pass this trivially — nothing was ever drawn
-  // — and prove nothing about the path that matters: an outline left over an
-  // empty map says the area was searched and found empty, the opposite of what
-  // a failure means.
-  c = instance(); await c.flush();
-  c.buttons['lasso-btn'].click();
-  [[-5, -5], [5, -5], [5, 5], [-5, 5]].forEach((p) =>
-    c.fire('click', { lngLat: { lng: p[0], lat: p[1] } }));
-  c.fire('dblclick', { preventDefault: () => {} });
-  await c.flush();
-  check('failure precondition: an outline is drawn',
-        c.feats().length === 1 && c.geom().type === 'Polygon');
-
-  // It must be a LASSO query that fails, not "Search visible area": the
-  // viewport path erases the outline on its way in, so a failure there would
-  // pass whether or not the error handler does anything. The lasso path draws
-  // the ring and then queries, which is the only path where the handler is
-  // what removes it.
+  drawSquare(5);
+  check('failure precondition: an outline is drawn', c.feats().length === 1 && c.geom().type === 'Polygon');
   c.fail = true;
-  c.buttons['lasso-btn'].click();               // re-arm and draw again
-  [[-6, -6], [6, -6], [6, 6], [-6, 6]].forEach((p) =>
-    c.fire('click', { lngLat: { lng: p[0], lat: p[1] } }));
-  check('failure precondition 2: outline redrawn before the failing query',
-        c.feats().length === 1 && c.geom().type === 'Polygon');
   c.fire('dblclick', { preventDefault: () => {} });
   await c.flush();
-  check('failure: outline erased', c.feats().length === 0,
-        JSON.stringify(c.feats().map((f) => f.geometry.type)));
-  check('failure: says nothing is shown', /nothing is being shown/.test(c.hint), c.hint);
-  c.bounds = { w: 50, s: 50, e: 60, n: 60 };
-  c.fire('moveend', { originalEvent: {} });
+  check('failure: outline erased', c.feats().length === 0);
+  check('failure: every track shown', state.area === null && /every track is shown/.test(c.hint), c.hint);
+
+  // --- too many in the area: clusters, never individual tracks --------------
+  c = instance(); await c.flush();
+  c.response = { tracks: { mode: 'aggregate', cells: [{ lat: 0, lon: 0, count: 500 }], count: 500 } };
+  drawSquare(5);
+  c.fire('dblclick', { preventDefault: () => {} });
   await c.flush();
-  check('failure: no stale claim after a move', !/MOVED/.test(c.hint), c.hint);
+  check('clusters: flagged', state.clustered === true && /CLUSTERED/.test(c.hint), c.hint);
+  c.buttons['lasso-view'].click();
+  check('show all: clusters gone', state.clustered === false && state.area === null && c.feats().length === 0);
 
   // --- a DRAWN lasso is a CLOSED ring: four sides, not three ----------------
   c = instance(); await c.flush();
@@ -184,7 +145,7 @@ const check = (n, c, d) => R.push({ ok: !!c, n, d });
   c.fire('dblclick', { preventDefault: () => {} });
   await c.flush();
   check('draw: dblclick queries', c.posted.length === n3 + 1);
-  check('draw: hint says Lasso', /^Lasso:/.test(c.hint), c.hint);
+  check('draw: the area narrows the live picture', state.area.length === 4 && /live/.test(c.hint), c.hint);
 
   // A lasso polygon is geographic: it stays over the same ground, so panning
   // away neither invalidates it nor triggers anything.

@@ -4,23 +4,63 @@
 // knowledge of CoT, ASTERIX, SAPIENT or Zenoh key grammar. Swapping the
 // sensor family upstream should require no change in this file.
 
-const AFF_COLOR = {
-  friend: '#38bdf8',
-  'assumed-friend': '#38bdf8',
-  hostile: '#fb7185',
-  suspect: '#fb7185',
-  neutral: '#34d399',
-  unknown: '#f0b429',
-  pending: '#f0b429',
+// One colour and one shape per track class; the shape carries the class on its
+// own for a colour-blind viewer or a projector. Shapes follow the MIL-STD-2525
+// air frames: friendly circle, neutral and commercial square, unknown
+// quatrefoil, hostile diamond. Commercial is a square with a bar through it.
+const TRACK_CLASS = {
+  friendly: { color: '#38bdf8', label: 'Friendly' },
+  commercial: { color: '#34d399', label: 'Commercial' },
+  neutral: { color: '#a3b8a8', label: 'Neutral' },
+  unknown: { color: '#f0b429', label: 'Unknown' },
+  hostile: { color: '#ff4d4f', label: 'Hostile' },
 };
-const AFF_FALLBACK = '#a5b4fc';
+const MAIN_CLASSES = ['friendly', 'commercial', 'unknown', 'hostile'];
+function classOf(t) { return TRACK_CLASS[t.class] ? t.class : 'unknown'; }
+function classColor(t) { return TRACK_CLASS[classOf(t)].color; }
+
+function drawClass(ctx, cls, color, size, hollow) {
+  const c = size / 2;
+  const r = size * 0.36;
+  ctx.beginPath();
+  if (cls === 'friendly') {
+    ctx.arc(c, c, r, 0, 2 * Math.PI);
+  } else if (cls === 'hostile') {
+    ctx.moveTo(c, c - r * 1.2); ctx.lineTo(c + r * 1.2, c); ctx.lineTo(c, c + r * 1.2); ctx.lineTo(c - r * 1.2, c); ctx.closePath();
+  } else if (cls === 'unknown') {
+    const k = r * 0.62;
+    ctx.arc(c, c - k, k, Math.PI, 0); ctx.arc(c + k, c, k, -Math.PI / 2, Math.PI / 2);
+    ctx.arc(c, c + k, k, 0, Math.PI); ctx.arc(c - k, c, k, Math.PI / 2, -Math.PI / 2); ctx.closePath();
+  } else {
+    ctx.rect(c - r * 0.9, c - r * 0.9, r * 1.8, r * 1.8);
+  }
+  if (!hollow) { ctx.fillStyle = color; ctx.fill(); }
+  ctx.lineWidth = size * 0.07;
+  ctx.strokeStyle = hollow ? color : '#0a0e14';
+  ctx.stroke();
+  if (cls === 'commercial') {
+    ctx.beginPath(); ctx.moveTo(c - r * 0.9, c); ctx.lineTo(c + r * 0.9, c);
+    ctx.lineWidth = size * 0.1; ctx.strokeStyle = hollow ? color : '#0a0e14'; ctx.stroke();
+  }
+}
+
+function classCanvas(cls, hollow, size) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  drawClass(cv.getContext('2d'), cls, TRACK_CLASS[cls].color, size, hollow);
+  return cv;
+}
 
 // Seconds after which a track is drawn as fading, and the age at which the
 // server would have dropped it anyway.
 const FADE_START_S = 20;
 
 const state = {
-  tracks: new Map(),
+  all: new Map(),      // every track the stream has sent
+  tracks: new Map(),   // what is drawn: all of them, or those inside `area`
+  area: null,          // drawn polygon [[lon,lat],...], or null for everything
+  clustered: false,    // the drawn area holds too many to list; clusters are shown
+  skewMs: 0,           // server clock minus this machine's
   selected: null,
   meta: null,
   autofit: true,
@@ -30,11 +70,30 @@ const state = {
 const el = (id) => document.getElementById(id);
 
 function colorFor(t) {
-  return AFF_COLOR[t.affiliation] || AFF_FALLBACK;
+  return classColor(t);
+}
+
+function inPolygon(lon, lat, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// What is drawn follows from everything received and the drawn area, if any.
+function applyArea() {
+  if (state.clustered) state.tracks = new Map();
+  else if (!state.area) state.tracks = state.all;
+  else state.tracks = new Map([...state.all].filter(([, t]) => inPolygon(t.lon, t.lat, state.area)));
+  if (state.selected && !state.tracks.has(state.selected)) state.selected = null;
+  setShownTracks(state.area && !state.clustered ? state.tracks.size : null);
 }
 
 function ageOf(t) {
-  return (Date.now() - Date.parse(t.observed_at)) / 1000;
+  return Math.max(0, (Date.now() + state.skewMs - Date.parse(t.observed_at)) / 1000);
 }
 
 // A short leader line in the direction of travel, length proportional to
@@ -58,6 +117,7 @@ function featureCollections() {
     const props = {
       id: t.id,
       label: t.label,
+      icon: `trk-${classOf(t)}${t.synthetic ? '-sim' : ''}`,
       color: colorFor(t),
       fade,
       alert: t.kind === 'alert' ? 1 : 0,
@@ -181,21 +241,25 @@ function onMapLoad() {
     },
   });
 
+  for (const cls of Object.keys(TRACK_CLASS)) {
+    for (const hollow of [false, true]) {
+      const cv = classCanvas(cls, hollow, 44);
+      map.addImage(`trk-${cls}${hollow ? '-sim' : ''}`, cv.getContext('2d').getImageData(0, 0, 44, 44), { pixelRatio: 2 });
+    }
+  }
+  // Synthetic contacts render HOLLOW: a filled symbol means a real detection
+  // and nothing else.
   map.addLayer({
     id: 'track-dot',
-    type: 'circle',
+    type: 'symbol',
     source: 'tracks',
-    paint: {
-      'circle-radius': ['case', ['==', ['get', 'alert'], 1], 5.5, 4],
-      // Synthetic contacts render HOLLOW: a filled dot means a real
-      // detection and nothing else. A viewer who cannot tell simulation from
-      // reality at a glance is worse off than one with no map at all.
-      'circle-color': ['case', ['==', ['get', 'synthetic'], 1], 'rgba(0,0,0,0)', ['get', 'color']],
-      'circle-opacity': ['get', 'fade'],
-      'circle-stroke-width': ['case', ['==', ['get', 'synthetic'], 1], 2, 1],
-      'circle-stroke-color': ['case', ['==', ['get', 'synthetic'], 1], ['get', 'color'], '#0a0e14'],
-      'circle-stroke-opacity': 0.85,
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': ['case', ['==', ['get', 'alert'], 1], 1.2, 0.9],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
     },
+    paint: { 'icon-opacity': ['get', 'fade'] },
   });
 
   map.addLayer({
@@ -271,12 +335,13 @@ function renderList() {
   el('empty').hidden = rows.length > 0;
   list.innerHTML = rows
     .map((t) => {
+      const label = escHtml(t.label);
       const age = ageOf(t);
       const kn = t.speed_mps == null ? '—' : `${(t.speed_mps * 1.94384).toFixed(0)} kn`;
       const crs = t.course_deg == null ? '—' : `${String(Math.round(t.course_deg)).padStart(3, '0')}°`;
-      return `<li data-id="${t.id}" class="${state.selected === t.id ? 'sel' : ''}">
+      return `<li data-id="${escHtml(t.id)}" class="${state.selected === t.id ? 'sel' : ''}">
         <span class="swatch" style="background:${colorFor(t)}"></span>
-        <span><span class="id">${t.label}${t.synthetic ? ' <em class="sim">SIM</em>' : ''}</span><br><span class="sub">${crs} · ${kn} · ${t.dimension}</span></span>
+        <span><span class="id">${label}${t.synthetic ? ' <em class="sim">SIM</em>' : ''}</span><br><span class="sub">${crs} · ${kn} · ${TRACK_CLASS[classOf(t)].label.toLowerCase()}${t.source && t.source.sensor ? ` · ${escHtml(t.source.sensor)}` : ''}</span></span>
         <span class="age">${age < 1 ? 'now' : `${age.toFixed(0)}s`}</span>
       </li>`;
     })
@@ -318,31 +383,84 @@ function renderDetail() {
     ['altitude', fmt(t.alt_m, 1, ' m HAE')],
     ['course', t.course_deg == null ? '—' : `${String(Math.round(t.course_deg)).padStart(3, '0')}°`],
     ['speed', t.speed_mps == null ? '—' : `${t.speed_mps.toFixed(1)} m/s · ${(t.speed_mps * 1.94384).toFixed(1)} kn`],
-    ['affiliation', t.affiliation],
-    ['dimension', t.dimension],
-    ['message', t.kind],
-    ['cot type', t.cot_type || '—'],
+    ['class', `${TRACK_CLASS[classOf(t)].label} (${escHtml(t.class_from || 'message')})`],
+    ['affiliation', escHtml(t.affiliation)],
+    ['dimension', escHtml(t.dimension)],
+    ['message', escHtml(t.kind)],
+    ['cot type', escHtml(t.cot_type || '—')],
     ['error (ce/le)', `${fmt(t.ce_m, 0, ' m')} / ${fmt(t.le_m, 0, ' m')}`],
     ['updates', String(t.updates)],
     ['observed', `${ageOf(t).toFixed(0)}s ago`],
-    ['sensor clock', t.reported_at || '—'],
+    ['sensor clock', escHtml(t.reported_at || '—')],
     ['from', fromOf(t)],
-    ['producer', t.org || `${(t.producer_anchor || '').slice(0, 8)}… (unverified)`],
-    ['standard', (t.origin && t.origin.standard) || '—'],
+    ['producer', t.org ? escHtml(t.org) : `${(t.producer_anchor || '').slice(0, 8)}… (unverified)`],
+    ['standard', escHtml((t.origin && t.origin.standard) || '—')],
     ['zenoh key', t.origin && t.origin.key ? `<code class="key">${escHtml(t.origin.key)}</code>` : '—'],
     ['data', t.synthetic ? 'SYNTHETIC — simulated, not a real detection' : 'real detection'],
-    ['descriptor', t.descriptor || '—'],
+    ['descriptor', escHtml(t.descriptor || '—')],
   ];
+  renderClassButtons(t);
   el('d-body').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 
+// Class buttons on the track card, for viewers who may classify. Built once per
+// track so the one-second redraw never replaces a button being clicked.
+let classButtonsFor = null;
+function renderClassButtons(t) {
+  const box = el('d-class');
+  const who = window.viewer || {};
+  box.hidden = !who.may_classify;
+  if (box.hidden) return;
+  if (classButtonsFor !== t.id) {
+    classButtonsFor = t.id;
+    el('d-class-note').textContent = '';
+    box.querySelectorAll('button').forEach((b) => b.remove());
+    for (const cls of [...MAIN_CLASSES, null]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.cls = cls || '';
+      b.textContent = cls ? TRACK_CLASS[cls].label : 'Clear mark';
+      b.onclick = () => setClass(t.id, cls);
+      if (cls) b.style.setProperty('--cls', TRACK_CLASS[cls].color);
+      box.insertBefore(b, el('d-class-note'));
+    }
+  }
+  const marked = /^marked by/.test(t.class_from || '');
+  for (const b of box.querySelectorAll('button')) {
+    if (b.dataset.cls) b.setAttribute('aria-pressed', String(b.dataset.cls === classOf(t)));
+    else b.disabled = !marked;
+  }
+}
+
+async function setClass(id, cls) {
+  const note = el('d-class-note');
+  note.textContent = '';
+  try {
+    const r = await fetch('api/track-class', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, class: cls }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    const t = state.all.get(id);
+    if (t) { t.class = d.class; t.class_from = d.class_from; }
+    render();
+    renderLegend();
+  } catch (err) {
+    note.textContent = `Not saved: ${err.message || err}`;
+  }
+}
+
 function renderLegend() {
-  const seen = new Map();
-  for (const t of state.tracks.values()) seen.set(t.affiliation, colorFor(t));
-  if (seen.size === 0) seen.set('unknown', AFF_COLOR.unknown);
-  el('legend-keys').innerHTML = [...seen]
-    .map(([k, c]) => `<span class="key"><i style="background:${c}"></i>${k}</span>`)
-    .join('');
+  const n = {};
+  for (const t of state.tracks.values()) n[classOf(t)] = (n[classOf(t)] || 0) + 1;
+  const show = Object.keys(TRACK_CLASS).filter((c) => MAIN_CLASSES.includes(c) || n[c]);
+  el('legend-keys').replaceChildren(...show.map((c) => {
+    const s = document.createElement('span');
+    s.className = 'key';
+    s.append(classCanvas(c, false, 18), `${TRACK_CLASS[c].label} ${n[c] || 0}`);
+    return s;
+  }));
 }
 
 // The map must never imply it is showing everything. Two ways it can lie:
@@ -463,45 +581,84 @@ function setLink(up, text) {
 
 // ---------------------------------------------------------------- feed ----
 
-function connect() {
-  const es = new EventSource('api/stream');
+const REFRESH_KEY = 'goatmap.refresh_s';
+let stream = null;
+let intervalS = 1;
+let lastTick = 0;
 
-  es.addEventListener('open', () => setLink(true, 'live'));
+function noteServerClock(iso) {
+  const t = Date.parse(iso);
+  if (Number.isFinite(t)) state.skewMs = t - Date.now();
+}
+
+function live() {
+  lastTick = Date.now();
+  setLink(true, `live · ${intervalS} s`);
+}
+
+function connect() {
+  if (stream) stream.close();
+  lastTick = Date.now();
+  const es = new EventSource(`api/stream?interval_s=${intervalS}`);
+  stream = es;
 
   es.addEventListener('snapshot', (e) => {
     const d = JSON.parse(e.data);
-    // DO NOT repopulate the map from the stream. The page is blank until the
-    // operator draws a lasso; a snapshot that quietly filled it back in would
-    // defeat both the readability goal and the "transfer nothing by default"
-    // property. Stats and banners still update — those are counters, not the
-    // picture.
+    noteServerClock(d.now);
+    state.all = new Map((d.tracks || []).map((t) => [t.id, t]));
+    applyArea();
     setStats(d.stats);
     setScopeBanner(d);
-    setLink(true, 'live');
+    live();
     renderLegend();
     render();
   });
 
-  es.addEventListener('upsert', (e) => {
-    // Live updates apply ONLY to tracks the current lasso already returned.
-    // A new contact outside the drawn area must not appear unasked — the
-    // lasso is a query, and its result set is the answer to that query.
-    const t = JSON.parse(e.data);
-    if (state.tracks.has(t.id)) state.tracks.set(t.id, t);
-  });
-
-  es.addEventListener('expire', (e) => {
-    const { id } = JSON.parse(e.data);
-    state.tracks.delete(id);
-    if (state.selected === id) state.selected = null;
-  });
-
-  es.addEventListener('stats', (e) => {
-    setStats(JSON.parse(e.data));
+  es.addEventListener('tick', (e) => {
+    const d = JSON.parse(e.data);
+    noteServerClock(d.now);
+    for (const t of d.upserts) {
+      const prev = state.all.get(t.id);
+      if (!t.trail) {
+        t.trail = (prev && prev.trail) || [];
+        const last = t.trail[t.trail.length - 1];
+        if (!last || last[0] !== t.lon || last[1] !== t.lat) t.trail = [...t.trail, [t.lon, t.lat]].slice(-24);
+      }
+      state.all.set(t.id, t);
+    }
+    for (const id of d.removed) state.all.delete(id);
+    applyArea();
+    if (d.stats) setStats(d.stats);
+    live();
     renderLegend();
+    render();
   });
 
-  es.addEventListener('error', () => setLink(false, 'reconnecting'));
+  es.addEventListener('error', () => { if (stream === es) setLink(false, 'reconnecting'); });
+}
+
+// A tick arrives every interval even when nothing moved, so silence means the
+// connection is dead. The browser does not always notice (a sleeping laptop, a
+// refused reconnect), so the page reconnects itself.
+function watchStream() {
+  const silent = Date.now() - lastTick;
+  if (silent < Math.max(5000, intervalS * 4000)) return;
+  setLink(false, 'reconnecting');
+  connect();
+}
+
+function initRefresh(defaultS) {
+  const sel = el('refresh-rate');
+  let saved = null;
+  try { saved = localStorage.getItem(REFRESH_KEY); } catch (err) { /* storage blocked: use the default */ }
+  const want = String(saved || defaultS || 1);
+  sel.value = [...sel.options].some((o) => o.value === want) ? want : '1';
+  intervalS = Number(sel.value);
+  sel.addEventListener('change', () => {
+    intervalS = Number(sel.value);
+    try { localStorage.setItem(REFRESH_KEY, sel.value); } catch (err) { /* not remembered */ }
+    connect();
+  });
 }
 
 async function boot() {
@@ -526,7 +683,9 @@ async function boot() {
     setLink(false, 'basemap failed');
   }
 
+  initRefresh(state.meta && state.meta.refresh_s);
   connect();
+  setInterval(watchStream, 1000);
   renderLegend();
   // Redraw on a timer so fade and age stay honest between messages.
   setInterval(render, 1000);

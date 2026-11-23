@@ -196,6 +196,18 @@ def scope_from_headers(
     )
 
 
+# Who may set a track's class on the map.
+CLASSIFY_GROUPS = frozenset(
+    g.strip() for g in os.environ.get(
+        "GOATMAP_CLASSIFY_GROUPS", "PLATFORM-ADMIN,TACTICAL-ADMIN"
+    ).split(",") if g.strip()
+)
+
+
+def may_classify(headers: dict[str, str], mode: str = OFF) -> bool:
+    return mode != ENFORCE or bool(CLASSIFY_GROUPS.intersection(_groups(headers)))
+
+
 def scope_estate(
     sites: Iterable[Any],
     scope: ViewerScope,
