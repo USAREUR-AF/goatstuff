@@ -688,6 +688,12 @@ async function boot() {
     setLink(false, 'basemap failed');
   }
 
+  // The toolbar wraps to more rows on a narrow window; what sits under it moves down.
+  const bar = document.querySelector('.toolbar');
+  if (bar && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => document.documentElement.style.setProperty(
+      '--below-toolbar', `${bar.offsetTop + bar.offsetHeight + 10}px`)).observe(bar);
+  }
   initRefresh(state.meta && state.meta.refresh_s);
   connect();
   setInterval(watchStream, 1000);
