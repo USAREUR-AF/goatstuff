@@ -259,6 +259,26 @@ func TestIntakeCommandArgv(t *testing.T) {
 			t.Errorf("intake argv lacks %q: %s", w, got)
 		}
 	}
+	if strings.Contains(got, "--set-receive-time") {
+		t.Errorf("a standard without receive_time gets one: %s", got)
+	}
+	// MAVLink: the adapter's framing zero-fills trimmed payloads, and the receive time is set.
+	mav := &IntakeFormat{ID: "mavlink2", FromFormat: "mavlink2", InFrame: "mavlink2", ReceiveTime: "time_ms"}
+	got = strings.Join(intakeCommand(c, f, mav), " ")
+	for _, w := range []string{"--in-frame mavlink2", "--set-receive-time time_ms", "--to-format goat-processors-system-track"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("mavlink intake argv lacks %q: %s", w, got)
+		}
+	}
+	// A tagged standard publishes the report form, and the catalog topic says so.
+	cot := &IntakeFormat{ID: "cot", FromFormat: "cot-xml", ToFormat: "goat-processors-report"}
+	got = strings.Join(intakeCommand(c, f, cot), " ")
+	if !strings.Contains(got, "--to-format goat-processors-report") {
+		t.Errorf("cot intake publishes %s", got)
+	}
+	if c.Intake.PublishAs(cot) != "goat-processors-report" || c.Intake.PublishAs(mav) != c.Intake.ToFormat || c.Intake.PublishAs(nil) != c.Intake.ToFormat {
+		t.Error("PublishAs")
+	}
 }
 
 // ---- supervisor ----

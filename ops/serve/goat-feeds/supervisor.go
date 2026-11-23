@@ -56,7 +56,10 @@ func intakeCommand(cfg *Config, f Feed, ft *IntakeFormat) []string {
 	for _, k := range keys {
 		cmd = append(cmd, "--set", k+"="+ft.Set[k])
 	}
-	cmd = append(cmd, "--set", "track.source_id="+f.ID, "--to-format", in.ToFormat, "--out-frame", in.OutFrame,
+	if ft.ReceiveTime != "" {
+		cmd = append(cmd, "--set-receive-time", ft.ReceiveTime)
+	}
+	cmd = append(cmd, "--set", "track.source_id="+f.ID, "--to-format", in.PublishAs(ft), "--out-frame", in.OutFrame,
 		"--out", "zenoh:"+PublishedKey(cfg, f)+"?config="+cfg.Pipe.ZenohConfig)
 	return cmd
 }
@@ -64,7 +67,7 @@ func intakeCommand(cfg *Config, f Feed, ft *IntakeFormat) []string {
 // publishedTopic is a live received feed offered like a catalog topic.
 func publishedTopic(cfg *Config, f Feed) Topic {
 	return Topic{ID: "in-" + f.ID, Label: f.Label, Key: PublishedKey(cfg, f), Kind: "published", DataClass: "real",
-		FromFormat: cfg.Intake.ToFormat, InFrame: cfg.Intake.OutFrame,
+		FromFormat: cfg.Intake.PublishAs(cfg.Intake.Format(f.OutputID)), InFrame: cfg.Intake.OutFrame,
 		Description: fmt.Sprintf("Received from %s (%s), published by goat-feeds.", f.DestName, f.DestIP),
 		Outputs:     cfg.Intake.Outputs}
 }

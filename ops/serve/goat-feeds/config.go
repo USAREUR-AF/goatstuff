@@ -49,6 +49,22 @@ type IntakeFormat struct {
 	InFrame    string            `json:"in_frame,omitempty"`
 	Set        map[string]string `json:"set,omitempty"`
 	Note       string            `json:"note,omitempty"`
+	// ReceiveTime names the model key given the time a message arrived, for a standard
+	// that carries no absolute time of its own (MAVLink: boot-relative; CAT062: time of
+	// day only). Empty: the message's own time is used.
+	ReceiveTime string `json:"receive_time,omitempty"`
+	// ToFormat overrides the site's canonical form for this standard, for example
+	// goat-processors-report for a standard whose sender tags friend or hostile (CoT,
+	// SAPIENT): that form carries the CoT type, the system track form does not.
+	ToFormat string `json:"to_format,omitempty"`
+}
+
+// PublishAs is the form a feed of this standard is published in.
+func (in *Intake) PublishAs(ft *IntakeFormat) string {
+	if ft != nil && ft.ToFormat != "" {
+		return ft.ToFormat
+	}
+	return in.ToFormat
 }
 
 // Intake is the receive side: systems send to a port on this core node, and each received
