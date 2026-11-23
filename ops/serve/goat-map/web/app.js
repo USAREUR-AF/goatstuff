@@ -395,6 +395,9 @@ function renderDetail() {
     ['from', fromOf(t)],
     ['producer', t.org ? escHtml(t.org) : `${(t.producer_anchor || '').slice(0, 8)}… (unverified)`],
     ['data format', escHtml((t.origin && t.origin.standard) || '—')],
+    ['data standard', t.origin && /^https?:\/\//.test(t.origin.record || '')
+      ? `<a href="${escHtml(t.origin.record)}" target="_blank" rel="noopener">open record in portal</a>`
+      : 'no record in the portal'],
     ['sensor sent', escHtml((t.origin && t.origin.native) || '—')],
     ['zenoh key', t.origin && t.origin.key ? `<code class="key">${escHtml(t.origin.key)}</code>` : '—'],
     ['data', t.synthetic ? 'SYNTHETIC — simulated, not a real detection' : 'real detection'],

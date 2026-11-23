@@ -309,8 +309,12 @@ class Service:
 
     async def refresh_orgs(self) -> None:
         while True:
-            await asyncio.get_running_loop().run_in_executor(None, self.orgs.refresh)
-            await asyncio.sleep(PORTAL_REFRESH_S)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self.orgs.refresh)
+            keys = sorted({t["origin"]["key"] for t in self.store.snapshot() if t.get("origin")})
+            await loop.run_in_executor(None, self.orgs.refresh_records, keys)
+            # No topics yet: look again soon, not a whole period later.
+            await asyncio.sleep(PORTAL_REFRESH_S if keys else min(30.0, PORTAL_REFRESH_S))
 
     async def supervise(self) -> None:
         """Keep both legs open. Zenoh reconnects a session it has already
@@ -579,6 +583,11 @@ class Service:
         # Likewise `synthetic` and `org`: taken from the REGISTRY, never from
         # the sender. A real producer must not be able to label itself
         # notional (nor a synthetic one label itself real).
+        origin = track.get("origin")
+        if origin:
+            record = self.orgs.record_url(origin["key"])
+            if record:
+                origin["record"] = record
         org = self.orgs.get(anchor)
         if org is None:
             self.unverified_anchors.add(anchor)
