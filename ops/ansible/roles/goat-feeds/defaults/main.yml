@@ -59,3 +59,9 @@ goat_feeds_oauth2_proxy_image: "quay.io/oauth2-proxy/oauth2-proxy:v7.7.1@sha256:
 #   formats: [{id, label, from_format, in_frame?, set?, note?}]
 #   outputs: [{id, label, to_format, frame?, set?}]   # how others may pull a received feed
 goat_feeds_intake: {}
+
+# Declared links (ADR 1260): manifests written by the roles that start tactical links
+# (processors-pipeline, boundary node). goat-feeds lists them read-only beside the
+# requested feeds. Empty switches it off (and drops the journal read access).
+goat_feeds_declared_dir: /etc/goat-links/declared.d
+

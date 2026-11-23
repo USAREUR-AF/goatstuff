@@ -2,7 +2,7 @@
 // Starts goat-feeds for the browser tests: a fresh database, a config with documentation
 // addresses only, and the stub pipe. Run by playwright.config.ts as its web server.
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +50,16 @@ const cfg = {
   },
 };
 const dir = mkdtempSync(join(tmpdir(), "goat-feeds-e2e-"));
+// Declared links (ADR 1260): one manifest, read through fake systemctl/journalctl.
+const declDir = join(dir, "declared.d");
+mkdirSync(declDir);
+writeFileSync(join(declDir, "pipeline-test.json"), JSON.stringify({ owner: "processors pipeline test", links: [
+  { id: "fused-to-console", unit: "goat-xf-pipe@fused-test.service", direction: "out", source_key: "slot/stream/fused/tracks",
+    source_label: "Fused air picture (declared)", to_format: "asterix-cat062", output_label: "ASTERIX CAT062 (SAC 38 / SIC 204)",
+    dest: "udp://198.51.100.70:7005", data_class: "real", controlled_by: "destinations.test.enabled in the pipeline declaration", enabled: true },
+] }));
+cfg.declared_dir = declDir;
+cfg.declared_probe = { systemctl: join(here, "fake-systemctl.sh"), journalctl: join(here, "fake-journalctl.sh") };
 const cfgPath = join(dir, "config.json");
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
 const child = spawn(bin, ["-config", cfgPath], { stdio: "inherit", env: { ...process.env, GOAT_FEEDS_DB_DSN: dsn } });

@@ -14,5 +14,6 @@
   "peers": {"api": goat_feeds_peers_api if goat_feeds_nb_api_token | length > 0 else "",
             "token_file": (goat_feeds_etc ~ "/secrets/nb-token") if goat_feeds_nb_api_token | length > 0 else ""},
   "catalog": goat_feeds_catalog,
-  "intake": goat_feeds_intake
+  "intake": goat_feeds_intake,
+  "declared_dir": goat_feeds_declared_dir
 } | to_nice_json }}

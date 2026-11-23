@@ -7,6 +7,11 @@ Wants=network-online.target
 [Service]
 User={{ goat_feeds_user }}
 Group={{ goat_feeds_user }}
+{% if goat_feeds_declared_dir | length > 0 %}
+# Declared links (ADR 1260): read each link's status line from the journal, read-only,
+# until every link publishes its own health record on the fabric.
+SupplementaryGroups=systemd-journal
+{% endif %}
 ExecStart={{ goat_feeds_dir }}/goat-feeds -config {{ goat_feeds_etc }}/config.json
 Restart=always
 RestartSec=3

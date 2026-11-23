@@ -69,6 +69,8 @@ a.card:hover { border-color: var(--accent); }
 
 /* Feed rows: Integrated and Sending/Receiving are two columns, each Yes/No with its reason. */
 .card.feed-row { grid-template-columns: 150px 190px minmax(0, 1fr) auto; align-items: start; }
+.dir.decl { margin-left: 4px; }
+.card.declared { border-style: dashed; }
 .sig { display: grid; gap: 1px; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--line); min-width: 0; }
 .sig .k { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .sig .w { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 700; }
