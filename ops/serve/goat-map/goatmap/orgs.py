@@ -31,6 +31,12 @@ LOG = logging.getLogger("goat-map.orgs")
 MAX_RECORD_KEYS = 50
 
 
+def _registered(key: str) -> str:
+    """The portal registers a topic under its owner's anchor, so a volatile key
+    is recorded without that first chunk."""
+    return key.removeprefix("volatile/")
+
+
 class OrgRegistry:
     def __init__(self, portal_url: str, token: str, refresh_s: float = 300.0) -> None:
         self._url = portal_url.rstrip("/")
@@ -53,7 +59,7 @@ class OrgRegistry:
         """The portal page of a topic's data standard record, or None."""
         if key not in self._records:
             return None
-        return f"{self._url}/schema.html?key={urllib.parse.quote(key, safe='')}"
+        return f"{self._url}/schema.html?key={urllib.parse.quote(_registered(key), safe='')}"
 
     def refresh_records(self, keys: list[str]) -> None:
         """Ask the portal which of these topics have a record. A topic the
@@ -62,7 +68,7 @@ class OrgRegistry:
             return
         for key in keys[:MAX_RECORD_KEYS]:
             req = urllib.request.Request(
-                f"{self._url}/api/schemas/render/{urllib.parse.quote(key)}",
+                f"{self._url}/api/schemas/render/{urllib.parse.quote(_registered(key))}",
                 headers={"Authorization": f"Bearer {self._token}"},
             )
             try:
