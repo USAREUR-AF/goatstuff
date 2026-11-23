@@ -221,9 +221,13 @@ STANDARD_RECORD = "goat-processors track (JSON lines)"
 STANDARD_TRACKSET = "goat.geo.trackset.v1 (JSON)"
 
 
-def _origin(key: str, standard: str) -> dict[str, str]:
-    """Where a track came from: the Zenoh key it arrived on and its standard."""
-    return {"key": key, "standard": standard}
+def _origin(key: str, standard: str, src: dict[str, Any] | None = None) -> dict[str, str]:
+    """Where a track came from: the Zenoh key it arrived on and its standard,
+    read from the message, and what the sensor itself sent if that is declared."""
+    out = {"key": key, "standard": standard}
+    if src and src.get("native_format"):
+        out["native"] = str(src["native_format"])
+    return out
 
 
 def _null_island(track: dict[str, Any]) -> bool:
@@ -472,7 +476,7 @@ class Service:
         if payload.lstrip()[:1] == b"<":
             track = self._fabric_cot(key, anchor, payload, src)
             if track is not None:
-                track["origin"] = _origin(key, STANDARD_COT)
+                track["origin"] = _origin(key, STANDARD_COT, src)
                 self._store_fabric(anchor, track, src)
             return
         try:
@@ -497,7 +501,7 @@ class Service:
         standard = STANDARD_TRACKSET if is_set else STANDARD_TRACK
         for track in tracks or []:
             if isinstance(track, dict) and "id" in track and not _null_island(track):
-                track["origin"] = _origin(key, standard)
+                track["origin"] = _origin(key, standard, src)
                 self._store_fabric(anchor, track, src)
 
     def _fabric_record(self, key: str, anchor: str, rec: Any, src: dict | None) -> None:
@@ -540,7 +544,7 @@ class Service:
             "affiliation": cot_mod._AFFILIATION.get(parts[1] if len(parts) > 1 else "", "unknown"),
             "dimension": cot_mod._DIMENSION.get(parts[2] if len(parts) > 2 else "", "unknown"),
             "how": None, "descriptor": None, "reported_at": reported, "stale_at": None,
-            "observed_at": now_iso(), "origin": _origin(key, STANDARD_RECORD),
+            "observed_at": now_iso(), "origin": _origin(key, STANDARD_RECORD, info),
         }, info)
 
     def _fabric_cot(self, key: str, anchor: str, payload: bytes,

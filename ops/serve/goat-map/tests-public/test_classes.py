@@ -213,3 +213,11 @@ def test_the_page_names_each_script_by_its_content(svc, tmp_path):
     (tmp_path / "app.js").write_text("two")
     b = m._versioned_index(tmp_path)
     assert a != b and 'src="app.js?v=' in a and 'href="https://x/y.js"' in a
+
+
+def test_a_track_states_the_format_on_the_topic_and_what_the_sensor_sent(svc):
+    _, s = svc
+    s.sources[1]["native_format"] = "MAVLink 2"
+    s._handle_fabric(FEED, json.dumps({"lat": 45.0, "lon": 29.0}).encode())
+    (t,) = s.store.snapshot()
+    assert t["origin"] == {"key": FEED, "standard": "goat-processors track (JSON lines)", "native": "MAVLink 2"}
