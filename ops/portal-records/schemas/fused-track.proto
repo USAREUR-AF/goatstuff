@@ -15,5 +15,9 @@ message SystemTrack {
   double ce = 11;             // horizontal error, meters
   repeated string members = 12;  // contributing tracks, source/uid
   string from = 13;
-  map<string, string> attributes = 14;
+  map<string, Attribute> attributes = 14;  // by name, for example "type" (CoT type) and "callsign"
+  message Attribute {
+    string value = 1;
+    string from = 2;  // the contributing track it came from, source/uid
+  }
 }

@@ -130,6 +130,11 @@ source is read only while that key has been silent for 30 seconds.
 aggregator (adsb.lol data is ODbL) as one trackset key the map subscribes to. The
 map does not depend on it. Settings are in the module's docstring.
 
+## Raw feeds
+
+`python -m goatmap.rawtap` is a separate process that publishes each datagram of a
+received feed unchanged. It copies packets and never opens the feed's port.
+
 ## Basemap
 
 Self-hosted: a Protomaps extract of the area of interest plus vendored
