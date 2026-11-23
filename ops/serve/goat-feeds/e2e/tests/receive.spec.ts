@@ -34,7 +34,7 @@ test("a tactical admin receives a system's data, and others can request it out",
   await page.click("#step-next");
   await expect(page).toHaveURL(/#feed\/feed-/);
   const feedId = page.url().split("/").pop()!;
-  await expect(page.locator("#feed-head .h")).toHaveText("receiving");
+  await expect(page.locator("#feed-head .sig.flow .w")).toHaveText("Yes");
   await expect(page.locator("#flow-title")).toHaveText("Receiving");
   await expect(page.locator("#check-btn")).toHaveText("Check sender");
   await expect(page.locator("#feed-details")).toContainText(`volatile/slot/stream/feeds-in/${feedId}`);
@@ -78,6 +78,6 @@ test("a member's receive request waits for an admin", async ({ browser }) => {
   await expect(page.locator(".next-box")).toContainText("waits for");
   await page.fill("#purpose", "status into the picture");
   await page.click("#step-next");
-  await expect(page.locator("#feed-head .h")).toHaveText("waiting");
+  await expect(page.locator("#feed-head .sig.int .n")).toHaveText("Waiting for approval.");
   await ctx.close();
 });

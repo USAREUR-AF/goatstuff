@@ -50,6 +50,12 @@ function ago(s) {
 }
 function daysLeft(s) { const d = Math.round((new Date(s) - Date.now()) / 86400000); return d < 0 ? "ended" : d === 0 ? "ends today" : `${d} d left`; }
 const health = (h) => el("span", { class: `h ${h}`, text: h });
+// Two separate facts per feed, never one word: is the link set up, and is data going through.
+const signal = (kind, label, sg) => el("div", { class: `sig ${kind} ${sg && sg.on ? "yes" : "no"}` },
+  el("span", { class: "k", text: label }),
+  el("span", { class: "w", text: sg ? sg.word : "—" }),
+  el("span", { class: "n", text: sg ? sg.note : "" }));
+const signals = (f) => [signal("int", "Integrated", f.integrated), signal("flow", isIn(f) ? "Receiving" : "Sending", f.flowing)];
 const cls = (c) => el("span", { class: `cls ${c}`, text: c === "real" ? "Real data" : "Synthetic" });
 const dest = (f) => `${f.dest_name} · ${f.dest_ip}:${f.port}/${f.transport}`;
 const isIn = (f) => f.direction === "in";
@@ -116,12 +122,11 @@ function feedCard(f) {
     : f.status === "pending" ? `asked ${ago(f.created_at)}` : "";
   const line2 = isIn(f) ? `${f.output_label} from ${f.dest_ip}, received on ${f.listen_at || "port " + f.port} · ${f.owner} · ${daysLeft(f.end_at)}`
     : `${f.output_label || f.output_id} to ${f.dest_ip}:${f.port}/${f.transport} · ${f.owner} · ${daysLeft(f.end_at)}`;
-  return el("a", { class: "card", href: `#feed/${f.id}` },
-    health(f.health),
+  return el("a", { class: "card feed-row", href: `#feed/${f.id}` },
+    ...signals(f),
     el("div", { class: "main" },
       el("div", { class: "line1" }, el("span", { class: "dir", text: isIn(f) ? "IN" : "OUT" }), title(f)),
-      el("div", { class: "line2", text: line2 }),
-      f.health_note ? el("div", { class: "line2", text: f.health_note }) : null),
+      el("div", { class: "line2", text: line2 })),
     el("div", { class: "side" }, cls(f.data_class), el("br"), side));
 }
 function renderList() {
@@ -425,8 +430,8 @@ async function showFeed(main, id) {
 function renderFeed(f, events, onAction) {
   $("#feed-head").replaceChildren(
     el("h1", { text: title(f) }),
-    el("div", { class: "meta" }, health(f.health), cls(f.data_class), el("span", { class: "mono", text: f.id })),
-    f.health_note ? el("p", { class: "why", text: f.health_note }) : null);
+    el("div", { class: "sigs" }, ...signals(f)),
+    el("div", { class: "meta" }, cls(f.data_class), el("span", { class: "mono", text: f.id })));
   $("#feed-actions").replaceChildren(...f.actions.filter((a) => a !== "check").map((a) =>
     el("button", { type: "button", class: "btn" + (a === "approve" ? " primary" : ""), onclick: () => onAction(a), text: verb[a] })));
   const d = f.delivery;

@@ -201,6 +201,9 @@ type feedOut struct {
 	Delivery    *GroupView `json:"delivery"`
 	Health      string     `json:"health"`
 	HealthNote  string     `json:"health_note"`
+	// Two separate facts, never folded together (signals.go).
+	Integrated Signal `json:"integrated"`
+	Flowing    Signal `json:"flowing"`
 	// Receive side only.
 	ListenAt     string `json:"listen_at,omitempty"`
 	PublishedKey string `json:"published_key,omitempty"`
@@ -222,6 +225,7 @@ func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 		}
 		d := s.sup.FeedView(f.ID)
 		o.Health, o.HealthNote = intakeHealth(f, d, o.OutputLabel == "")
+		o.Integrated, o.Flowing = linkSignals(f, d, o.OutputLabel == "", true, time.Now())
 		if !detail && d != nil {
 			d.Lines, d.Command = nil, nil
 		}
@@ -236,6 +240,7 @@ func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 	}
 	d := s.sup.FeedView(f.ID)
 	o.Health, o.HealthNote = feedHealth(f, d, o.TopicLabel == "")
+	o.Integrated, o.Flowing = linkSignals(f, d, o.TopicLabel == "", false, time.Now())
 	if detail {
 		o.Delivery = d
 	} else if d != nil {

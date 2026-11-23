@@ -67,7 +67,28 @@ a.card:hover { border-color: var(--accent); }
 .card .side { text-align: right; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .card .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 
-/* Health: one word, a shape. */
+/* Feed rows: Integrated and Sending/Receiving are two columns, each Yes/No with its reason. */
+.card.feed-row { grid-template-columns: 150px 190px minmax(0, 1fr) auto; align-items: start; }
+.sig { display: grid; gap: 1px; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--line); min-width: 0; }
+.sig .k { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.sig .w { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 700; }
+.sig .w::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; flex: none; }
+.sig.yes { border-color: var(--accent); }
+.sig.yes .w { color: var(--accent); }
+.sig.yes .w::before { background: currentColor; }
+.sig.no .w { color: var(--ink); }
+.sig.no .w::before { background: repeating-linear-gradient(45deg, currentColor 0 2px, transparent 2px 4px); }
+.sig .n { font-size: 12px; color: var(--muted); line-height: 1.3; overflow-wrap: anywhere;
+          display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sigs { display: grid; grid-template-columns: repeat(2, minmax(0, 260px)); gap: 10px; margin: 8px 0; }
+.sigs .sig .n { -webkit-line-clamp: unset; display: block; }
+@media (max-width: 760px) {
+  .card.feed-row { grid-template-columns: 1fr 1fr; }
+  .card.feed-row .main, .card.feed-row .side { grid-column: 1 / -1; text-align: left; }
+  .sigs { grid-template-columns: 1fr 1fr; }
+}
+
+/* Health: one word, a shape (approvals list). */
 .h { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase;
      letter-spacing: .04em; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--line); white-space: nowrap; }
 .h::before { content: ""; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; }

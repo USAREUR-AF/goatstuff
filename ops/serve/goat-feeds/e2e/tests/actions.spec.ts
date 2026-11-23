@@ -9,16 +9,16 @@ test("the owner pauses, resumes and removes a feed from its page; the audit log 
   const page = await ctx.newPage();
   const w = watch(page);
   await page.goto(`/#feed/${f.id}`);
-  await expect(page.locator("#feed-head .h")).toHaveText(/starting|sending/);
+  await expect(page.locator("#feed-head .sig.int .n")).toHaveText(/Starting|Process running/);
 
   await page.locator("#feed-actions").getByRole("button", { name: "Pause" }).click();
   await expect(page.locator("#note-box")).toBeVisible();
   await page.fill("#note-input", "receiver maintenance");
   await page.click("#note-ok");
-  await expect(page.locator("#feed-head .h")).toHaveText("paused");
+  await expect(page.locator("#feed-head .sig.int .n")).toHaveText("Paused.");
 
   await page.locator("#feed-actions").getByRole("button", { name: "Resume" }).click();
-  await expect(page.locator("#feed-head .h")).toHaveText(/starting|sending/);
+  await expect(page.locator("#feed-head .sig.int .n")).toHaveText(/Starting|Process running/);
 
   await page.locator("#feed-actions").getByRole("button", { name: "Renew" }).click();
   await expect(page.locator("#note-input")).toHaveValue(/\d+/);
@@ -49,7 +49,7 @@ test("the note box can be cancelled without changing the feed", async ({ browser
   await page.locator("#feed-actions").getByRole("button", { name: "Pause" }).click();
   await page.click("#note-cancel");
   await expect(page.locator("#note-box")).toBeHidden();
-  await expect(page.locator("#feed-head .h")).not.toHaveText("paused");
+  await expect(page.locator("#feed-head .sig.int .n")).not.toHaveText("Paused.");
   await ctx.close();
 });
 

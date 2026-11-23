@@ -25,7 +25,15 @@ test("a tactical admin sends a topic to a system and sees it deliver", async ({ 
   await page.screenshot({ path: test.info().outputPath("send-review.png"), fullPage: true });
   await page.click("#step-next");
   await expect(page).toHaveURL(/#feed\/feed-/);
-  await expect(page.locator("#feed-head .h")).toHaveText("sending");
+  await expect(page.locator("#feed-head .sig.flow .w")).toHaveText("Yes");
+  // The list shows the two facts as separate labeled columns, not one word.
+  await page.goto("/#feeds");
+  const row = page.locator(".card.feed-row").first();
+  await expect(row.locator(".sig.int .k")).toHaveText("Integrated");
+  await expect(row.locator(".sig.flow .k")).toHaveText("Sending");
+  await expect(row.locator(".sig.int .w")).toHaveText(/Yes|No/);
+  await row.click();
+  await expect(page.locator("#feed-head .sig.flow .w")).toHaveText("Yes");
   await expect(page.locator("#feed-stats")).toContainText(/In from topic\s*\d+/);
   await expect(page.locator("pre.cmd")).toContainText("--to-format asterix-cat062");
   await expect(page.locator("#timeline")).toContainText("on by tactical@example.test");
@@ -50,7 +58,7 @@ test("a synthetic topic is self-service for a member", async ({ browser }) => {
   await expect(page.locator(".next-box")).toContainText("synthetic");
   await page.fill("#purpose", "testing a receiver");
   await page.click("#step-next");
-  await expect(page.locator("#feed-head .h")).toHaveText(/starting|sending/);
+  await expect(page.locator("#feed-head .sig.int .n")).toHaveText(/Starting|Process running/);
   w.check();
   await ctx.close();
 });
