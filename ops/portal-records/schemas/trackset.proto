@@ -1,0 +1,30 @@
+syntax = "proto3";
+package goat.geo.v1;
+// Data dictionary. The wire format is JSON: goat.geo.trackset.v1.
+message TrackSet {
+  string schema = 1;
+  repeated Track tracks = 2;
+}
+message Track {
+  string schema = 1;        // goat.geo.track.v1
+  string id = 2;
+  string kind = 3;
+  string label = 4;         // call sign, registration or ICAO address
+  Source source = 5;
+  double lat = 6;           // degrees, WGS 84
+  double lon = 7;           // degrees, WGS 84
+  double alt_m = 8;
+  double course_deg = 9;    // degrees true
+  double speed_mps = 10;
+  double ce_m = 11;
+  double le_m = 12;
+  string cot_type = 13;
+  string affiliation = 14;
+  string dimension = 15;
+  string how = 16;
+  string descriptor = 17;   // aircraft type
+  string reported_at = 18;  // RFC 3339
+  string stale_at = 19;
+  string observed_at = 20;
+  message Source { string sensor = 1; string site = 2; string node = 3; string goatnet = 4; }
+}

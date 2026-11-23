@@ -1,0 +1,19 @@
+syntax = "proto3";
+package goat.processors.v1;
+// Data dictionary. The wire format is JSON, one record per line.
+message SystemTrack {
+  string group = 1;           // system track identity
+  uint32 track_number = 2;
+  int64 now_ms = 3;           // time of the estimate, epoch milliseconds
+  string ev = 4;              // event, for example "fused"
+  double lat = 5;             // degrees, WGS 84
+  double lon = 6;             // degrees, WGS 84
+  double hae = 7;             // height, meters
+  string hae_from = 8;        // the report the height came from
+  double course = 9;          // degrees true
+  double speed_ms = 10;       // meters per second
+  double ce = 11;             // horizontal error, meters
+  repeated string members = 12;  // contributing tracks, source/uid
+  string from = 13;
+  map<string, string> attributes = 14;
+}

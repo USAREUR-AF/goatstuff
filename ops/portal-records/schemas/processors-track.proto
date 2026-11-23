@@ -1,0 +1,16 @@
+syntax = "proto3";
+package goat.processors.v1;
+// Data dictionary. The wire format is JSON, one record per line.
+message ProcessorsTrack {
+  Source track = 1;        // absent on a single-vehicle position feed
+  string uid = 2;          // track identity at the source
+  int64 time_ms = 3;       // time of the report, epoch milliseconds
+  double lat = 4;          // degrees, WGS 84
+  double lon = 5;          // degrees, WGS 84
+  double hae = 6;          // height, meters
+  double course = 7;       // degrees true
+  double speed_ms = 8;     // meters per second
+  string type = 9;         // CoT type
+  double ce = 10;          // horizontal error, meters
+  message Source { string source_id = 1; }
+}
