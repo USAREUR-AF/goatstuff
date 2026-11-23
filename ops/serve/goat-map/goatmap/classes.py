@@ -71,6 +71,26 @@ def source_for(sources: list[dict[str, Any]], key: str) -> dict[str, Any] | None
     return next((s for s in sources if key_matches(s["key"], key)), None)
 
 
+class Yields:
+    """A source with `yield_to` is a second copy of another key's tracks: it is
+    read only while that key has been silent for YIELD_S seconds."""
+
+    YIELD_S = 30.0
+
+    def __init__(self, sources: list[dict[str, Any]]) -> None:
+        rows = [r for s in sources for r in (s, *(s.get("accept") or {}).values())]
+        self._last: dict[str, float | None] = {r["yield_to"]: None for r in rows if r.get("yield_to")}
+
+    def saw(self, key: str, now: float) -> None:
+        for pattern in self._last:
+            if key_matches(pattern, key):
+                self._last[pattern] = now
+
+    def blocked(self, info: dict[str, Any], now: float) -> bool:
+        last = self._last.get(info.get("yield_to") or "")
+        return last is not None and now - last < self.YIELD_S
+
+
 class Marks:
     """Classes people set on tracks, held for the life of each track."""
 

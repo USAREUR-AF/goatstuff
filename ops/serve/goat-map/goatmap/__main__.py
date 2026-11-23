@@ -27,10 +27,12 @@ site, host, zone or sensor. See .env.example.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -279,6 +281,7 @@ class Service:
         # Operator-declared sources (estate file, `track_sources`): sensor and
         # site names, a class, and who a relayed report belongs to.
         self.sources = _load_track_sources()
+        self.yields = classes_mod.Yields(self.sources)
         self.marks = classes_mod.Marks()
 
     # ---------------------------------------------------------------- open --
@@ -465,6 +468,7 @@ class Service:
         self.last_recv_at = time.monotonic()
         anchor = _anchor_of(key)
         src = classes_mod.source_for(self.sources, key)
+        self.yields.saw(key, self.last_recv_at)
         if payload.lstrip()[:1] == b"<":
             track = self._fabric_cot(key, anchor, payload, src)
             if track is not None:
@@ -512,6 +516,8 @@ class Service:
             info = src["accept"].get(sid)
             if info is None:
                 return
+        if self.yields.blocked(info, time.monotonic()):
+            return
         leaf = key.rsplit("/", 1)[-1]
         sensor = info.get("sensor") or leaf
         uid = rec.get("uid") if rec.get("uid") is not None else rec.get("group")
@@ -698,6 +704,20 @@ def _read_estate() -> dict:
     except Exception as exc:  # noqa: BLE001
         LOG.warning("estate declaration unreadable (%s): %s", SITES_FILE, exc)
     return _ESTATE_CACHE
+
+
+def _versioned_index(root: Path) -> str:
+    """index.html with each local script and stylesheet named by its content.
+    A browser restoring a tab can reuse a cached script without revalidating
+    it; a new page must never run an old script."""
+
+    def stamp(m: re.Match) -> str:
+        path = root / m.group(2)
+        if not path.is_file():
+            return m.group(0)
+        return f'{m.group(1)}"{m.group(2)}?v={hashlib.sha256(path.read_bytes()).hexdigest()[:12]}"'
+
+    return re.sub(r'((?:src|href)=)"([\w./-]+\.(?:js|css))"', stamp, (root / "index.html").read_text())
 
 
 def _load_track_sources() -> list:
@@ -1103,10 +1123,12 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
 
     app.middlewares.append(cache_headers)
 
-    async def index(_: web.Request) -> web.FileResponse:
+    page = _versioned_index(WEB_ROOT)
+
+    async def index(_: web.Request) -> web.Response:
         # add_static serves no directory index, so "/" is wired explicitly
         # rather than left to 403.
-        return web.FileResponse(WEB_ROOT / "index.html")
+        return web.Response(text=page, content_type="text/html")
 
     async def sites(_: web.Request) -> web.Response:
         # Serves ANCHORS, never precise coordinates: quantization happens in

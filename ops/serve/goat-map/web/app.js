@@ -554,7 +554,9 @@ function setStats(s) {
   // the DOM: a header reading "NaN" is how a correctly-scoped view gets
   // reported as a broken one.
   const has = (v) => v !== undefined && v !== null;
-  el('stat-rate').textContent = fromFabric || !has(s.msgs_per_s) ? '—' : s.msgs_per_s;
+  const noRate = fromFabric || !has(s.msgs_per_s);
+  el('stat-rate').parentElement.hidden = noRate;
+  if (!noRate) el('stat-rate').textContent = s.msgs_per_s;
   el('stat-msgs').textContent = has(received) ? received.toLocaleString() : '—';
   setProvenanceBanner(s);
   setStatusBanner(s);
@@ -665,11 +667,10 @@ async function boot() {
   try {
     const meta = await (await fetch('api/meta')).json();
     state.meta = meta;
-    el('source-label').textContent = `${meta.source.sensor} · ${meta.source.site} · ${meta.source.node}`;
+    el('source-label').textContent = meta.goatnet;
     el('clock-note').textContent =
       `Ages are measured from receipt at this service, not from the sensor clock — a sensor feed's own ` +
-      `timestamps may not be trustworthy. A track is dropped after ${meta.ttl_s}s without an update. ` +
-      `Normalised form republished on ${meta.publish_prefix || '(republish disabled)'}.`;
+      `timestamps may not be trustworthy. A track is dropped after ${meta.ttl_s}s without an update.`;
   } catch (err) {
     el('source-label').textContent = 'metadata unavailable';
   }
