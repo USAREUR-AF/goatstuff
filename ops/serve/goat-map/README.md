@@ -86,12 +86,37 @@ downstream.
 | `/api/tracks` | full snapshot + counters |
 | `/api/whoami` | the signed-in viewer's email, view level (`full`, `scoped` with a grant count, or `floor`) and the sign-out link; drives the toolbar's viewer chip and the no-access notice |
 | `/api/history?window_s=N` | every track's path over the last N seconds (60 s up to `GOATMAP_HISTORY_S`), scoped like `/api/tracks`; drawn by the History control |
-| `/api/stream` | SSE: `snapshot`, `upsert`, `expire`, `stats` |
+| `/api/stream?interval_s=N` | SSE: one `snapshot`, then a `tick` every N seconds (0.5 to 30, default `GOATMAP_REFRESH_S`, 1 s) with the tracks that changed, the ones removed and the server clock; sent even when nothing changed, so the page knows a silent connection is dead and reconnects |
+| `POST /api/track-class` | `{id, class}`: mark a track `friendly`, `commercial`, `neutral`, `unknown` or `hostile`; `null` clears the mark. Needs a group in `GOATMAP_CLASSIFY_GROUPS` (`PLATFORM-ADMIN,TACTICAL-ADMIN`) and sight of the track |
 | `/healthz` | `status: up` plus counters, `store_source` and `fabric` state |
 
 `unmappable` is not an error count. Some CoT messages parse fine and carry no
 position — a sensor's status message may have a `<point>` with no lat/lon.
 It is not an error, and it is not a dot.
+
+## Track classes
+
+Every track is drawn as friendly (circle), commercial (barred square), unknown
+(quatrefoil) or hostile (diamond); a neutral contact is a plain square. The
+class is the first of: a mark set on the track's card, the class declared for
+its source, the affiliation in the CoT type (function code `C` on a friend or
+neutral contact is commercial). A mark is for everyone, names who set it, and
+ends when the track expires, because radars reuse track numbers.
+
+## Declared sources
+
+`track_sources` in the estate file names what arrives on a key:
+
+```json
+{"key": "volatile/<slot>/stream/feeds-in/<feed>", "sensor": "Nav", "site": "north",
+ "label": "Blue", "class": "friendly"}
+```
+
+A declared key may carry goat-processors reports or system tracks (JSON lines),
+which hold no schema id and are read from declared keys only. On a relayed
+stream, `accept` lists the `track.source_id` values to draw and names each one's
+own producer slot (`anchor`), so per-viewer access follows the radar's owner and
+not the relay.
 
 ## Basemap
 

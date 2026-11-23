@@ -10,10 +10,6 @@
 
 (function () {
   const HISTORY_REFRESH_MS = 60000;
-  const AFF = {
-    friend: '#38bdf8', 'assumed-friend': '#38bdf8', hostile: '#fb7185', suspect: '#fb7185',
-    neutral: '#34d399', unknown: '#f0b429', pending: '#f0b429',
-  };
   const empty = { type: 'FeatureCollection', features: [] };
   let map = null;
   let windowS = 0;
@@ -77,7 +73,7 @@
     const lines = [];
     const ends = [];
     for (const t of body.tracks || []) {
-      const color = AFF[t.affiliation] || '#a5b4fc';
+      const color = classColor(t);
       const coords = t.points.map((p) => [p[0], p[1]]);
       const props = { id: t.id, label: t.label || t.id, color, synthetic: t.synthetic ? 1 : 0 };
       if (coords.length > 1) lines.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: props });

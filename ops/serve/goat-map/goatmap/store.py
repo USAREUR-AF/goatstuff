@@ -25,7 +25,7 @@ HISTORY_MAX_TRACKS = 5000
 
 # The fields a history entry keeps besides its points: enough to scope it to a
 # viewer (org, producer_anchor) and to draw it (affiliation, synthetic, label).
-_HISTORY_META = ("label", "org", "producer_anchor", "affiliation", "synthetic", "source")
+_HISTORY_META = ("label", "org", "producer_anchor", "affiliation", "class", "synthetic", "source")
 
 
 class TrackStore:
@@ -36,6 +36,9 @@ class TrackStore:
         self._trail_len = trail_len
         self._tracks: dict[str, dict[str, Any]] = {}
         self._seen_at: dict[str, float] = {}
+        # Bumped on every change; a stream sends what changed since its last tick.
+        self._rev = 0
+        self._revs: dict[str, int] = {}
         self.total_ingested = 0
         self.total_dropped = 0
         # History outlives the TTL on purpose: a track that went quiet an hour
@@ -60,8 +63,20 @@ class TrackStore:
         self._tracks[tid] = track
         self._seen_at[tid] = time.monotonic()
         self.total_ingested += 1
+        self.touch(tid)
         self._record_history(track)
         return track
+
+    def get(self, tid: str) -> dict[str, Any] | None:
+        return self._tracks.get(tid)
+
+    def touch(self, tid: str) -> None:
+        """Record that a track changed, so streams send it on their next tick."""
+        self._rev += 1
+        self._revs[tid] = self._rev
+
+    def rev(self, tid: str) -> int:
+        return self._revs.get(tid, 0)
 
     def _record_history(self, track: dict[str, Any], now: float | None = None) -> None:
         if self.history_s <= 0:
@@ -126,6 +141,7 @@ class TrackStore:
         for tid in gone:
             self._tracks.pop(tid, None)
             self._seen_at.pop(tid, None)
+            self._revs.pop(tid, None)
             self.total_dropped += 1
             if on_expire:
                 on_expire(tid)
