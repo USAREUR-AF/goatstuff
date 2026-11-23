@@ -32,7 +32,7 @@ func writeManifest(t *testing.T, dir, name, body string) {
 func TestDeclaredRows(t *testing.T) {
 	dir := t.TempDir()
 	writeManifest(t, dir, "pipeline.json", `{"owner":"processors pipeline test","links":[
-	 {"id":"fused-a","unit":"goat-xf-pipe@fused.service","source_label":"Fused air picture","output_label":"ASTERIX CAT062","dest":"udp://198.51.100.20:7005","enabled":true,"controlled_by":"destinations.x.enabled"},
+	 {"id":"fused-a","unit":"goat-xf-pipe@fused.service","source_label":"Fused air picture","sources":["Radar A","Radar B"],"output_label":"ASTERIX CAT062","dest":"udp://198.51.100.20:7005","enabled":true,"controlled_by":"destinations.x.enabled"},
 	 {"id":"raw-idle","unit":"goat-xf-pipe@raw.service","source_label":"Radar (raw)","dest":"udp://198.51.100.21:7005","enabled":true},
 	 {"id":"stopped","unit":"goat-xf-pipe@gone.service","source_label":"Gone","dest":"udp://198.51.100.22:7005","enabled":true},
 	 {"id":"off","unit":"goat-xf-pipe@off.service","source_label":"Off","dest":"udp://198.51.100.23:7005","enabled":false}]}`)
@@ -65,6 +65,9 @@ func TestDeclaredRows(t *testing.T) {
 	}
 	if rows[0].DestIP != "198.51.100.20" || rows[0].Port != 7005 || rows[0].Transport != "udp" || rows[0].ControlledBy == "" {
 		t.Errorf("fused row: %+v", rows[0].Feed)
+	}
+	if len(rows[0].Sources) != 2 || rows[0].Sources[1] != "Radar B" {
+		t.Errorf("sources: %v", rows[0].Sources)
 	}
 	if !strings.Contains(rows[3].Integrated.Note, "Switched off") {
 		t.Errorf("off row: %q", rows[3].Integrated.Note)
