@@ -36,14 +36,14 @@ type DeclaredLink struct {
 	SourceKey   string `json:"source_key"`
 	SourceLabel string `json:"source_label"`
 	// The sensors or systems this link's data comes from, for the flow view.
-	Sources      []string `json:"sources"`
-	ToFormat     string   `json:"to_format"`
-	OutputLabel  string   `json:"output_label"`
-	Dest         string   `json:"dest"`
-	DataClass    string   `json:"data_class"`
-	Owner        string   `json:"owner"`
-	ControlledBy string   `json:"controlled_by"`
-	Enabled      bool     `json:"enabled"`
+	Sources      []SourceRef `json:"sources"`
+	ToFormat     string      `json:"to_format"`
+	OutputLabel  string      `json:"output_label"`
+	Dest         string      `json:"dest"`
+	DataClass    string      `json:"data_class"`
+	Owner        string      `json:"owner"`
+	ControlledBy string      `json:"controlled_by"`
+	Enabled      bool        `json:"enabled"`
 }
 
 type manifest struct {

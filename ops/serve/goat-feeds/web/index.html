@@ -41,6 +41,7 @@
     </div>
     <div class="toolbar">
       <div class="chips" role="group" aria-label="Filter">
+        <button class="chip" data-filter="attention">Needs attention</button>
         <button class="chip" data-filter="mine">Mine</button>
         <button class="chip" data-filter="waiting">Waiting for approval</button>
         <button class="chip" data-filter="live">On</button>
@@ -51,6 +52,16 @@
         <button type="button" data-view="list">List</button>
         <button type="button" data-view="flow">Flow</button>
       </div>
+    </div>
+    <div class="toolbar facets" id="facet-bar">
+      <label>Site <select id="f-site" aria-label="Site"></select></label>
+      <label>Receiving role <select id="f-role" aria-label="Receiving role"></select></label>
+      <label>Group by <select id="f-group" aria-label="Group by">
+        <option value="">Nothing</option><option value="site">Site</option><option value="region">Region</option>
+        <option value="source">Sensor or sender</option><option value="dest_system">Receiving system</option>
+        <option value="dest_role">Receiving role</option><option value="format">Format</option><option value="owner">Owner</option>
+      </select></label>
+      <span class="counts" id="f-counts"></span>
     </div>
     <div class="list" id="feed-list"></div>
     <div class="flow" id="feed-flow" hidden></div>

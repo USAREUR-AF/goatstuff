@@ -30,6 +30,9 @@ type Topic struct {
 	InFrame     string   `json:"in_frame,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Outputs     []Output `json:"outputs"`
+	// Where the topic's data comes from (facets, flow view): site and system as named in
+	// the estate.
+	Sources []SourceRef `json:"sources,omitempty"`
 }
 
 func (t *Topic) Output(id string) *Output {
@@ -115,6 +118,11 @@ type Config struct {
 	// Declared links (ADR 1260): manifests written by the roles that start links.
 	DeclaredDir   string        `json:"declared_dir"`
 	DeclaredProbe DeclaredProbe `json:"declared_probe"`
+	// Facets (fabric-feeds.md §11): the goatnet's estate file, receiving systems it does
+	// not list, and the goatnet's mesh group prefix (stripped from role names).
+	EstateFile  string       `json:"estate_file"`
+	Systems     []SystemDecl `json:"systems"`
+	GroupPrefix string       `json:"group_prefix"`
 
 	allowed netip.Prefix
 

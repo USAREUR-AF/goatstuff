@@ -3,7 +3,8 @@
 // Every value from the server is placed with textContent; nothing is parsed as HTML.
 "use strict";
 
-const state = { me: null, catalog: [], intake: { enabled: false }, feeds: [], filter: "mine", search: "", timer: null, req: null };
+const state = { me: null, catalog: [], intake: { enabled: false }, feeds: [], filter: "mine", search: "", timer: null, req: null,
+  site: "", role: "", group: "", view: "list", open: new Set() };
 
 // ---------- small helpers ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -105,16 +106,89 @@ async function refreshFeeds() {
   return state.feeds;
 }
 
+// ---------- facets, grouping and the page address (fabric-feeds.md §11) ----------
+const uniqv = (xs) => [...new Set(xs.filter((x) => x))];
+function facetValues(f, facet) {
+  const fc = f.facets || {};
+  switch (facet) {
+    case "site": return uniqv([...(fc.source_sites || []), fc.dest_site]);
+    case "region": return uniqv([...(fc.source_regions || []), fc.dest_region]);
+    case "source": return uniqv(fc.source_systems || []);
+    case "dest_site": return uniqv([fc.dest_site]);
+    case "dest_system": return uniqv([fc.dest_system || f.dest_name]);
+    case "dest_role": return uniqv([fc.dest_role]);
+    case "format": return uniqv([f.output_label]);
+    case "owner": return uniqv([f.owner]);
+  }
+  return [];
+}
+function countText(rows) {
+  // Independent counts: a link can be sending and still need attention.
+  const c = { attention: 0, sending: 0, "at-rest": 0, idle: 0, off: 0 };
+  rows.forEach((f) => {
+    if (f.facets && f.facets.attention) c.attention++;
+    c[f.flowing && f.flowing.on ? "sending" : f.facets && f.facets.at_rest ? "at-rest" : f.integrated && f.integrated.on ? "idle" : "off"]++;
+  });
+  const parts = [`${rows.length} ${rows.length === 1 ? "link" : "links"}`];
+  if (c.sending) parts.push(`${c.sending} sending`);
+  if (c.attention) parts.push(`${c.attention} need attention`);
+  if (c["at-rest"]) parts.push(`${c["at-rest"]} at rest`);
+  if (c.off) parts.push(`${c.off} off`);
+  return parts.join(" · ");
+}
+// The page address carries every filter: #feeds?filter=attention&site=Alpha&group=site&view=flow&q=...
+function readAddress() {
+  const p = new URLSearchParams(location.hash.split("?")[1] || "");
+  for (const k of ["filter", "site", "role", "group", "view"]) if (p.has(k)) state[k] = p.get(k);
+  if (p.has("q")) state.search = p.get("q");
+  return p.has("filter");
+}
+function writeAddress() {
+  const p = new URLSearchParams();
+  for (const k of ["filter", "site", "role", "group", "view"]) if (state[k] && !(k === "view" && state[k] === "list")) p.set(k, state[k]);
+  if (state.search) p.set("q", state.search);
+  const h = "#feeds" + (p.toString() ? "?" + p.toString() : "");
+  if (location.hash !== h) history.replaceState(null, "", h);
+}
+function fillSelect(sel, values, current, allLabel) {
+  const keep = sel.value;
+  sel.replaceChildren(el("option", { value: "", text: allLabel }), ...values.map((v) => el("option", { value: v, text: v })));
+  sel.value = values.includes(current) ? current : "";
+  if (sel.value !== keep && !current) sel.value = "";
+}
+function renderFacetBar() {
+  const all = state.feeds.filter((f) => f.status !== "removed");
+  fillSelect($("#f-site"), uniqv(all.flatMap((f) => facetValues(f, "site"))).sort(), state.site, "All sites");
+  fillSelect($("#f-role"), uniqv(all.flatMap((f) => facetValues(f, "dest_role"))).sort(), state.role, "All roles");
+  $("#f-group").value = state.group;
+}
+function groupRows(rows, facet) {
+  const groups = new Map();
+  for (const f of rows) {
+    const vals = facetValues(f, facet);
+    for (const v of vals.length ? vals : ["(undeclared)"]) {
+      if (!groups.has(v)) groups.set(v, []);
+      groups.get(v).push(f);
+    }
+  }
+  return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 // ---------- feeds list ----------
 function matches(f) {
   const me = state.me.viewer.email.toLowerCase();
   if (state.filter === "mine" && (f.kind === "declared" || f.owner.toLowerCase() !== me)) return false;
+  if (state.filter === "attention" && !(f.facets && f.facets.attention)) return false;
+  if (state.site && !facetValues(f, "site").some((v) => v.toLowerCase() === state.site.toLowerCase())) return false;
+  if (state.role && (facetValues(f, "dest_role")[0] || "") !== state.role) return false;
   if (state.filter === "waiting" && f.status !== "pending") return false;
   if (state.filter === "live" && !["active", "paused"].includes(f.status)) return false;
   if (state.filter === "all" && f.status === "removed") return false;
   const q = state.search.toLowerCase();
   if (!q) return true;
-  return [f.topic_label, f.dest_name, f.dest_ip, String(f.port), f.owner, f.output_label, f.id, f.label].some((x) => (x || "").toLowerCase().includes(q));
+  const fc = f.facets || {};
+  return [f.topic_label, f.dest_name, f.dest_ip, String(f.port), f.owner, f.output_label, f.id, f.label, fc.dest_system, ...(fc.source_systems || [])]
+    .some((x) => (x || "").toLowerCase().includes(q));
 }
 function declaredCard(f) {
   const d = f.delivery;
@@ -124,7 +198,8 @@ function declaredCard(f) {
     el("div", { class: "main" },
       el("div", { class: "line1" }, el("span", { class: "dir", text: "OUT" }), el("span", { class: "dir decl", text: "DECLARED" }), title(f)),
       el("div", { class: "line2", text: `${f.output_label} to ${f.dest_ip}:${f.port}/${f.transport} · ${f.owner}` }),
-      el("div", { class: "line2", text: `Controlled by ${f.controlled_by || "its deployment file"} (manifest ${f.manifest}). Change it there, not here.` })),
+      el("div", { class: "line2", text: `Controlled by ${f.controlled_by || "its deployment file"} (manifest ${f.manifest}). Change it there, not here.` }),
+      facetLine(f)),
     el("div", { class: "side" }, cls(f.data_class), el("br"), side));
 }
 function feedCard(f) {
@@ -138,8 +213,16 @@ function feedCard(f) {
     ...signals(f),
     el("div", { class: "main" },
       el("div", { class: "line1" }, el("span", { class: "dir", text: isIn(f) ? "IN" : "OUT" }), title(f)),
-      el("div", { class: "line2", text: line2 })),
+      el("div", { class: "line2", text: line2 }),
+      facetLine(f)),
     el("div", { class: "side" }, cls(f.data_class), el("br"), side));
+}
+function facetLine(f) {
+  const fc = f.facets || {};
+  const from = (fc.source_sites || []).join(" + ") || (isIn(f) ? "" : "source not in the estate");
+  const to = [fc.dest_site || "site not in the estate", fc.dest_class, fc.dest_role].filter((x) => x).join(" · ");
+  const why = fc.attention ? el("span", { class: "why", text: "Needs attention: " + fc.reasons.join("; ") + "." }) : null;
+  return el("div", { class: "line2 facetline" }, isIn(f) ? `From ${to}` : `${from} → ${to}`, why ? el("br") : null, why);
 }
 function renderList() {
   const list = $("#feed-list");
@@ -151,21 +234,42 @@ function renderList() {
   list.hidden = view !== "list";
   if (flow) flow.hidden = view !== "flow";
   if (view === "flow" && flow) renderFlow(flow, rows);
+  const cnt = $("#f-counts");
+  if (cnt) cnt.textContent = countText(rows);
+  writeAddress();
+  if (view === "list" && state.group && rows.length) {
+    list.replaceChildren(...groupRows(rows, state.group).map(([key, gr]) => {
+      const open = state.open.has(key) || gr.some((f) => f.facets && f.facets.attention);
+      const d = el("details", { class: "group", ...(open ? { open: "" } : {}) },
+        el("summary", {}, el("span", { class: "gkey", text: key }), el("span", { class: "gcount", text: countText(gr) })),
+        el("div", { class: "list" }, ...gr.map(feedCard)));
+      d.addEventListener("toggle", () => { if (d.open) state.open.add(key); else state.open.delete(key); });
+      return d;
+    }));
+    document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.filter === state.filter));
+    return;
+  }
   list.replaceChildren(...(rows.length ? rows.map(feedCard) : [el("p", { class: "empty", text:
+    state.filter === "attention" ? "Nothing needs attention. Choose All to see every link." :
     state.filter === "mine" ? "You have no feeds yet. Request one to send a topic to a system, or to bring a system's data into the fabric." : "No feeds match." })]));
   document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.filter === state.filter));
 }
 async function showFeeds(main) {
   mount(main, "#tpl-feeds");
-  if (state.me.viewer.is_admin && state.filter === "mine" && !showFeeds._set) { state.filter = "all"; showFeeds._set = true; }
+  const fromAddress = readAddress();
+  if (!fromAddress && state.me.viewer.is_admin && state.filter === "mine" && !showFeeds._set) { state.filter = "attention"; showFeeds._set = true; }
   document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => { state.filter = c.dataset.filter; renderList(); }));
   const s = $("#feed-search");
   s.value = state.search;
   s.addEventListener("input", () => { state.search = s.value; renderList(); });
   document.querySelectorAll(".viewseg button").forEach((b) => b.addEventListener("click", () => { state.view = b.dataset.view; renderList(); }));
+  $("#f-site").addEventListener("change", (e) => { state.site = e.target.value; renderList(); });
+  $("#f-role").addEventListener("change", (e) => { state.role = e.target.value; renderList(); });
+  $("#f-group").addEventListener("change", (e) => { state.group = e.target.value; renderList(); });
   await refreshFeeds();
+  renderFacetBar();
   renderList();
-  state.timer = setInterval(async () => { try { await refreshFeeds(); renderList(); } catch { /* shown next time */ } }, 5000);
+  state.timer = setInterval(async () => { try { await refreshFeeds(); renderFacetBar(); renderList(); } catch { /* shown next time */ } }, 5000);
 }
 
 // ---------- flow view: sensors -> streams -> receiving systems ----------
@@ -183,8 +287,36 @@ const rank = (f) => (f.flowing && f.flowing.on ? 2 : f.integrated && f.integrate
 function flowGraph(rows) {
   const cols = [new Map(), new Map(), new Map()];
   const edges = new Map();
-  const node = (c, id, l1, l2, search) => { if (!cols[c].has(id)) cols[c].set(id, { id, c, l1, l2, search, best: 0 }); return cols[c].get(id); };
-  const edge = (a, b, st) => { const k = a.c + ":" + a.id + ">" + b.c + ":" + b.id; const e = edges.get(k); if (!e || e.st < st) edges.set(k, { a, b, st }); };
+  const node = (c, id, l1, l2, search) => {
+    if (!cols[c].has(id)) cols[c].set(id, { id, c, l1, l2, search, best: 0, members: new Set() });
+    return cols[c].get(id);
+  };
+  // An edge keeps its best state and how many links it stands for, and how many of them send.
+  const edge = (a, b, st, link) => {
+    const k = a.c + ":" + a.id + ">" + b.c + ":" + b.id;
+    const e = edges.get(k) || { a, b, st: 0, links: new Set(), on: new Set() };
+    e.st = Math.max(e.st, st); e.links.add(link); if (st === 2) e.on.add(link);
+    edges.set(k, e);
+  };
+  // Grouped: sensors collapse into one box per site, receivers into one box per group value.
+  const g = state.group;
+  const srcBox = (s) => {
+    const name = sensorName(s.label || String(s));
+    const siteLabel = s.site_label || s.site || "";
+    if (!g) return node(0, "src:" + name, name, siteLabel, name);
+    const site = siteLabel || "Site not in the estate";
+    const n = node(0, "srcsite:" + site, "Sensors, " + site, "", site);
+    n.members.add(name); n.l2 = [...n.members].join(", ");
+    return n;
+  };
+  const dstBox = (f) => {
+    if (!g || ["source", "format", "owner"].includes(g)) return node(2, "d:" + f.dest_ip + ":" + f.port, f.dest_name || f.dest_ip, `${f.dest_ip}:${f.port}/${f.transport}`, f.dest_ip);
+    const facet = g === "site" ? "dest_site" : g === "region" ? "region" : g;
+    const v = facetValues({ ...f, facets: { ...(f.facets || {}), source_sites: [], source_regions: [] } }, facet)[0] || "Not in the estate";
+    const n = node(2, "dg:" + v, v, "", v);
+    n.members.add(f.dest_name || f.dest_ip); n.l2 = `${n.members.size} ${n.members.size === 1 ? "system" : "systems"}: ${[...n.members].join(", ")}`;
+    return n;
+  };
   for (const f of rows) {
     if (["removed", "declined", "expired"].includes(f.status)) continue;
     const st = rank(f);
@@ -192,15 +324,15 @@ function flowGraph(rows) {
       const snd = node(0, "sys:" + f.dest_ip, f.dest_name || f.dest_ip, f.dest_ip, f.dest_ip);
       const str = node(1, "in:" + f.id, f.topic_label, `${f.output_label} · received on port ${f.port}`, f.topic_label);
       const fab = node(2, "fabric", "goat fabric", "offered in the catalog", "IN");
-      edge(snd, str, st); edge(str, fab, st);
+      edge(snd, str, st, f.id); edge(str, fab, st, f.id);
       continue;
     }
     const label = f.topic_label || f.topic_id;
     const str = node(1, "s:" + label + "|" + f.output_label, label, f.output_label || f.output_id, label);
-    const dst = node(2, "d:" + f.dest_ip + ":" + f.port, f.dest_name || f.dest_ip, `${f.dest_ip}:${f.port}/${f.transport}`, f.dest_ip);
-    edge(str, dst, st);
-    const srcs = (f.sources && f.sources.length) ? f.sources : [sensorName(label)];
-    for (const s of srcs) edge(node(0, "src:" + sensorName(s), sensorName(s), "", sensorName(s)), str, st);
+    const dst = dstBox(f);
+    edge(str, dst, st, f.id);
+    const srcs = (f.sources && f.sources.length) ? f.sources : [{ label: sensorName(label) }];
+    for (const s of srcs) edge(srcBox(s), str, st, f.id);
   }
   for (const e of edges.values()) { e.a.best = Math.max(e.a.best, e.st); e.b.best = Math.max(e.b.best, e.st); }
   // Order: streams by label; sensors and destinations by the average position of the streams they touch.
@@ -231,6 +363,7 @@ function renderFlow(box, rows) {
   for (const e of edges.sort((p, q) => p.st - q.st)) {
     const x1 = e.a.x + NW, y1 = e.a.py + NH / 2, x2 = e.b.x, y2 = e.b.py + NH / 2, mx = (x1 + x2) / 2;
     svg.append(sv("path", { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, class: `fedge ${cls3[e.st]}` }));
+    if (e.links.size > 1) svg.append(sv("text", { x: mx, y: (y1 + y2) / 2 - 5, class: "fcount", "text-anchor": "middle" }, `${e.on.size} of ${e.links.size} sending`));
   }
   for (const ns of order) for (const n of ns) {
     const g = sv("g", { class: `fnode c${n.c} ${cls3[n.best]}`, tabindex: "0", role: "button", "aria-label": `${n.l1} ${n.l2}: show in the list` },
