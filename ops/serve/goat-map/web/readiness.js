@@ -95,6 +95,9 @@
     if (chain.break_at) {
       wrap.appendChild(el("div", "rd-note brk", chain.remedy ||
         ("Stops at " + chain.break_at + ".")));
+    } else if (chain.verdict === "archived") {
+      wrap.appendChild(el("div", "rd-note",
+        "Archived: taken out of service and kept in the estate so it can come back. Nothing is expected of it."));
     } else if (chain.verdict === "at-rest") {
       wrap.appendChild(el("div", "rd-note",
         "Nothing is wrong — this is the resting state. Everything expected right now is running."));

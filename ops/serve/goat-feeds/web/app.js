@@ -4,7 +4,7 @@
 "use strict";
 
 const state = { me: null, catalog: [], intake: { enabled: false }, feeds: [], filter: "mine", search: "", timer: null, req: null,
-  site: "", role: "", group: "", view: "list", open: new Set() };
+  site: "", role: "", group: "", view: "list", open: new Set(), naming: null, tidyCount: 0 };
 
 // ---------- small helpers ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -60,6 +60,7 @@ const signals = (f) => [signal("int", "Integrated", f.integrated), signal("flow"
 const cls = (c) => el("span", { class: `cls ${c}`, text: c === "real" ? "Real data" : "Synthetic" });
 const dest = (f) => `${f.dest_name} · ${f.dest_ip}:${f.port}/${f.transport}`;
 const isIn = (f) => f.direction === "in";
+const isArchived = (f) => !!(f.facets && f.facets.archived);
 const title = (f) => isIn(f) ? `${f.topic_label}  ←  ${f.dest_name}` : `${f.topic_label || f.topic_id}  →  ${f.dest_name}`;
 const verb = { approve: "Approve", decline: "Decline", pause: "Pause", resume: "Resume", renew: "Renew", remove: "Remove", check: "Check destination" };
 
@@ -74,6 +75,7 @@ function route() {
   if (view === "request") return showRequest(main);
   if (view === "approvals") return showApprovals(main);
   if (view === "audit") return showAudit(main);
+  if (view === "tidy") return showTidy(main);
   if (view === "feed" && id) return showFeed(main, id);
   return showFeeds(main);
 }
@@ -89,7 +91,24 @@ async function loadMe() {
   $("#who").replaceChildren(el("b", { text: v.email }), el("span", { class: "role", text: roleText }), el("br"),
     el("a", { href: "/oauth2/sign_out", text: "Sign out" }));
   $("#nav-approvals").hidden = !v.is_admin;
+  $("#nav-tidy").hidden = !v.is_admin;
   await loadCatalog();
+  refreshTidyCount();
+}
+// The Tidy up badge: how many systems need organising (admins only).
+async function refreshTidyCount() {
+  if (!state.me || !state.me.viewer.is_admin) return;
+  try {
+    const d = await api("/api/tidy");
+    state.tidyCount = d.count || 0;
+    const c = $("#tidy-count");
+    c.textContent = state.tidyCount ? String(state.tidyCount) : "";
+    c.hidden = !state.tidyCount;
+  } catch { /* shown next time */ }
+}
+async function loadNaming() {
+  try { state.naming = await api("/api/naming"); } catch { state.naming = null; }
+  return state.naming;
 }
 async function loadCatalog() {
   const [cat, intake] = await Promise.all([api("/api/catalog"), api("/api/intake")]);
@@ -103,6 +122,7 @@ async function refreshFeeds() {
   const c = $("#approvals-count");
   c.textContent = waiting ? String(waiting) : "";
   c.hidden = !waiting;
+  refreshTidyCount();
   return state.feeds;
 }
 
@@ -124,8 +144,9 @@ function facetValues(f, facet) {
 }
 function countText(rows) {
   // Independent counts: a link can be sending and still need attention.
-  const c = { attention: 0, sending: 0, "at-rest": 0, idle: 0, off: 0 };
+  const c = { attention: 0, sending: 0, "at-rest": 0, idle: 0, off: 0, archived: 0 };
   rows.forEach((f) => {
+    if (isArchived(f)) { c.archived++; return; }
     if (f.facets && f.facets.attention) c.attention++;
     c[f.flowing && f.flowing.on ? "sending" : f.facets && f.facets.at_rest ? "at-rest" : f.integrated && f.integrated.on ? "idle" : "off"]++;
   });
@@ -134,6 +155,7 @@ function countText(rows) {
   if (c.attention) parts.push(`${c.attention} need attention`);
   if (c["at-rest"]) parts.push(`${c["at-rest"]} at rest`);
   if (c.off) parts.push(`${c.off} off`);
+  if (c.archived) parts.push(`${c.archived} archived`);
   return parts.join(" · ");
 }
 // The page address carries every filter: #feeds?filter=attention&site=Alpha&group=site&view=flow&q=...
@@ -179,6 +201,7 @@ function matches(f) {
   const me = state.me.viewer.email.toLowerCase();
   if (state.filter === "mine" && (f.kind === "declared" || f.owner.toLowerCase() !== me)) return false;
   if (state.filter === "attention" && !(f.facets && f.facets.attention)) return false;
+  if (state.filter === "archived" && !isArchived(f)) return false;
   if (state.site && !facetValues(f, "site").some((v) => v.toLowerCase() === state.site.toLowerCase())) return false;
   if (state.role && (facetValues(f, "dest_role")[0] || "") !== state.role) return false;
   if (state.filter === "waiting" && f.status !== "pending") return false;
@@ -193,7 +216,7 @@ function matches(f) {
 function declaredCard(f) {
   const d = f.delivery;
   const side = d && d.stats ? `${d.stats.in} in · ${d.stats.converted} out` : "";
-  return el("div", { class: "card feed-row declared" },
+  return el("div", { class: "card feed-row declared" + (isArchived(f) ? " archived" : "") },
     ...signals(f),
     el("div", { class: "main" },
       el("div", { class: "line1" }, el("span", { class: "dir", text: "OUT" }), el("span", { class: "dir decl", text: "DECLARED" }), title(f)),
@@ -209,7 +232,7 @@ function feedCard(f) {
     : f.status === "pending" ? `asked ${ago(f.created_at)}` : "";
   const line2 = isIn(f) ? `${f.output_label} from ${f.dest_ip}, received on ${f.listen_at || "port " + f.port} · ${f.owner} · ${daysLeft(f.end_at)}`
     : `${f.output_label || f.output_id} to ${f.dest_ip}:${f.port}/${f.transport} · ${f.owner} · ${daysLeft(f.end_at)}`;
-  return el("a", { class: "card feed-row", href: `#feed/${f.id}` },
+  return el("a", { class: "card feed-row" + (isArchived(f) ? " archived" : ""), href: `#feed/${f.id}` },
     ...signals(f),
     el("div", { class: "main" },
       el("div", { class: "line1" }, el("span", { class: "dir", text: isIn(f) ? "IN" : "OUT" }), title(f)),
@@ -217,12 +240,20 @@ function feedCard(f) {
       facetLine(f)),
     el("div", { class: "side" }, cls(f.data_class), el("br"), side));
 }
+// Where the destination is: its site, kind and role, or for a boundary node where the
+// data goes beyond it. The bare words "boundary node" never appear without the far side.
+function destText(fc) {
+  if (fc.boundary) return [fc.dest_site, fc.boundary].filter((x) => x).join(" · ");
+  return [fc.dest_site || "site not in the estate", fc.dest_class, fc.dest_role].filter((x) => x).join(" · ");
+}
 function facetLine(f) {
   const fc = f.facets || {};
   const from = (fc.source_sites || []).join(" + ") || (isIn(f) ? "" : "source not in the estate");
-  const to = [fc.dest_site || "site not in the estate", fc.dest_class, fc.dest_role].filter((x) => x).join(" · ");
+  const to = destText(fc) + (fc.dest_placed_by ? ` (placed by ${fc.dest_placed_by})` : "");
   const why = fc.attention ? el("span", { class: "why", text: "Needs attention: " + fc.reasons.join("; ") + "." }) : null;
-  return el("div", { class: "line2 facetline" }, isIn(f) ? `From ${to}` : `${from} → ${to}`, why ? el("br") : null, why);
+  const arch = fc.archived ? el("span", { class: "arch", text: fc.archive_note }) : null;
+  return el("div", { class: "line2 facetline" }, isIn(f) ? `From ${to}` : `${from} → ${to}`,
+    why ? el("br") : null, why, arch ? el("br") : null, arch);
 }
 function renderList() {
   const list = $("#feed-list");
@@ -238,12 +269,17 @@ function renderList() {
   if (cnt) cnt.textContent = countText(rows);
   writeAddress();
   if (view === "list" && state.group && rows.length) {
-    list.replaceChildren(...groupRows(rows, state.group).map(([key, gr]) => {
-      const open = state.open.has(key) || gr.some((f) => f.facets && f.facets.attention);
-      const d = el("details", { class: "group", ...(open ? { open: "" } : {}) },
+    // Archived links get their own group, last and collapsed.
+    const live = rows.filter((f) => !isArchived(f)), arch = rows.filter(isArchived);
+    const groups = groupRows(live, state.group).map(([key, gr]) => [key, gr, false]);
+    if (arch.length) groups.push(["Archived systems", arch, true]);
+    list.replaceChildren(...groups.map(([key, gr, isArch]) => {
+      const okey = isArch ? "\u0000archived" : key;
+      const open = state.open.has(okey) || (!isArch && gr.some((f) => f.facets && f.facets.attention));
+      const d = el("details", { class: "group" + (isArch ? " archived" : ""), ...(open ? { open: "" } : {}) },
         el("summary", {}, el("span", { class: "gkey", text: key }), el("span", { class: "gcount", text: countText(gr) })),
         el("div", { class: "list" }, ...gr.map(feedCard)));
-      d.addEventListener("toggle", () => { if (d.open) state.open.add(key); else state.open.delete(key); });
+      d.addEventListener("toggle", () => { if (d.open) state.open.add(okey); else state.open.delete(okey); });
       return d;
     }));
     document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.filter === state.filter));
@@ -251,6 +287,7 @@ function renderList() {
   }
   list.replaceChildren(...(rows.length ? rows.map(feedCard) : [el("p", { class: "empty", text:
     state.filter === "attention" ? "Nothing needs attention. Choose All to see every link." :
+    state.filter === "archived" ? "No links to or from archived systems." :
     state.filter === "mine" ? "You have no feeds yet. Request one to send a topic to a system, or to bring a system's data into the fabric." : "No feeds match." })]));
   document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.filter === state.filter));
 }
@@ -310,6 +347,16 @@ function flowGraph(rows) {
     return n;
   };
   const dstBox = (f) => {
+    const fc = f.facets || {};
+    if (fc.boundary && (!g || ["source", "format", "owner"].includes(g))) {
+      // "To <far side>" on the first line, "through boundary node <name>" on the second.
+      const i = fc.boundary.indexOf(" through boundary node ");
+      const l1 = i > 0 ? fc.boundary.slice(0, i) : "Far side not declared";
+      const l2 = i > 0 ? fc.boundary.slice(i + 1) : fc.boundary;
+      const n = node(2, "d:" + f.dest_ip + ":" + f.port, l1, l2, f.dest_ip);
+      n.full = fc.boundary;
+      return n;
+    }
     if (!g || ["source", "format", "owner"].includes(g)) return node(2, "d:" + f.dest_ip + ":" + f.port, f.dest_name || f.dest_ip, `${f.dest_ip}:${f.port}/${f.transport}`, f.dest_ip);
     const facet = g === "site" ? "dest_site" : g === "region" ? "region" : g;
     const v = facetValues({ ...f, facets: { ...(f.facets || {}), source_sites: [], source_regions: [] } }, facet)[0] || "Not in the estate";
@@ -366,8 +413,8 @@ function renderFlow(box, rows) {
     if (e.links.size > 1) svg.append(sv("text", { x: mx, y: (y1 + y2) / 2 - 5, class: "fcount", "text-anchor": "middle" }, `${e.on.size} of ${e.links.size} sending`));
   }
   for (const ns of order) for (const n of ns) {
-    const g = sv("g", { class: `fnode c${n.c} ${cls3[n.best]}`, tabindex: "0", role: "button", "aria-label": `${n.l1} ${n.l2}: show in the list` },
-      sv("title", {}, `${n.l1}${n.l2 ? " · " + n.l2 : ""}`),
+    const g = sv("g", { class: `fnode c${n.c} ${cls3[n.best]}`, tabindex: "0", role: "button", "aria-label": `${n.full || n.l1 + " " + n.l2}: show in the list` },
+      sv("title", {}, n.full || `${n.l1}${n.l2 ? " · " + n.l2 : ""}`),
       sv("rect", { x: n.x, y: n.py, width: NW, height: NH, rx: 8 }),
       sv("circle", { cx: n.x + 14, cy: n.py + NH / 2, r: 5, class: "fdot" }),
       sv("text", { x: n.x + 28, y: n.py + (n.l2 ? 21 : 30), class: "fl1" }, clip(n.l1, 34)),
@@ -386,12 +433,137 @@ function renderFlow(box, rows) {
 // ---------- request flow ----------
 function newReq(dir) {
   return { dir: dir || "out", step: 1, topic: null, output: null, format: null, label: "", peer: null, manual: false, dest_name: "", dest_ip: "",
-           transport: "udp", port: "", days: state.me.default_days, purpose: "", error: "" };
+           transport: "udp", port: "", days: state.me.default_days, purpose: "", error: "",
+           resolved: null, resolvedFor: "",
+           declare: { name: "", site: "", class: "", role: "", label: "", far_label: "", far_dir: "out", named: false, check: null, taken: false } };
+}
+// ---------- the declare rule: a destination must be a declared system ----------
+const enc = encodeURIComponent;
+const destKey = (r) => `${r.dest_name.trim()}|${r.dest_ip.trim()}`;
+async function resolveDest(r) {
+  const key = destKey(r);
+  if (r.resolvedFor === key && r.resolved) return r.resolved;
+  try {
+    r.resolved = await api(`/api/systems/resolve?direction=${r.dir}&name=${enc(r.dest_name.trim())}&ip=${enc(r.dest_ip.trim())}`);
+  } catch { r.resolved = { enforced: false, found: false }; }
+  r.resolvedFor = key;
+  if (needsDeclare(r)) prefillDeclare(r);
+  return r.resolved;
+}
+// A member's earlier proposal for the same system already waits in Tidy up.
+const proposed = (r) => !!(r.resolved && r.resolved.proposal && !state.me.viewer.is_admin);
+const needsDeclare = (r) => !!(r.resolved && r.resolved.enforced && !r.resolved.found && !proposed(r));
+function prefillDeclare(r) {
+  const d = r.declare, p = r.resolved && r.resolved.proposal;
+  if (p && !d.name) Object.assign(d, { name: p.key, site: p.site || "", class: p.class || "", role: p.role || "", label: p.label || "",
+    far_label: p.far_side ? p.far_side.label : "", far_dir: p.far_side ? p.far_side.direction || "out" : "out", named: true });
+  if (!d.label) d.label = r.dest_name.trim();
+}
+const siteLabelOf = (id) => { const s = ((state.naming && state.naming.sites) || []).find((x) => x.id === id); return s ? s.label : id; };
+function systemLine(sys) {
+  if (!sys) return "";
+  const parts = [sys.label, sys.site_label || sys.site, sys.boundary || [sys.class, sys.role].filter((x) => x).join(" · ")];
+  if (sys.placed_by) parts.push(`placed by ${sys.placed_by}`);
+  return parts.filter((x) => x).join(" · ");
+}
+// The fields that declare a new system: site, kind, function, label and a machine name
+// that follows the naming rule (checked against GET /api/naming as it is typed).
+function declarePanel(r) {
+  const n = state.naming || { sites: [], roles: [], classes: [], rule: "" };
+  const d = r.declare;
+  const admin = state.me.viewer.is_admin;
+  const field = (id, label, input, hint, wide) => el("div", { class: "field" + (wide ? " wide" : "") },
+    el("label", { for: id, text: label }), input, hint ? el("span", { class: "hint", text: hint }) : null);
+  const select = (id, opts, cur, blank, on) => {
+    const sl = el("select", { id, onchange: (e) => on(e.target.value) }, el("option", { value: "", text: blank }),
+      ...opts.map((o) => el("option", { value: o.id || o, text: o.label ? `${o.label} (${o.id})` : o })));
+    sl.value = cur || "";
+    return sl;
+  };
+  const checkBox = el("div", { id: "decl-check", class: "wide" });
+  const showCheck = () => {
+    if (!d.check) return checkBox.replaceChildren();
+    if (d.check.ok && !d.taken) {
+      const stale = document.querySelector("#step-body > .err[role=alert]");
+      if (stale && /naming rule|machine name/.test(stale.textContent)) stale.remove();
+      return checkBox.replaceChildren(el("span", { class: "ok-note", text: "Follows the naming rule." }));
+    }
+    const probs = [...(d.check.problems || []), ...(d.taken ? ["That name is already a declared system; choose the next number."] : [])];
+    checkBox.replaceChildren(el("ul", { class: "problems" }, ...probs.map((p) => el("li", { text: p }))));
+  };
+  let ct;
+  const check = () => {
+    clearTimeout(ct);
+    ct = setTimeout(async () => {
+      try { const x = await api(`/api/naming?name=${enc(d.name)}&site=${enc(d.site)}`); d.check = x.check; d.taken = x.taken; } catch { d.check = null; }
+      showCheck();
+    }, 200);
+  };
+  const nameIn = el("input", { type: "text", id: "decl-name", value: d.name, placeholder: n.example || "console-north-ops-01", autocomplete: "off",
+    oninput: (e) => { d.name = e.target.value.trim(); d.named = true; check(); } });
+  const suggest = async () => {
+    if (d.named || !d.site || !d.class) return;
+    try { const x = await api(`/api/naming?kind=${enc(d.class)}&site=${enc(d.site)}&function=${enc(d.role || "ops")}`); d.name = x.suggestion; nameIn.value = d.name; check(); } catch { /* typed by hand */ }
+  };
+  const farBox = el("div", { class: "wide", id: "decl-far-box" });
+  const showFar = () => {
+    if (d.class !== "boundary") return farBox.replaceChildren();
+    const far = el("input", { type: "text", id: "decl-far", value: d.far_label, placeholder: "Partner network", oninput: (e) => (d.far_label = e.target.value) });
+    const dir = select("decl-far-dir", ["out", "in", "both"], d.far_dir, "Direction", (v) => (d.far_dir = v || "out"));
+    farBox.replaceChildren(field("decl-far", "Where does the data go beyond it? (far side)", far,
+      "A boundary node passes data to another network. Name that network, so nobody sends data without knowing where it ends up."),
+      field("decl-far-dir", "Direction", dir, "out: data leaves through it; in: data arrives through it."));
+  };
+  const roles = el("datalist", { id: "decl-roles" }, ...(n.roles || []).map((x) => el("option", { value: x })));
+  const role = el("input", { type: "text", id: "decl-role", list: "decl-roles", value: d.role, placeholder: "ops",
+    oninput: (e) => { d.role = e.target.value; suggest(); } });
+  const panel = el("div", { class: "declare", id: "declare" },
+    el("h3", { text: "Declare this system" }),
+    el("p", { class: "hint wide", text: `${r.dest_name || r.dest_ip} (${r.dest_ip}) is not in this goatnet's estate. Say where it is and what it does, so its links are grouped and checked. ` +
+      (admin ? "As an admin, it is placed in the estate when you submit." : "It is sent with your request; an admin places it in the estate (Tidy up).") }),
+    field("decl-site", "Site", select("decl-site", n.sites || [], d.site, "Choose the site", (v) => { d.site = v; suggest(); check(); })),
+    field("decl-class", "Kind of system", select("decl-class", n.classes || [], d.class, "Choose the kind", (v) => { d.class = v; showFar(); suggest(); })),
+    field("decl-role", "Function", role, "Its job, for example ops, cue or relay."), roles,
+    field("decl-label", "Display label", el("input", { type: "text", id: "decl-label", value: d.label, oninput: (e) => (d.label = e.target.value) }), "The name people know it by."),
+    field("decl-name", "Machine name", nameIn, n.rule ? "Rule: " + n.rule : "", true),
+    checkBox, farBox);
+  showFar();
+  if (d.name) check(); else suggest();
+  return panel;
+}
+function declareProblem(r) {
+  if (!needsDeclare(r)) return "";
+  const d = r.declare;
+  if (!d.site) return "Choose the site the system is at.";
+  if (!d.class) return "Choose what kind of system it is.";
+  if (!d.role.trim()) return "Choose the system's function, for example ops, cue or relay.";
+  if (!d.name) return "Give the system a machine name that follows the naming rule.";
+  if (d.check && !d.check.ok) return "The machine name does not follow the naming rule: " + d.check.problems[0];
+  if (d.taken) return "That machine name is already a declared system; choose the next number.";
+  if (d.class === "boundary" && !d.far_label.trim()) return "Say where data through this boundary node goes (the far side).";
+  return "";
+}
+function declareBody(r) {
+  if (!needsDeclare(r)) return undefined;
+  const d = r.declare;
+  return { name: d.name, site: d.site, class: d.class, role: d.role.trim(), label: d.label.trim(),
+    far_side: d.class === "boundary" ? { label: d.far_label.trim(), direction: d.far_dir || "out" } : undefined };
+}
+// What the review step says about the destination.
+function destReview(r) {
+  if (r.resolved && r.resolved.found) return systemLine(r.resolved.system);
+  if (proposed(r)) return `Proposed by ${r.resolved.proposal.by} as ${r.resolved.proposal.key}; it waits for an admin in Tidy up.`;
+  if (needsDeclare(r)) {
+    const d = r.declare;
+    const where = d.class === "boundary" ? `To ${d.far_label.trim()} through boundary node ${d.label.trim() || d.name}` : `${d.class} · ${d.role.trim()}`;
+    return `New system ${d.name} at ${siteLabelOf(d.site)} · ${where}` + (state.me.viewer.is_admin ? " (placed in the estate when you submit)" : " (an admin places it in Tidy up)");
+  }
+  return "";
 }
 const STEP_NAMES = { out: ["Topic", "Destination", "Delivery", "Review"], in: ["What it sends", "Sending system", "Receive port", "Review"] };
 async function showRequest(main) {
   mount(main, "#tpl-request");
-  try { await loadCatalog(); } catch { /* keep the last copy */ }
+  try { await Promise.all([loadCatalog(), loadNaming()]); } catch { /* keep the last copy */ }
   const want = new URLSearchParams(location.hash.split("?")[1] || "").get("dir");
   if (!state.req || (want && want !== state.req.dir)) state.req = newReq(want);
   const seg = $("#dir-seg");
@@ -412,7 +584,7 @@ function stepValid(r) {
     if (r.step === 2) {
       if (!r.dest_name.trim()) return "Choose the sending system, or enter its name.";
       if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(r.dest_ip.trim())) return "Enter the sending system's mesh IP address.";
-      return "";
+      return declareProblem(r);
     }
     if (r.step === 3) return r.port ? "" : "Choose a free receive port.";
     if (r.step === 4) return r.purpose.trim().length >= 3 ? "" : "Say what the data is and who uses it, so an approver can decide.";
@@ -422,7 +594,7 @@ function stepValid(r) {
   if (r.step === 2) {
     if (!r.dest_name.trim()) return "Choose the receiving system, or enter its name.";
     if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(r.dest_ip.trim())) return "Enter the system's mesh IP address.";
-    return "";
+    return declareProblem(r);
   }
   if (r.step === 3) {
     if (!r.output) return "Choose an output format.";
@@ -435,14 +607,22 @@ function stepValid(r) {
 }
 async function nextStep() {
   const r = state.req;
-  const problem = stepValid(r);
+  let problem = stepValid(r);
   if (problem) { r.error = problem; return renderStep(); }
+  // Step 2: find out whether the destination is a declared system; if not, show the
+  // declare fields before going on.
+  if (r.step === 2 && r.resolvedFor !== destKey(r)) {
+    await resolveDest(r);
+    if (needsDeclare(r)) { r.error = ""; return renderStep(); }
+    problem = stepValid(r);
+    if (problem) { r.error = problem; return renderStep(); }
+  }
   r.error = "";
   if (r.step < 4) { r.step++; return renderStep(); }
   $("#step-next").disabled = true;
   try {
     const common = { dest_name: r.dest_name.trim(), dest_ip: r.dest_ip.trim(), dest_peer_id: r.peer ? r.peer.id : "",
-      port: Number(r.port), days: Number(r.days), purpose: r.purpose.trim() };
+      port: Number(r.port), days: Number(r.days), purpose: r.purpose.trim(), declare: declareBody(r) };
     const body = r.dir === "in" ? { ...common, direction: "in", format_id: r.format.id, label: r.label.trim(), transport: "udp" }
       : { ...common, direction: "out", topic_id: r.topic.id, output_id: r.output.id, transport: r.transport };
     const f = await api("/api/feeds", { body });
@@ -503,26 +683,39 @@ function stepDest(r) {
         if (d.error) results.replaceChildren(el("div", { class: "err", text: "The mesh directory answered with an error: " + d.error }));
         else results.replaceChildren(...(d.peers.length ? d.peers.map((p) => el("button", {
           type: "button", class: "pick" + (r.peer && r.peer.id === p.id ? " on" : ""),
-          onclick: () => { r.peer = p; r.dest_name = p.name; r.dest_ip = p.ip; renderStep(); } },
+          onclick: () => {
+            r.peer = p; r.dest_name = p.name; r.dest_ip = p.ip;
+            r.resolved = p.system ? { enforced: true, found: true, system: p.system } : null;
+            r.resolvedFor = p.system ? destKey(r) : "";
+            if (p.system) renderStep(); else resolveDest(r).then(renderStep);
+          } },
           el("span", { class: "t" }, el("span", { class: "dot" + (p.connected ? " on" : ""), title: p.connected ? "online" : "offline" }), p.name),
           el("span", { class: "d" }, `${p.ip} · ${p.hostname || "—"} · ${p.connected ? "online" : "offline, last seen " + ago(p.last_seen)}`),
-          p.groups && p.groups.length ? el("span", { class: "d", text: p.groups.join(", ") }) : null)) : [el("p", { class: "empty", text: "No system matches." })]));
+          p.groups && p.groups.length ? el("span", { class: "d", text: p.groups.join(", ") }) : null,
+          p.system ? el("span", { class: "d", text: "In the estate: " + systemLine(p.system) + (p.system.archive_note ? ". " + p.system.archive_note : "") })
+            : state.naming && state.naming.enforced ? el("span", { class: "d", text: "Not in the estate: you declare it after choosing it." }) : null)) : [el("p", { class: "empty", text: "No system matches." })]));
       } catch (e) { results.replaceChildren(el("div", { class: "err", text: e.message })); }
     };
     let t;
     search.addEventListener("input", () => { clearTimeout(t); t = setTimeout(run, 250); });
     out.push(el("div", { class: "field" }, el("label", { text: r.dir === "in" ? "Sending system" : "Receiving system" }), search,
       el("span", { class: "hint", text: "Systems on this goatnet's mesh. The address fills in from the one you choose." })));
-    if (r.peer) out.push(el("div", { class: "next-box" }, "Selected: ", el("b", { text: r.peer.name }), ` (${r.peer.ip})`));
+    if (r.peer) out.push(el("div", { class: "next-box", id: "dest-selected" }, "Selected: ", el("b", { text: r.peer.name }), ` (${r.peer.ip})`,
+      r.resolved && r.resolved.found ? el("div", { text: systemLine(r.resolved.system) + (r.resolved.system.archive_note ? ". " + r.resolved.system.archive_note + " Bring it back in Tidy up before relying on it." : "") }) : null));
+    if (needsDeclare(r)) out.push(declarePanel(r));
+    if (proposed(r)) out.push(el("div", { class: "next-box", text: `Already proposed by ${r.resolved.proposal.by} as ${r.resolved.proposal.key}; it waits for an admin in Tidy up.` }));
     out.push(results);
     out.push(el("p", {}, el("a", { href: "#request", onclick: (e) => { e.preventDefault(); r.manual = true; renderStep(); }, text: "Enter a name and address instead" })));
     run();
   } else {
-    const name = el("input", { type: "text", value: r.dest_name, id: "dest-name", oninput: (e) => (r.dest_name = e.target.value) });
-    const ip = el("input", { type: "text", value: r.dest_ip, id: "dest-ip", placeholder: "100.64.x.y", oninput: (e) => { r.dest_ip = e.target.value; r.peer = null; } });
+    const name = el("input", { type: "text", value: r.dest_name, id: "dest-name", oninput: (e) => { r.dest_name = e.target.value; r.resolvedFor = ""; } });
+    const ip = el("input", { type: "text", value: r.dest_ip, id: "dest-ip", placeholder: "100.64.x.y", oninput: (e) => { r.dest_ip = e.target.value; r.peer = null; r.resolvedFor = ""; } });
     out.push(el("div", { class: "field" }, el("label", { for: "dest-name", text: r.dir === "in" ? "Sending system's name" : "Receiving system's name" }), name,
       el("span", { class: "hint", text: "As people know it, for example the NetBird peer name." })));
     out.push(el("div", { class: "field" }, el("label", { for: "dest-ip", text: "Its mesh (NetBird) IP address" }), ip));
+    if (r.resolved && r.resolved.found && r.resolvedFor === destKey(r)) out.push(el("div", { class: "next-box", text: "In the estate: " + systemLine(r.resolved.system) }));
+    if (needsDeclare(r) && r.resolvedFor === destKey(r)) out.push(declarePanel(r));
+    if (proposed(r)) out.push(el("div", { class: "next-box", text: `Already proposed by ${r.resolved.proposal.by} as ${r.resolved.proposal.key}; it waits for an admin in Tidy up.` }));
     if (state.me.peers_enabled) out.push(el("p", {}, el("a", { href: "#request", onclick: (e) => { e.preventDefault(); r.manual = false; renderStep(); }, text: "Search the mesh instead" })));
   }
   return out;
@@ -549,6 +742,7 @@ function stepReview(r) {
   const sum = el("dl", { class: "summary" },
     el("dt", { text: "Topic" }), el("dd", {}, r.topic.label, " ", cls(r.topic.data_class)),
     el("dt", { text: "Send to" }), el("dd", { text: `${r.dest_name} (${r.dest_ip})` }),
+    destReview(r) ? el("dt", { text: "System" }) : null, destReview(r) ? el("dd", { id: "review-system", text: destReview(r) }) : null,
     el("dt", { text: "As" }), el("dd", { text: `${r.output.label} over ${r.transport.toUpperCase()} to port ${r.port}` }));
   const purpose = el("textarea", { id: "purpose", rows: 3, oninput: (e) => (r.purpose = e.target.value) });
   purpose.value = r.purpose;
@@ -597,6 +791,7 @@ function stepInReview(r) {
   const sum = el("dl", { class: "summary" },
     el("dt", { text: "Receive" }), el("dd", {}, r.label, " ", cls("real")),
     el("dt", { text: "From" }), el("dd", { text: `${r.dest_name} (${r.dest_ip})` }),
+    destReview(r) ? el("dt", { text: "System" }) : null, destReview(r) ? el("dd", { id: "review-system", text: destReview(r) }) : null,
     el("dt", { text: "Standard" }), el("dd", { text: r.format.label }),
     el("dt", { text: "Sent to" }), el("dd", { class: "mono", text: `${it.listen_ip}:${r.port} UDP` }),
     el("dt", { text: "Published as" }), el("dd", { text: `a topic in the catalog, offered as ${it.outputs.map((o) => o.label).join(", ")}` }));
@@ -662,8 +857,11 @@ async function showFeed(main, id) {
   state.timer = setInterval(() => load().catch(() => {}), 4000);
 }
 function renderFeed(f, events, onAction) {
+  const fc = f.facets || {};
   $("#feed-head").replaceChildren(
     el("h1", { text: title(f) }),
+    fc.boundary ? el("p", { class: "why boundary", text: fc.boundary }) : null,
+    fc.archived ? el("p", { class: "why", text: fc.archive_note }) : null,
     el("div", { class: "sigs" }, ...signals(f)),
     el("div", { class: "meta" }, cls(f.data_class), el("span", { class: "mono", text: f.id })));
   $("#feed-actions").replaceChildren(...f.actions.filter((a) => a !== "check").map((a) =>
@@ -684,8 +882,11 @@ function renderFeed(f, events, onAction) {
     ? [...kv("Sender", `${f.dest_name} · ${f.dest_ip}`), ...kv("Sends to", `${f.listen_at || f.port} (${f.output_label}, ${f.to_format})`),
        ...kv("Published on", f.published_key || "—"), ...kv("Offered as topic", f.published_topic_id ? `${f.topic_label} (${f.published_topic_id})` : "—")]
     : [...kv("Destination", dest(f)), ...kv("Format", `${f.output_label} (${f.to_format})`)];
+  const sysText = fc.dest_known ? systemLine({ label: fc.dest_system, site_label: fc.dest_site, boundary: fc.boundary, class: fc.dest_class,
+    role: fc.dest_role, placed_by: fc.dest_placed_by }) : "Not in the estate. An admin places it in Tidy up.";
   $("#feed-details").replaceChildren(
     ...where,
+    ...kv(isIn(f) ? "Sending system" : "Receiving system", sysText),
     ...kv("Owner", f.owner),
     ...kv("Purpose", f.purpose),
     ...kv("State", f.status),
@@ -738,13 +939,211 @@ async function showApprovals(main) {
   state.timer = setInterval(() => render().catch(() => {}), 8000);
 }
 
+// ---------- tidy up: hand the clean-up of systems back to the tactical admin ----------
+const TIDY_KIND = { undeclared: "Not in the estate", proposed: "Proposed", "name-rule": "Name", "boundary-far-side": "Boundary far side",
+  "archived-link-on": "Archived, links on" };
+const RETURNS = { "same-system-same-site": "The same system, at the same site", "same-system-new-site": "The same system, at a new site",
+  "new-system": "A new system replaces it", unknown: "Not known" };
+const REJOIN = { "peer-kept": "Its mesh peer is kept (it comes back as is)", "rejoin-needed": "It must rejoin the mesh", unknown: "Not known" };
+function tfield(id, label, input, hint, wide) {
+  return el("div", { class: "field" + (wide ? " wide" : "") }, el("label", { for: id, text: label }), input, hint ? el("span", { class: "hint", text: hint }) : null);
+}
+function tselect(id, opts, cur, blank) {
+  const sl = el("select", { id }, blank !== undefined ? el("option", { value: "", text: blank }) : null,
+    ...opts.map(([v, t]) => el("option", { value: v, text: t })));
+  sl.value = cur || "";
+  return sl;
+}
+function linkItem(l) {
+  if (l.kind === "declared") return el("li", { text: `${l.title} — declared link, controlled by ${l.controlled_by || "its deployment file"} (manifest ${l.manifest || "—"})${l.on ? "" : ", switched off"}` });
+  return el("li", {}, el("a", { href: `#feed/${l.id}`, text: l.title }), ` (${l.status})`);
+}
+function tidyResult(...lines) {
+  $("#tidy-result").replaceChildren(el("div", { class: "next-box" }, ...lines.filter((x) => x).map((x) => el("div", { text: x }))));
+}
+// Place: put a system in its site and function (and for a boundary node, its far side).
+function placeForm(d, it, done) {
+  const sys = (it && it.system) || null;
+  const prop = (it && it.proposal) || null;
+  const isNew = !sys;
+  const uid = Math.random().toString(36).slice(2, 8);
+  const v = {
+    name: isNew ? (prop ? prop.key : "") : (it.suggested_name || ""),
+    site: (sys && sys.site) || (prop && prop.site) || "", class: (sys && sys.class) || (prop && prop.class) || "",
+    role: (sys && sys.role) || (prop && prop.role) || "", label: (sys && sys.label) || (prop && prop.label) || (it && it.peer) || "",
+    far: (sys && sys.far_side && sys.far_side.label) || (prop && prop.far_side && prop.far_side.label) || "",
+    dir: (sys && sys.far_side && sys.far_side.direction) || "out",
+  };
+  const site = tselect(`pl-site-${uid}`, d.sites.map((x) => [x.id, `${x.label} (${x.id})`]), v.site, "Choose the site");
+  const kind = tselect(`pl-class-${uid}`, d.classes.map((x) => [x, x]), v.class, "Choose the kind");
+  const roles = el("datalist", { id: `pl-roles-${uid}` }, ...d.roles.map((x) => el("option", { value: x })));
+  const role = el("input", { type: "text", id: `pl-role-${uid}`, list: `pl-roles-${uid}`, value: v.role, placeholder: "ops" });
+  const label = el("input", { type: "text", id: `pl-label-${uid}`, value: v.label });
+  const name = el("input", { type: "text", id: `pl-name-${uid}`, class: "pl-name", value: v.name, placeholder: isNew ? "console-north-ops-01" : sys.name, autocomplete: "off" });
+  const far = el("input", { type: "text", id: `pl-far-${uid}`, class: "pl-far", value: v.far, placeholder: "Partner network" });
+  const dir = tselect(`pl-dir-${uid}`, [["out", "out"], ["in", "in"], ["both", "both"]], v.dir);
+  const farBox = el("div", { class: "wide row" });
+  const showFar = () => farBox.replaceChildren(...(kind.value === "boundary" ? [
+    tfield(`pl-far-${uid}`, "Far side: where data through it goes", far, "Name the network beyond it."), tfield(`pl-dir-${uid}`, "Direction", dir)] : []));
+  const checkBox = el("div", { class: "wide" });
+  let ct;
+  const check = () => {
+    clearTimeout(ct);
+    ct = setTimeout(async () => {
+      if (!name.value.trim()) return checkBox.replaceChildren();
+      try {
+        const x = await api(`/api/naming?name=${enc(name.value.trim())}&site=${enc(site.value)}`);
+        checkBox.replaceChildren(x.check.ok ? el("span", { class: "ok-note", text: "Follows the naming rule." })
+          : el("ul", { class: "problems" }, ...x.check.problems.map((p) => el("li", { text: p }))));
+      } catch { checkBox.replaceChildren(); }
+    }, 200);
+  };
+  const suggest = async () => {
+    if (!site.value || !kind.value) return;
+    try { const x = await api(`/api/naming?kind=${enc(kind.value)}&site=${enc(site.value)}&function=${enc(role.value || "ops")}`); name.value = x.suggestion; check(); } catch { /* by hand */ }
+  };
+  kind.addEventListener("change", showFar);
+  name.addEventListener("input", check);
+  site.addEventListener("change", check);
+  const submit = el("button", { type: "button", class: "btn primary small pl-submit", text: "Place" });
+  submit.addEventListener("click", async () => {
+    const key = isNew ? name.value.trim() : sys.name;
+    const body = { site: site.value, class: kind.value, role: role.value.trim(), label: label.value.trim(),
+      peer: isNew ? ((prop && prop.peer) || it.peer || "") : undefined,
+      far_side: kind.value === "boundary" ? { label: far.value.trim(), direction: dir.value || "out" } : undefined };
+    if (!isNew && name.value.trim() && name.value.trim() !== sys.name) body.name = name.value.trim();
+    if (!key) { toast("Give the system a machine name."); return; }
+    try {
+      const r = await api(`/api/systems/${enc(key)}/place`, { body });
+      tidyResult(`Placed ${r.system.name} at ${r.system.site_label || r.system.site}.`,
+        r.system.boundary ? r.system.boundary + "." : "",
+        body.name ? "Rename the machine at the mesh (NetBird) stage to match." : "");
+      done();
+    } catch (e) { toast(e.message); }
+  });
+  const form = el("div", { class: "tidy-form", "data-form": "place" },
+    tfield(`pl-site-${uid}`, "Site", site), tfield(`pl-class-${uid}`, "Kind of system", kind),
+    tfield(`pl-role-${uid}`, "Function", role, "Its job: ops, cue, relay…"), roles,
+    tfield(`pl-label-${uid}`, "Display label", label),
+    tfield(`pl-name-${uid}`, isNew ? "Machine name" : "New machine name (leave as is to keep it)", name, "Rule: " + d.rule, true),
+    el("div", { class: "wide row" }, el("button", { type: "button", class: "btn small", text: "Suggest a name", onclick: suggest }), submit),
+    checkBox, farBox);
+  showFar();
+  if (name.value) check();
+  return form;
+}
+// Archive: say how the system is expected to come back, and which links to switch back on.
+function archiveForm(sys, links, done) {
+  const uid = Math.random().toString(36).slice(2, 8);
+  const op = el("input", { type: "text", id: `ar-op-${uid}`, class: "ar-op", placeholder: "Exercise or operation name" });
+  const ret = tselect(`ar-ret-${uid}`, Object.entries(RETURNS), "unknown");
+  ret.classList.add("ar-returns");
+  const rej = tselect(`ar-rej-${uid}`, Object.entries(REJOIN), "unknown");
+  rej.classList.add("ar-rejoin");
+  const notes = el("textarea", { id: `ar-notes-${uid}`, rows: 2, placeholder: "Where it is stored, who holds it, what to check when it comes back" });
+  const boxes = links.map((l) => ({ l, cb: el("input", { type: "checkbox", value: l.id, ...(l.on ? { checked: "" } : {}) }) }));
+  const pause = el("input", { type: "checkbox", id: `ar-pause-${uid}`, class: "ar-pause", checked: "" });
+  const submit = el("button", { type: "button", class: "btn primary small", text: "Archive" });
+  submit.addEventListener("click", async () => {
+    try {
+      const r = await api(`/api/systems/${enc(sys.name)}/archive`, { body: { returns: ret.value, rejoin: rej.value, operation: op.value.trim(), notes: notes.value.trim(),
+        restore: boxes.filter((b) => b.cb.checked).map((b) => b.l.id), pause: pause.checked } });
+      tidyResult(`${sys.name}: ${r.system.archive_note}`,
+        r.paused.length ? `Paused ${r.paused.length} requested feed${r.paused.length === 1 ? "" : "s"}: ${r.paused.join(", ")}.` : "",
+        ...r.declared_still_on.map((l) => `Still on: ${l.title}. Switch it off in ${l.controlled_by || "its deployment file"} (manifest ${l.manifest}); it is read-only here.`));
+      done();
+    } catch (e) { toast(e.message); }
+  });
+  return el("div", { class: "tidy-form", "data-form": "archive" },
+    tfield(`ar-op-${uid}`, "Operation", op, "Free text: the exercise or operation it served."),
+    tfield(`ar-ret-${uid}`, "How does it come back?", ret), tfield(`ar-rej-${uid}`, "Does it need to rejoin the mesh?", rej),
+    tfield(`ar-notes-${uid}`, "Notes", notes, "", true),
+    el("div", { class: "wide checks" }, el("b", { text: links.length ? "Links to switch back on when it returns" : "No links to or from it." }),
+      ...boxes.map((b) => el("label", {}, b.cb, " ", b.l.title, b.l.kind === "declared" ? " (declared link)" : ` (${b.l.status})`))),
+    el("label", { class: "wide" }, pause, " Pause its requested feeds now (declared links are switched off in their own file)"),
+    el("div", { class: "wide row" }, submit));
+}
+function tidyCard(d, it, reload) {
+  const formBox = el("div");
+  const open = (form) => formBox.replaceChildren(form);
+  const acts = el("div", { class: "acts" });
+  for (const a of it.actions) {
+    if (a === "place") acts.append(el("button", { type: "button", class: "btn small", "data-act": "place", text: it.kind === "proposed" ? "Place as proposed" : "Place",
+      onclick: () => open(placeForm(d, it, reload)) }));
+    if (a === "archive") acts.append(el("button", { type: "button", class: "btn small", "data-act": "archive", text: "Archive",
+      onclick: () => open(archiveForm(it.system, it.links, reload)) }));
+    if (a === "restore") acts.append(el("button", { type: "button", class: "btn small", "data-act": "restore", text: "Bring back",
+      onclick: () => bringBack(it.system, true, reload) }));
+    if (a === "dismiss") acts.append(el("button", { type: "button", class: "btn small", "data-act": "dismiss", text: "Dismiss",
+      onclick: async () => { try { await api(`/api/systems/${enc(it.proposal.key)}/dismiss`, { body: {} }); tidyResult(`Dismissed the proposal for ${it.proposal.key}.`); reload(); } catch (e) { toast(e.message); } } }));
+  }
+  return el("div", { class: "card tidy", "data-kind": it.kind },
+    el("div", { class: "main" },
+      el("div", { class: "line1" }, el("span", { class: "kind", text: TIDY_KIND[it.kind] || it.kind }), it.title),
+      el("div", { class: "line2", text: it.reason }),
+      it.suggested_name ? el("div", { class: "line2", text: `Suggested name: ${it.suggested_name}` }) : null,
+      it.system && it.system.boundary && it.kind !== "boundary-far-side" ? el("div", { class: "line2", text: it.system.boundary }) : null,
+      it.links.length ? el("ul", { class: "links" }, ...it.links.map(linkItem)) : null),
+    acts, formBox);
+}
+async function bringBack(sys, resume, reload) {
+  try {
+    const r = await api(`/api/systems/${enc(sys.name)}/restore`, { body: { resume } });
+    tidyResult(`Brought back ${sys.name}.`,
+      r.resumed.length ? `Resumed: ${r.resumed.join(", ")}.` : "No requested feed was resumed.",
+      ...r.declared.map((l) => `Switch on ${l.title} in ${l.controlled_by || "its deployment file"} (manifest ${l.manifest}); declared links are read-only here.`),
+      ...r.skipped.map((x) => `Not resumed: ${x.id} (${x.why}).`));
+    reload();
+  } catch (e) { toast(e.message); }
+}
+function archivedCard(a, reload) {
+  const resume = el("input", { type: "checkbox", checked: "" });
+  const restoreTitles = ((a.archive && a.archive.restore) || []).map((id) => (a.links.find((l) => l.id === id) || { title: id }).title);
+  return el("div", { class: "card tidy archived-system", "data-system": a.name },
+    el("div", { class: "main" },
+      el("div", { class: "line1" }, el("span", { class: "kind", text: "Archived" }), `${a.label} (${a.name}) · ${a.site_label || a.site}`),
+      el("div", { class: "line2", text: a.archive_note }),
+      a.archive && a.archive.notes ? el("div", { class: "line2", text: "Notes: " + a.archive.notes }) : null,
+      el("div", { class: "line2", text: restoreTitles.length ? "Switched back on when it returns: " + restoreTitles.join("; ") : "No links to switch back on." })),
+    el("div", { class: "acts" }, el("label", {}, resume, " Resume its paused feeds"),
+      el("button", { type: "button", class: "btn small", "data-act": "restore", text: "Bring back", onclick: () => bringBack(a, resume.checked, reload) })));
+}
+async function showTidy(main) {
+  mount(main, "#tpl-tidy");
+  if (!state.me.viewer.is_admin) { main.replaceChildren(el("p", { class: "empty", text: "Tidy up is for tactical and platform admins." })); return; }
+  const reload = async () => {
+    let d;
+    try { d = await api("/api/tidy"); } catch (e) { $("#tidy-items").replaceChildren(el("div", { class: "err", text: e.message })); return; }
+    state.tidyCount = d.count;
+    const c = $("#tidy-count");
+    c.textContent = d.count ? String(d.count) : "";
+    c.hidden = !d.count;
+    $("#tidy-rule").textContent = "Naming rule: " + d.rule;
+    $("#tidy-items-head").textContent = `To organise (${d.items.length})`;
+    $("#tidy-items").replaceChildren(...(d.items.length ? d.items.map((it) => tidyCard(d, it, reload))
+      : [el("p", { class: "empty", text: "Nothing to organise: every system is in its site and function." })]));
+    const pick = $("#tidy-archive-pick");
+    pick.replaceChildren(el("option", { value: "", text: "Choose a system" }),
+      ...d.systems.map((x) => el("option", { value: x.name, text: `${x.label} (${x.name}) · ${x.site_label || x.site}` })));
+    pick.onchange = () => {
+      const sys = d.systems.find((x) => x.name === pick.value);
+      $("#tidy-archive-box").replaceChildren(sys ? archiveForm(sys, sys.links, reload) : "");
+    };
+    $("#tidy-archive-box").replaceChildren();
+    $("#tidy-archived-head").textContent = `Archived (${d.archived.length})`;
+    $("#tidy-archived").replaceChildren(...(d.archived.length ? d.archived.map((a) => archivedCard(a, reload))
+      : [el("p", { class: "empty", text: "No system is archived." })]));
+  };
+  await reload();
+}
+
 // ---------- audit ----------
 async function showAudit(main) {
   mount(main, "#tpl-audit");
   const d = await api("/api/audit");
   $("#audit-body").replaceChildren(...(d.events || []).map((e) => el("tr", {},
     el("td", { text: fmtTime(e.at) }), el("td", { text: e.actor }), el("td", { text: e.action }),
-    el("td", {}, el("a", { href: `#feed/${e.feed_id}`, text: e.feed_id })), el("td", { text: e.detail }))));
+    el("td", {}, el("a", { href: e.feed_id.startsWith("system:") ? "#tidy" : `#feed/${e.feed_id}`, text: e.feed_id })), el("td", { text: e.detail }))));
 }
 
 // ---------- start ----------

@@ -1,7 +1,7 @@
 ---
 # The one host per goatnet that runs goat-feeds. Required.
 goat_feeds_host: ""
-goat_feeds_version: "0.1.0"
+goat_feeds_version: "0.4.0"
 # The linux binary on the controller (built by CI, or `go build` for a trial).
 # The linux binary to install. "{arch}" is replaced by amd64 or arm64 from the host's
 # architecture, so one value serves a mixed fleet: e.g. .../dist/goat-feeds-0.2.0-linux-{arch}
@@ -72,4 +72,8 @@ goat_feeds_declared_dir: /etc/goat-links/declared.d
 goat_feeds_estate_src: ""
 goat_feeds_systems: []
 goat_feeds_group_prefix: ""
+# Tidy up (0.4.0): functions offered in the role picker besides those already in use, and
+# the mesh groups whose peers the estate must list (empty: any peer a role group places).
+goat_feeds_roles: []
+goat_feeds_tactical_peer_groups: []
 

@@ -139,6 +139,11 @@ type Config struct {
 	EstateFile  string       `json:"estate_file"`
 	Systems     []SystemDecl `json:"systems"`
 	GroupPrefix string       `json:"group_prefix"`
+	// Tidy up (tidy.go): the functions offered in the role picker besides those already
+	// in use, and the mesh groups whose peers the estate must list (empty: any peer a
+	// role group places).
+	Roles              []string `json:"roles"`
+	TacticalPeerGroups []string `json:"tactical_peer_groups"`
 
 	allowed netip.Prefix
 

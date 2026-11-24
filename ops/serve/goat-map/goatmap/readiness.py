@@ -220,6 +220,7 @@ class Chain:
     subject: str
     rungs: list[Rung] = field(default_factory=list)
     cls: str = DEFAULT_CLASS
+    archived: bool = False
 
     def by_name(self) -> dict[str, Rung]:
         return {r.name: r for r in self.rungs}
@@ -261,6 +262,8 @@ class Chain:
         far as anyone expects it to right now. It is what a healthy duty-cycled site looks
         like for most of its life, and it must never render as a fault.
         """
+        if self.archived:
+            return "archived"
         if not self.rungs:
             return "unknown"
         b = self.break_at
@@ -310,6 +313,7 @@ def build_chain(
     producing: bool | None = None,
     duty_cycled: bool = True,
     evidence: dict[str, dict[str, Any]] | None = None,
+    archived: bool = False,
 ) -> Chain:
     """Assemble a chain from observations.
 
@@ -323,6 +327,10 @@ def build_chain(
     chain reads `at-rest` rather than `broken` when it is off. Set it False for
     a sensor that is supposed to be radiating continuously, and the same absence
     becomes a fault — which is the entire point of declaring it.
+
+    `archived` marks a system taken out of service and kept in the estate so it can
+    come back. No rung is EXPECTED of it, and its verdict is `archived`, never
+    `broken` or `unknown`: an absent archived system is the declared state.
     """
     ev = evidence or {}
     obs = {
@@ -378,6 +386,8 @@ def build_chain(
         expected = True
         if duty_cycled and name in ("device_detected", "device_ready", "device_active", "producing"):
             expected = False
+        if archived:
+            expected = False
 
         e = ev.get(name, {})
         detail = e.get("detail") or details.get(name, "")
@@ -411,7 +421,7 @@ def build_chain(
         if state != ATTAINED:
             below_broken = True
 
-    return Chain(subject=subject, rungs=rungs, cls=cls)
+    return Chain(subject=subject, rungs=rungs, cls=cls, archived=archived)
 
 
 def roll_up(chains: Iterable[Chain]) -> str:
@@ -421,9 +431,12 @@ def roll_up(chains: Iterable[Chain]) -> str:
     (not knowing is worse than knowingly idle); `at-rest` beats `ready` only in
     the sense that it is reported, never as an alarm.
     """
-    verdicts = [c.verdict for c in chains]
+    all_verdicts = [c.verdict for c in chains]
+    # An archived subject never drives the site verdict; a site of only archived
+    # subjects is itself archived.
+    verdicts = [v for v in all_verdicts if v != "archived"]
     if not verdicts:
-        return "unknown"
+        return "archived" if all_verdicts else "unknown"
     for v in ("broken", "unknown", "at-rest"):
         if v in verdicts:
             return v
@@ -452,11 +465,14 @@ def roll_up_reason(chains: Sequence[Chain], with_counts: bool = True) -> str:
     verdict = roll_up(chains)
     drivers = [c.subject for c in chains if c.verdict == verdict]
     word = {"unknown": "unreadable", "broken": "broken",
-            "at-rest": "at rest", "ready": "ready"}[verdict]
+            "at-rest": "at rest", "ready": "ready", "archived": "archived"}[verdict]
     if verdict == "ready":
         if not with_counts:
             return "everything expected is running"
-        return f"all {len(chains)} subject{'s' if len(chains) != 1 else ''} ready"
+        live = [c for c in chains if c.verdict != "archived"]
+        arch = len(chains) - len(live)
+        tail = f"; {arch} archived" if arch else ""
+        return f"all {len(live)} subject{'s' if len(live) != 1 else ''} ready{tail}"
     named = ", ".join(drivers[:3]) + (f" +{len(drivers) - 3} more" if len(drivers) > 3 else "")
     if not with_counts:
         return f"{named} {word}"
@@ -470,6 +486,7 @@ def roll_up_reason(chains: Sequence[Chain], with_counts: bool = True) -> str:
 VERDICT_COLOR = {
     "ready": "green",
     "at-rest": "idle",
+    "archived": "idle",
     "broken": "amber",
     "unknown": "unmetered",
 }

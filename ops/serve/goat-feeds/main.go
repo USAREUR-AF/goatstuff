@@ -69,7 +69,11 @@ func main() {
 		log.Fatalf("goat-feeds: estate %s: %v", cfg.EstateFile, err)
 	}
 
-	srv := &Server{cfg: cfg, reg: reg, sup: sup, peers: NewPeers(cfg.Peers.API, cfg.Peers.TokenFile), decl: decl, est: est, start: time.Now()}
+	srv := &Server{cfg: cfg, reg: reg, sup: sup, peers: NewPeers(cfg.Peers.API, cfg.Peers.TokenFile), decl: decl, est: est, start: time.Now(), pl: reg}
+	if err := srv.reloadOverlay(ctx); err != nil {
+		log.Fatalf("goat-feeds: placements: %v", err)
+	}
+	go srv.RunOverlay(ctx, 30*time.Second)
 	hs := &http.Server{Addr: cfg.Listen, Handler: srv.Routes(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
