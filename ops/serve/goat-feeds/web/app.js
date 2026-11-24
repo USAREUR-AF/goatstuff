@@ -945,6 +945,7 @@ const TIDY_KIND = { undeclared: "Not in the estate", proposed: "Proposed", "name
 const RETURNS = { "same-system-same-site": "The same system, at the same site", "same-system-new-site": "The same system, at a new site",
   "new-system": "A new system replaces it", unknown: "Not known" };
 const REJOIN = { "peer-kept": "Its mesh peer is kept (it comes back as is)", "rejoin-needed": "It must rejoin the mesh", unknown: "Not known" };
+let formSeq = 0; // unique ids for the fields of each open form
 function tfield(id, label, input, hint, wide) {
   return el("div", { class: "field" + (wide ? " wide" : "") }, el("label", { for: id, text: label }), input, hint ? el("span", { class: "hint", text: hint }) : null);
 }
@@ -966,7 +967,7 @@ function placeForm(d, it, done) {
   const sys = (it && it.system) || null;
   const prop = (it && it.proposal) || null;
   const isNew = !sys;
-  const uid = Math.random().toString(36).slice(2, 8);
+  const uid = String(++formSeq);
   const v = {
     name: isNew ? (prop ? prop.key : "") : (it.suggested_name || ""),
     site: (sys && sys.site) || (prop && prop.site) || "", class: (sys && sys.class) || (prop && prop.class) || "",
@@ -1034,7 +1035,7 @@ function placeForm(d, it, done) {
 }
 // Archive: say how the system is expected to come back, and which links to switch back on.
 function archiveForm(sys, links, done) {
-  const uid = Math.random().toString(36).slice(2, 8);
+  const uid = String(++formSeq);
   const op = el("input", { type: "text", id: `ar-op-${uid}`, class: "ar-op", placeholder: "Exercise or operation name" });
   const ret = tselect(`ar-ret-${uid}`, Object.entries(RETURNS), "unknown");
   ret.classList.add("ar-returns");
