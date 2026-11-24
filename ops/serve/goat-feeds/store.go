@@ -108,7 +108,7 @@ func OpenPG(ctx context.Context, dsn string) (*PGStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := pool.Exec(ctx, schema); err != nil {
+	if _, err := pool.Exec(ctx, schema+placementSchema); err != nil {
 		pool.Close()
 		return nil, err
 	}

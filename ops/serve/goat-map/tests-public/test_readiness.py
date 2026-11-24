@@ -428,3 +428,35 @@ def test_unknown_does_not_mask_a_real_break_below_it():
 def test_a_chain_with_no_expected_unknowns_still_reaches_ready():
     c = build_chain("s", cls="node", power=True, node_online=True, components_ok=True)
     assert c.verdict == "ready"
+
+
+# ── archived systems ─────────────────────────────────────────────────────────
+
+def test_an_archived_system_is_not_expected_and_never_a_fault():
+    """Archived: kept in the estate to come back; its absence is the declared state."""
+    c = build_chain("site-a/q-radar", cls="radar", power=None, node_online=False,
+                    device_detected=False, duty_cycled=False, archived=True)
+    assert c.verdict == "archived"
+    assert c.break_at is None
+    assert all(not r.expected for r in c.rungs)
+    assert VERDICT_COLOR[c.verdict] == "idle"
+
+
+def test_an_archived_system_never_drives_the_site_verdict():
+    from goatmap.readiness import roll_up_reason
+    ready = build_chain("a", cls="radar", power=True, node_online=True, components_ok=True,
+                        device_detected=True, device_ready=True, device_active=True,
+                        producing=True, duty_cycled=False)
+    gone = build_chain("b", power=False, archived=True)
+    assert roll_up([ready, gone]) == "ready"
+    assert roll_up_reason([ready, gone]) == "all 1 subject ready; 1 archived"
+    assert roll_up([gone]) == "archived"
+
+
+def test_the_estate_status_reaches_the_system():
+    from goatmap.sites import load_sites
+    sites = load_sites([{"site_id": "s", "lat": 0.1, "lon": 0.1, "systems": [
+        {"name": "a", "class": "radar", "status": "archived"}, {"name": "b", "class": "radar"}]}])
+    a, b = sites[0].systems
+    assert a.archived and a.status == "archived"
+    assert not b.archived and b.status == "active"

@@ -19,6 +19,7 @@
     <a href="#feeds" data-view="feeds">Feeds</a>
     <a href="#request" data-view="request">New feed</a>
     <a href="#approvals" data-view="approvals" id="nav-approvals" hidden>Approvals <span class="count" id="approvals-count"></span></a>
+    <a href="#tidy" data-view="tidy" id="nav-tidy" hidden>Tidy up <span class="count" id="tidy-count" hidden></span></a>
     <a href="#audit" data-view="audit">Audit</a>
   </nav>
   <div class="who" id="who"></div>
@@ -45,6 +46,7 @@
         <button class="chip" data-filter="mine">Mine</button>
         <button class="chip" data-filter="waiting">Waiting for approval</button>
         <button class="chip" data-filter="live">On</button>
+        <button class="chip" data-filter="archived">Archived</button>
         <button class="chip" data-filter="all">All</button>
       </div>
       <input type="search" id="feed-search" placeholder="Search topic, system, address, owner" aria-label="Search feeds">
@@ -98,6 +100,27 @@
       </div>
     </div>
     <div class="list" id="approval-list"></div>
+  </section>
+</template>
+
+<template id="tpl-tidy">
+  <section class="view">
+    <div class="view-head">
+      <div>
+        <h1>Tidy up</h1>
+        <p class="lede">Systems that have slipped out of the estate's organisation, each with its reason. Place a system in its site and function, archive one that is gone, or bring one back. Every change is in the audit log, and takes effect at once; promote it into the estate file later.</p>
+      </div>
+      <div class="row"><a class="btn" id="tidy-effective" href="/api/estate/effective" target="_blank" rel="noopener">Effective estate (JSON)</a></div>
+    </div>
+    <p class="hint rule" id="tidy-rule"></p>
+    <div id="tidy-result" role="status" aria-live="polite"></div>
+    <h2 id="tidy-items-head">To organise</h2>
+    <div class="list" id="tidy-items"></div>
+    <h2 class="tidy-h2">Archive a system</h2>
+    <div class="toolbar"><label class="inline">System <select id="tidy-archive-pick" aria-label="System to archive"></select></label></div>
+    <div id="tidy-archive-box"></div>
+    <h2 class="tidy-h2" id="tidy-archived-head">Archived</h2>
+    <div class="list" id="tidy-archived"></div>
   </section>
 </template>
 

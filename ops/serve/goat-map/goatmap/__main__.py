@@ -1273,6 +1273,7 @@ def build_app(svc: Service, store: TrackStore, hub: Hub) -> web.Application:
             device_detected=det,
             producing=prod,
             duty_cycled=getattr(system, "duty_cycled", True),
+            archived=getattr(system, "archived", False),
             evidence={
                 "device_detected": {"detail": det_detail},
                 "producing": {"detail": prod_detail},

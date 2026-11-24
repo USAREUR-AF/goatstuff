@@ -18,5 +18,7 @@
   "declared_dir": goat_feeds_declared_dir,
   "estate_file": (goat_feeds_etc ~ "/estate.json") if goat_feeds_estate_src | length > 0 else "",
   "systems": goat_feeds_systems,
-  "group_prefix": goat_feeds_group_prefix
+  "group_prefix": goat_feeds_group_prefix,
+  "roles": goat_feeds_roles,
+  "tactical_peer_groups": goat_feeds_tactical_peer_groups
 } | to_nice_json }}

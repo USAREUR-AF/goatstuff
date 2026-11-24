@@ -223,3 +223,32 @@ details.group > summary .gcount { font-size: 13px; color: var(--muted); }
 details.group > .list { margin: 6px 0 4px; }
 .facetline .why { color: var(--ink); font-weight: 600; }
 .flowsvg .fcount { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }
+
+/* Tidy up, archived links, boundary far side. */
+.tidy-h2 { margin-top: 22px; }
+.hint.rule { font-size: 13px; color: var(--muted); max-width: 90ch; }
+label.inline { display: flex; gap: 8px; align-items: center; font-size: 14px; max-width: 100%; min-width: 0; }
+label.inline select { min-width: 0; max-width: 100%; flex: 1; }
+.card.tidy { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.card.tidy .kind { font: 600 11px/1 var(--mono); letter-spacing: .04em; text-transform: uppercase; border: 1px solid var(--line);
+                   border-radius: 4px; padding: 3px 5px; margin-right: 8px; color: var(--muted); }
+.card.tidy ul.links { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.tidy-form { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; display: grid; gap: 10px;
+             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.tidy-form .field { margin-bottom: 0; }
+.tidy-form .wide { grid-column: 1 / -1; }
+.tidy-form .checks { display: grid; gap: 4px; font-size: 13px; }
+.tidy-form input[type=text], .tidy-form select { width: 100%; }
+.declare { border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin: 12px 0; display: grid; gap: 10px;
+           grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.declare h3 { grid-column: 1 / -1; font-size: 15px; margin: 0; }
+.declare .field { margin-bottom: 0; }
+.declare .wide { grid-column: 1 / -1; }
+.declare input[type=text], .declare select { width: 100%; }
+.problems { font-size: 13px; color: var(--ink); margin: 0; padding-left: 18px; }
+.ok-note { font-size: 13px; color: var(--accent); font-weight: 600; }
+.card.archived { opacity: .75; }
+.card.archived .line1::after { content: "ARCHIVED"; font: 600 11px/1 var(--mono); letter-spacing: .04em; border: 1px dashed var(--muted);
+                               border-radius: 4px; padding: 3px 5px; margin-left: 8px; color: var(--muted); vertical-align: 1px; }
+details.group.archived { border-style: dashed; }
+.fnode.arch rect { stroke-dasharray: 4 3; }

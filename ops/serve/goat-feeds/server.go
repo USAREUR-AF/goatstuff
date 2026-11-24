@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,8 +27,13 @@ type Server struct {
 	sup   *Supervisor
 	peers *Peers
 	decl  *Declared
-	est   *Estate
+	est   *Estate // the estate file and the settings' systems
 	start time.Time
+	// The placement overlay (placements.go); nil disables placing and the declare rule.
+	pl      Placements
+	ovMu    sync.RWMutex
+	overlay []Placement
+	eff     *Estate // est with the overlay applied
 }
 
 func (s *Server) Routes() http.Handler {
@@ -46,6 +52,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/feeds/{id}", s.auth(s.getFeed))
 	mux.HandleFunc("POST /api/feeds/{id}/{action}", s.auth(s.feedAction))
 	mux.HandleFunc("GET /api/audit", s.auth(s.audit))
+	mux.HandleFunc("GET /api/naming", s.auth(s.naming))
+	mux.HandleFunc("GET /api/tidy", s.auth(s.tidy))
+	mux.HandleFunc("GET /api/estate/effective", s.auth(s.effectiveEstate))
+	mux.HandleFunc("GET /api/systems/resolve", s.auth(s.resolveSystem))
+	mux.HandleFunc("POST /api/systems/{key}/{action}", s.auth(s.systemAction))
 	return mux
 }
 
@@ -188,9 +199,24 @@ func (s *Server) intake(w http.ResponseWriter, r *http.Request, v *Viewer) {
 		"formats": in.Formats, "outputs": in.Outputs, "publishes_as": in.ToFormat})
 }
 
+// peerOut is a mesh peer with the declared system it is, when it is one.
+type peerOut struct {
+	Peer
+	System *systemView `json:"system,omitempty"`
+}
+
 func (s *Server) peersSearch(w http.ResponseWriter, r *http.Request, v *Viewer) {
-	writeJSON(w, 200, map[string]any{"enabled": s.peers.Enabled(), "error": s.peers.LastErr,
-		"peers": s.peers.Search(r.Context(), r.URL.Query().Get("q"), 25)})
+	e := s.estate()
+	out := []peerOut{}
+	for _, p := range s.peers.Search(r.Context(), r.URL.Query().Get("q"), 25) {
+		po := peerOut{Peer: p}
+		if d, ok := e.Resolve(p.Name, p.IP); ok {
+			sv := s.view(d, r.URL.Query().Get("direction"))
+			po.System = &sv
+		}
+		out = append(out, po)
+	}
+	writeJSON(w, 200, map[string]any{"enabled": s.peers.Enabled(), "error": s.peers.LastErr, "peers": out})
 }
 
 type feedOut struct {
@@ -235,7 +261,7 @@ func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 		d := s.sup.FeedView(f.ID)
 		o.Health, o.HealthNote = intakeHealth(f, d, o.OutputLabel == "")
 		o.Integrated, o.Flowing = linkSignals(f, d, o.OutputLabel == "", true, time.Now())
-		o.Facets = facetsFor(s.est, &o, nil, s.peerByIP(f.DestIP), s.cfg.GroupPrefix)
+		o.Facets = facetsFor(s.estate(), &o, nil, s.peerByIP(f.DestIP), s.cfg.GroupPrefix)
 		if !detail && d != nil {
 			d.Lines, d.Command = nil, nil
 		}
@@ -252,9 +278,9 @@ func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 	o.Health, o.HealthNote = feedHealth(f, d, o.TopicLabel == "")
 	o.Integrated, o.Flowing = linkSignals(f, d, o.TopicLabel == "", false, time.Now())
 	if t := s.cfg.Topic(f.TopicID); t != nil {
-		o.Sources = labelSources(s.est, t.Sources)
+		o.Sources = labelSources(s.estate(), t.Sources)
 	}
-	o.Facets = facetsFor(s.est, &o, o.Sources, s.peerByIP(f.DestIP), s.cfg.GroupPrefix)
+	o.Facets = facetsFor(s.estate(), &o, o.Sources, s.peerByIP(f.DestIP), s.cfg.GroupPrefix)
 	if detail {
 		o.Delivery = d
 	} else if d != nil {
@@ -359,6 +385,11 @@ func (s *Server) createFeed(w http.ResponseWriter, r *http.Request, v *Viewer) {
 		s.fail(w, err)
 		return
 	}
+	decl, err := s.declareForFeed(r.Context(), req, f, v)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	detail := fmt.Sprintf("%s → %s %s:%d/%s: %s", f.TopicID, f.DestName, f.DestIP, f.Port, f.Transport, f.Purpose)
 	if f.Direction == "in" {
 		detail = fmt.Sprintf("receive %q (%s) from %s %s on port %d/%s: %s", f.Label, f.OutputID, f.DestName, f.DestIP, f.Port, f.Transport, f.Purpose)
@@ -367,6 +398,17 @@ func (s *Server) createFeed(w http.ResponseWriter, r *http.Request, v *Viewer) {
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	if decl != nil {
+		decl.Reason = strings.TrimSpace(decl.Reason + " declared with " + created.ID)
+		action := "propose"
+		if decl.State == "placed" {
+			action = "place"
+		}
+		if err := s.writePlacement(r.Context(), *decl, action, placementDetail(*decl)); err != nil {
+			s.fail(w, err)
+			return
+		}
 	}
 	writeJSON(w, 201, s.decorate(created, v, true))
 }
@@ -519,7 +561,7 @@ func (s *Server) declaredRows(ctx context.Context, now time.Time) []feedOut {
 		}
 		o := feedOut{Feed: f, TopicLabel: l.SourceLabel, OutputLabel: l.OutputLabel, ToFormat: l.ToFormat,
 			DataClass: l.DataClass, Kind: "declared", Delivery: ds.View, ControlledBy: l.ControlledBy, Manifest: ds.Source,
-			Sources: labelSources(s.est, l.Sources)}
+			Sources: labelSources(s.estate(), l.Sources)}
 		if o.OutputLabel == "" {
 			o.OutputLabel = l.ToFormat
 		}
@@ -530,7 +572,7 @@ func (s *Server) declaredRows(ctx context.Context, now time.Time) []feedOut {
 		if !l.Enabled {
 			o.Integrated = no("Switched off in its declaration.")
 		}
-		o.Facets = facetsFor(s.est, &o, l.Sources, s.peerByIP(ip), s.cfg.GroupPrefix)
+		o.Facets = facetsFor(s.estate(), &o, l.Sources, s.peerByIP(ip), s.cfg.GroupPrefix)
 		out = append(out, o)
 	}
 	return out
@@ -601,6 +643,8 @@ type GroupCount struct {
 	AtRest    int    `json:"at_rest"`
 	Idle      int    `json:"idle"`
 	Off       int    `json:"off"`
+	// Archived links are counted apart and in no other state.
+	Archived int `json:"archived"`
 }
 
 // summarize counts rows by one facet; a row with several values counts in each group.
@@ -621,6 +665,10 @@ func summarize(rows []feedOut, facet string) []GroupCount {
 			}
 			// Independent counts: a link can be sending and still need attention.
 			g.Total++
+			if o.Facets.Archived {
+				g.Archived++
+				continue
+			}
 			if o.Facets.Attention {
 				g.Attention++
 			}

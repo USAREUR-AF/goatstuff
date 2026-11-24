@@ -86,6 +86,13 @@ class System:
     # inferred one — inferring parentage from traffic would make the picture
     # rearrange itself whenever something went quiet.
     parent: str = ""
+    # Lifecycle from the estate: "active" (default) or "archived". An archived system
+    # is kept in the declaration so it can come back, but nothing is expected of it.
+    status: str = "active"
+
+    @property
+    def archived(self) -> bool:
+        return self.status == "archived"
 
 
 @dataclass
@@ -160,6 +167,7 @@ def load_sites(spec: list[dict[str, Any]]) -> list[Site]:
                         cls=s.get("class", "node"),
                         peer=s.get("peer", ""),
                         parent=s.get("parent", ""),
+                        status=s.get("status") or "active",
                     )
                     for s in row.get("systems", [])
                 ],

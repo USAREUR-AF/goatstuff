@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,7 +39,7 @@ func freshStore(t *testing.T) *PGStore {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS feeds, feed_events`); err != nil {
+	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS feeds, feed_events, placements`); err != nil {
 		t.Fatal(err)
 	}
 	pool.Close()
@@ -446,5 +447,45 @@ func TestAPIHealthzDegraded(t *testing.T) {
 	code, h := api.do("GET", "/healthz", "", "", nil, false)
 	if code != 503 || h["status"] != "degraded" || !strings.Contains(fmt.Sprint(h["reasons"]), "not running") {
 		t.Errorf("healthz with a stopped process: %d %v", code, h)
+	}
+}
+
+// The placement overlay in Postgres: write, read back with its archive and far side,
+// replace, delete, and every write audited.
+func TestPGPlacements(t *testing.T) {
+	s, ctx := freshStore(t), context.Background()
+	p := Placement{Key: "console-north-ops-01", Site: "north", Class: "console", Role: "ops", Peer: "198.51.100.40", State: "placed",
+		By: "t@example.test", Status: "archived", FarSide: &FarSide{Label: "Partner network", Direction: "out"},
+		Archive: &ArchiveInfo{By: "t@example.test", Returns: "new-system", Rejoin: "rejoin-needed", Restore: []string{"feed-1", "declared:x"}}}
+	if err := s.PutPlacement(ctx, p, "archive", "d"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetPlacement(ctx, p.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Archive == nil || got.Archive.Returns != "new-system" || len(got.Archive.Restore) != 2 || got.FarSide.Label != "Partner network" || got.At.IsZero() {
+		t.Errorf("round trip: %+v", got)
+	}
+	p.Status, p.Archive, p.FarSide = "active", nil, nil
+	if err := s.PutPlacement(ctx, p, "restore", "d"); err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.ListPlacements(ctx)
+	if err != nil || len(all) != 1 || all[0].Archive != nil || all[0].FarSide != nil || all[0].Status != "active" {
+		t.Errorf("replace: %+v %v", all, err)
+	}
+	if err := s.DeletePlacement(ctx, p.Key, "t@example.test", "dismiss", "promoted"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetPlacement(ctx, p.Key); !errors.Is(err, ErrNotFound) {
+		t.Errorf("after delete: %v", err)
+	}
+	if err := s.DeletePlacement(ctx, p.Key, "t@example.test", "dismiss", ""); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleting twice: %v", err)
+	}
+	ev, _ := s.Events(ctx, "system:"+p.Key, 10)
+	if len(ev) != 3 {
+		t.Errorf("audit events: %+v", ev)
 	}
 }

@@ -279,6 +279,7 @@ html, body {
   text-transform: uppercase; padding: 2px 6px; border-radius: 4px; }
 .v-ready   { background: rgba(52,211,153,.16); color: var(--rd-ok); }
 .v-at-rest { background: rgba(125,144,168,.18); color: var(--rd-rest); }
+.v-archived { background: transparent; color: var(--rd-rest); border: 1px dashed currentColor; }
 .v-broken  { background: rgba(251,146,60,.16); color: var(--rd-break); }
 .v-unknown { background: rgba(76,93,115,.22); color: var(--rd-unknown); }
 

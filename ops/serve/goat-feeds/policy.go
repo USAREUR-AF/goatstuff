@@ -124,6 +124,10 @@ type FeedRequest struct {
 	Direction string `json:"direction"`
 	FormatID  string `json:"format_id"`
 	Label     string `json:"label"`
+	// Declare: the destination (or sending system) is not a declared system, so it is
+	// declared with the request (tidy.go). An admin's is placed at once; a member's waits
+	// in Tidy up.
+	Declare *DeclareReq `json:"declare,omitempty"`
 }
 
 func toInt(v any) (int, bool) {

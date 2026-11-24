@@ -20,7 +20,7 @@ if (!existsSync(bin)) {
   process.exit(2);
 }
 // Each run starts empty. psql is on CI runners; when it is absent the database must be fresh.
-const wipe = spawnSync("psql", [dsn, "-q", "-c", "DROP TABLE IF EXISTS feeds, feed_events"], { stdio: "inherit" });
+const wipe = spawnSync("psql", [dsn, "-q", "-c", "DROP TABLE IF EXISTS feeds, feed_events, placements"], { stdio: "inherit" });
 if (wipe.error) console.error("start.mjs: psql not found; assuming a fresh database");
 
 const cfg = {
@@ -64,7 +64,13 @@ const estatePath = join(dir, "estate.json");
 writeFileSync(estatePath, JSON.stringify({
   regions: [{ region_id: "north", label: "North" }],
   sites: [{ site_id: "alpha", label: "Alpha", region_id: "north", systems: [
-    { name: "radar-a", class: "radar" }, { name: "radar-b", class: "radar" }, { name: "radar-c", class: "radar", duty_cycled: true }] }],
+    { name: "radar-a", class: "radar" }, { name: "radar-b", class: "radar" }, { name: "radar-c", class: "radar", duty_cycled: true },
+    // Tidy up: a boundary node whose far side is not declared, and a console to archive and bring back.
+    { name: "boundary-alpha-relay-01", class: "boundary", role: "relay", peer: "198.51.100.140" },
+    { name: "console-alpha-watch-01", label: "Watch console", class: "console", role: "watch", peer: "198.51.100.130" },
+    // The systems the other tests send to, declared so the declare rule lets their requests through.
+    ...[21, 30, 42, 43, 55, 60, 71, 72, 80, 81, 82, 90, 91].map((n) => ({ name: `console-alpha-ops-${n}`, class: "console", role: "ops", peer: `198.51.100.${n}` }))] },
+    { site_id: "bravo", label: "Bravo", region_id: "north", systems: [] }],
 }));
 cfg.estate_file = estatePath;
 cfg.systems = [{ name: "console-70", label: "Console 70", site: "alpha", class: "console", peer: "198.51.100.70" }];
