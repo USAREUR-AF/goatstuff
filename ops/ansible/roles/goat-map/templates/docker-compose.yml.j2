@@ -86,3 +86,33 @@ services:
         max-size: "10m"
         max-file: "3"
 {% endif %}
+{% if goat_map_rawtap_ports | length > 0 %}
+
+  rawtap:
+    image: "{{ goat_map_image }}"
+    container_name: goat-map-rawtap
+    restart: unless-stopped
+    command: ["python", "-m", "goatmap.rawtap"]
+    network_mode: host
+    cap_add:
+      - NET_RAW
+    environment:
+      RAWTAP_IFACE: "{{ goat_map_rawtap_iface }}"
+      RAWTAP_LISTEN_IP: "{{ goat_map_rawtap_listen_ip }}"
+      RAWTAP_PORTS: "{{ goat_map_rawtap_ports | join(',') }}"
+      RAWTAP_PREFIX: "{{ goat_map_rawtap_prefix }}"
+      RAWTAP_ZENOH_CONFIG: "{{ goat_map_rawtap_zenoh_config }}"
+{% if goat_map_rawtap_volumes | length > 0 %}
+    volumes:
+{% for v in goat_map_rawtap_volumes %}
+      - "{{ v }}"
+{% endfor %}
+{% endif %}
+    mem_limit: 160m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+{% endif %}

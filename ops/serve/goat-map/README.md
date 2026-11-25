@@ -134,6 +134,9 @@ map does not depend on it. Settings are in the module's docstring.
 
 `python -m goatmap.rawtap` is a separate process that publishes each datagram of a
 received feed unchanged. It copies packets and never opens the feed's port.
+The goat-map role runs it as the `rawtap` service when a goatnet sets
+`goat_map_rawtap_ports`; the other `goat_map_rawtap_*` settings are described in
+the role's defaults.
 
 ## Basemap
 

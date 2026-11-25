@@ -39,6 +39,21 @@
       goat_map_fenced is false, which serves track data with no sign-in.
       Set goat_map_allow_unfenced true as well if that is intended.
 
+- name: goat-map | require the raw feed tap's settings when it is on
+  ansible.builtin.assert:
+    that:
+      - goat_map_rawtap_iface | length > 0
+      - goat_map_rawtap_listen_ip | length > 0
+      - goat_map_rawtap_zenoh_config | length > 0
+      - goat_map_rawtap_prefix is match('volatile/')
+      - goat_map_rawtap_ports | select('match', '^[0-9]+:[A-Za-z0-9_.-]+$') | list | length == goat_map_rawtap_ports | length
+    fail_msg: >-
+      goat_map_rawtap_ports is set, so the tap needs goat_map_rawtap_iface,
+      goat_map_rawtap_listen_ip, goat_map_rawtap_zenoh_config, a
+      goat_map_rawtap_prefix under volatile/ (raw datagrams are routed, never
+      stored), and every port entry as "port:feed".
+  when: goat_map_rawtap_ports | length > 0
+
 - name: goat-map | read the fabric leaf subject
   ansible.builtin.command:
     cmd: openssl x509 -noout -subject -in {{ goat_map_cert_dir }}/goat-map-cert.pem
