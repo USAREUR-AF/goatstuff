@@ -1,6 +1,6 @@
 // Copy buttons, and the first screen's stage: real captures of the surfaces, one at a
 // time. Each tab stays up for as long as its capture runs (data-dwell), then the next
-// one shows. The stage pauses while a pointer or keyboard focus is on it and when the
+// one shows. Gallery recordings play while they are on screen. The stage pauses while a pointer or keyboard focus is on it and when the
 // tab is hidden. Reduced motion: no advancing, the panoscope still instead of the GIF
 // (chosen in the HTML), and videos wait for a press of play.
 (function () {
@@ -19,7 +19,7 @@
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var tabs = Array.prototype.slice.call(stage.querySelectorAll('[role="tab"]'));
   var prompt = document.getElementById("prompt-text");
-  var current = 0, timer = null, held = false, started = 0, left = 0;
+  var current = 0, timer = null, held = false, started = 0, left = 0, loaded = document.readyState === "complete";
 
   tabs.forEach(function (t) { var bar = document.createElement("span"); bar.className = "bar"; bar.setAttribute("aria-hidden", "true"); t.appendChild(bar); });
 
@@ -34,7 +34,7 @@
       panel.hidden = !on;
       panel.classList.toggle("on", on);
       videos(panel).forEach(function (v) {
-        if (on && !reduce && getComputedStyle(v).display !== "none") { v.preload = "auto"; v.currentTime = 0; var p = v.play(); if (p) p.catch(function () {}); }
+        if (on && !reduce && loaded && getComputedStyle(v).display !== "none") { v.preload = "auto"; v.currentTime = 0; var p = v.play(); if (p) p.catch(function () {}); }
         else v.pause();
       });
       var bar = t.querySelector(".bar");
@@ -85,8 +85,9 @@
   stage.addEventListener("focusout", function (e) { if (!stage.contains(e.relatedTarget)) release(); });
   document.addEventListener("visibilitychange", function () { if (document.hidden) hold(); else release(); });
 
-  // The playground section's own recording plays only while it is on screen.
-  var own = document.querySelectorAll("#playground video");
+  // Gallery recordings and the playground section's recording play only while on
+  // screen, and only the one for the current color scheme.
+  var loops = document.querySelectorAll("video.loop, #playground video");
   if (!reduce && "IntersectionObserver" in window) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
@@ -94,9 +95,12 @@
         if (en.isIntersecting && getComputedStyle(v).display !== "none") { v.preload = "auto"; var p = v.play(); if (p) p.catch(function () {}); }
         else v.pause();
       });
-    }, { threshold: 0.3 });
-    own.forEach(function (v) { io.observe(v); });
+    }, { threshold: 0.25 });
+    // Start after the page has loaded, so no recording holds up the first paint.
+    var start = function () { loops.forEach(function (v) { io.observe(v); }); };
+    if (document.readyState === "complete") start(); else window.addEventListener("load", start);
   }
 
   show(0, false);
+  if (!loaded) window.addEventListener("load", function () { loaded = true; show(current, false); });
 })();
