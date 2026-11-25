@@ -42,7 +42,7 @@ const cfg = {
       from_format: "cot-xml", outputs: [{ id: "cat062", label: "ASTERIX CAT062", to_format: "asterix-cat062" }] },
   ],
   intake: {
-    listen_ip: "198.51.100.9", ports: [7100, 7101, 7102, 7103], key_prefix: "volatile/slot/stream/feeds-in",
+    listen_ip: "198.51.100.9", ports: [7100, 7101, 7102, 7103, 7104], key_prefix: "volatile/slot/stream/feeds-in",
     formats: [{ id: "mavlink2", label: "MAVLink 2", from_format: "mavlink2", note: "Drone autopilot position" },
               { id: "cot", label: "Cursor on Target (CoT XML)", from_format: "cot-xml" }],
     outputs: [{ id: "cot", label: "CoT XML", to_format: "cot-xml", frame: "newline" },
@@ -69,7 +69,7 @@ writeFileSync(estatePath, JSON.stringify({
     { name: "boundary-alpha-relay-01", class: "boundary", role: "relay", peer: "198.51.100.140" },
     { name: "console-alpha-watch-01", label: "Watch console", class: "console", role: "watch", peer: "198.51.100.130" },
     // The systems the other tests send to, declared so the declare rule lets their requests through.
-    ...[21, 30, 42, 43, 55, 60, 71, 72, 80, 81, 82, 90, 91].map((n) => ({ name: `console-alpha-ops-${n}`, class: "console", role: "ops", peer: `198.51.100.${n}` }))] },
+    ...[21, 30, 42, 43, 44, 55, 60, 71, 72, 80, 81, 82, 90, 91].map((n) => ({ name: `console-alpha-ops-${n}`, class: "console", role: "ops", peer: `198.51.100.${n}` }))] },
     { site_id: "bravo", label: "Bravo", region_id: "north", systems: [] }],
 }));
 cfg.estate_file = estatePath;

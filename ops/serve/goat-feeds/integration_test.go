@@ -77,7 +77,7 @@ INSERT INTO feeds VALUES ('feed-old','fused','cat062','nav-1','198.51.100.1','',
 	}
 	defer s.pool.Close()
 	f, err := s.Get(ctx, "feed-old")
-	if err != nil || f.Direction != "out" || f.Label != "" || f.Status != "active" {
+	if err != nil || f.Direction != "out" || f.Label != "" || f.Status != "active" || f.Sim != nil {
 		t.Fatalf("the first build's row after migration: %+v %v", f, err)
 	}
 	// Opening again is a no-op.
@@ -427,6 +427,117 @@ func TestAPIInLifecycleAndCatalog(t *testing.T) {
 		if tp.(map[string]any)["id"] == "in-"+id {
 			t.Error("a removed received feed is still in the catalog")
 		}
+	}
+}
+
+func TestPGSimStatus(t *testing.T) {
+	s, ctx := freshStore(t), context.Background()
+	f, err := s.Create(ctx, Feed{TopicID: "intake", OutputID: "mavlink2", DestName: "drone-a", DestIP: "198.51.100.42", Port: 7100,
+		Transport: "udp", Purpose: "p", Owner: "o@x", Status: "active", EndAt: time.Now().Add(time.Hour), Direction: "in",
+		Label: "drone-a position"}, "o@x", "")
+	if err != nil || f.Sim != nil {
+		t.Fatalf("a new feed has no declaration: %+v %v", f.Sim, err)
+	}
+	before := f.UpdatedAt
+	got, err := s.SetSim(ctx, f.ID, "simulated", "o@x", "bench run")
+	if err != nil || got.Sim == nil || got.Sim.Mode != "simulated" || got.Sim.SetBy != "o@x" || got.Sim.Note != "bench run" ||
+		time.Since(got.Sim.SetAt) > time.Minute || got.Status != "active" || !got.UpdatedAt.Equal(before) {
+		t.Fatalf("set: %+v %+v %v", got, got.Sim, err)
+	}
+	if _, err := s.SetSim(ctx, "feed-nope", "real", "o@x", ""); err != ErrNotFound {
+		t.Errorf("missing feed: %v", err)
+	}
+	got, _ = s.SetSim(ctx, f.ID, "real", "t@x", "")
+	if got.Sim.Mode != "real" || got.Sim.Note != "" || got.Sim.SetBy != "t@x" {
+		t.Errorf("second declaration replaces the first: %+v", got.Sim)
+	}
+	ev, _ := s.Events(ctx, f.ID, 10)
+	if len(ev) != 4 || ev[0].Action != "sim-status" || ev[0].Detail != "real" || ev[1].Detail != "simulated: bench run" || ev[1].Actor != "o@x" {
+		t.Errorf("audit: %+v", ev)
+	}
+	list, _ := s.List(ctx)
+	if len(list) != 1 || list[0].Sim == nil || list[0].Sim.Mode != "real" {
+		t.Errorf("list carries the declaration: %+v", list)
+	}
+}
+
+func TestAPISimStatus(t *testing.T) {
+	api, sup, _ := apiServer(t)
+	ctx := context.Background()
+	in := map[string]any{"direction": "in", "format_id": "mavlink2", "label": "drone-a position", "dest_name": "drone-a",
+		"dest_ip": "198.51.100.42", "port": 7100, "purpose": "drone position into the picture"}
+	_, f := api.do("POST", "/api/feeds", memberEmail, "DEVELOPER", in, true)
+	id := f["id"].(string)
+	if f["status"] != "pending" || f["sim_status"] != nil {
+		t.Fatalf("member's receive request: %v", f)
+	}
+	acts := f["actions"].([]any)
+	if !strings.Contains(fmt.Sprint(acts), "sim-status") {
+		t.Errorf("the requester's actions lack sim-status: %v", acts)
+	}
+	if code, _ := api.do("POST", "/api/feeds/"+id+"/sim-status", "other@example.test", "DEVELOPER", map[string]any{"mode": "real"}, true); code != 403 {
+		t.Errorf("another member: %d, want 403", code)
+	}
+	if code, _ := api.do("POST", "/api/feeds/"+id+"/sim-status", memberEmail, "DEVELOPER", map[string]any{"mode": "real"}, false); code != 403 {
+		t.Errorf("without X-Goat-Feeds: %d, want 403", code)
+	}
+	// A pending feed can be declared by its requester; it stays pending.
+	code, d := api.do("POST", "/api/feeds/"+id+"/sim-status", memberEmail, "DEVELOPER", map[string]any{"mode": "simulated", "note": "bench run"}, true)
+	if code != 200 || d["status"] != "pending" || d["sim_status"].(map[string]any)["mode"] != "simulated" {
+		t.Fatalf("declare: %d %v", code, d)
+	}
+	if code, _ := api.do("POST", "/api/feeds/"+id+"/approve", tacticalEmail, "TEST-TACTICAL-ADMIN", map[string]any{}, true); code != 200 {
+		t.Fatal("approve")
+	}
+	_ = sup.Converge(ctx)
+	// The catalog topic carries it, and the open document serves it with no sign-in.
+	_, cat := api.do("GET", "/api/catalog", memberEmail, "", nil, false)
+	var topicSim any
+	for _, tp := range cat["topics"].([]any) {
+		if tp.(map[string]any)["id"] == "in-"+id {
+			topicSim = tp.(map[string]any)["sim_status"]
+		}
+	}
+	if topicSim == nil || topicSim.(map[string]any)["set_by"] != memberEmail {
+		t.Errorf("catalog topic: %v", topicSim)
+	}
+	code, doc := api.do("GET", "/api/sim-status", "", "", nil, false)
+	if code != 200 || doc["schema"] != "goat.sim-status/v1" {
+		t.Fatalf("sim-status: %d %v", code, doc)
+	}
+	e := doc["feeds"].(map[string]any)[id].(map[string]any)
+	if e["mode"] != "simulated" || e["note"] != "bench run" || e["label"] != "drone-a position" || e["set_by"] != memberEmail {
+		t.Errorf("sim-status entry: %v", e)
+	}
+	if at, ok := e["set_at"].(float64); !ok || time.Since(time.Unix(int64(at), 0)) > time.Minute {
+		t.Errorf("set_at: %v", e["set_at"])
+	}
+	// A tactical admin changes it; the audit log records both with their emails.
+	if code, _ := api.do("POST", "/api/feeds/"+id+"/sim-status", tacticalEmail, "TEST-TACTICAL-ADMIN", map[string]any{"mode": "real"}, true); code != 200 {
+		t.Fatal("tactical admin declares")
+	}
+	_, audit := api.do("GET", "/api/audit", memberEmail, "", nil, false)
+	n := 0
+	for _, ev := range audit["events"].([]any) {
+		m := ev.(map[string]any)
+		if m["action"] == "sim-status" {
+			n++
+			if m["actor"] != memberEmail && m["actor"] != tacticalEmail {
+				t.Errorf("audit actor: %v", m)
+			}
+		}
+	}
+	if n != 2 {
+		t.Errorf("sim-status audit events: %d, want 2", n)
+	}
+	// Removed: no longer declarable, no longer served.
+	_, _ = api.do("POST", "/api/feeds/"+id+"/remove", tacticalEmail, "TEST-TACTICAL-ADMIN", map[string]any{}, true)
+	if code, _ := api.do("POST", "/api/feeds/"+id+"/sim-status", tacticalEmail, "TEST-TACTICAL-ADMIN", map[string]any{"mode": "real"}, true); code != 403 {
+		t.Errorf("declare on a removed feed: %d, want 403", code)
+	}
+	_, doc = api.do("GET", "/api/sim-status", "", "", nil, false)
+	if len(doc["feeds"].(map[string]any)) != 0 {
+		t.Errorf("a removed feed is still served: %v", doc)
 	}
 }
 

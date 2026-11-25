@@ -45,6 +45,10 @@ CREATE INDEX IF NOT EXISTS feed_events_feed ON feed_events(feed_id, at);
 CREATE INDEX IF NOT EXISTS feeds_status ON feeds(status);
 ALTER TABLE feeds ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'out';
 ALTER TABLE feeds ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT '';
+ALTER TABLE feeds ADD COLUMN IF NOT EXISTS sim_mode TEXT NOT NULL DEFAULT '';
+ALTER TABLE feeds ADD COLUMN IF NOT EXISTS sim_set_at TIMESTAMPTZ;
+ALTER TABLE feeds ADD COLUMN IF NOT EXISTS sim_set_by TEXT NOT NULL DEFAULT '';
+ALTER TABLE feeds ADD COLUMN IF NOT EXISTS sim_note TEXT NOT NULL DEFAULT '';
 `
 
 // Live states hold a destination port; the others release it.
@@ -72,6 +76,9 @@ type Feed struct {
 	// at DestIP on this core node's Port and publishes it as Label.
 	Direction string `json:"direction"`
 	Label     string `json:"label"`
+	// Sim is the out-of-band real-or-simulated declaration for a received feed (sim_status.go);
+	// nil until someone declares it. It changes nothing that is received or sent.
+	Sim *SimStatus `json:"sim_status"`
 }
 
 type Event struct {
@@ -83,8 +90,12 @@ type Event struct {
 	Detail string    `json:"detail"`
 }
 
-const feedCols = `id, topic_id, output_id, dest_name, dest_ip, dest_peer_id, port, transport, purpose, owner,
+// insertCols are the columns a new feed is written with; feedCols adds the declaration, which
+// starts empty and is written only by SetSim.
+const insertCols = `id, topic_id, output_id, dest_name, dest_ip, dest_peer_id, port, transport, purpose, owner,
   status, created_at, updated_at, decided_by, decided_at, decision_note, end_at, direction, label`
+
+const feedCols = insertCols + `, sim_mode, sim_set_at, sim_set_by, sim_note`
 
 // Registry is what the server and supervisor need from storage.
 type Registry interface {
@@ -96,6 +107,8 @@ type Registry interface {
 	Transition(ctx context.Context, id, status, actor, action, note string, decision bool, endAt *time.Time) (Feed, error)
 	Events(ctx context.Context, feedID string, limit int) ([]Event, error)
 	ExpireDue(ctx context.Context, now time.Time) ([]string, error)
+	// SetSim records a real-or-simulated declaration on a feed and its audit event.
+	SetSim(ctx context.Context, id, mode, actor, note string) (Feed, error)
 	Ping(ctx context.Context) error
 }
 
@@ -123,11 +136,16 @@ func newID() string {
 
 func scanFeed(row pgx.Row) (Feed, error) {
 	var f Feed
+	var simMode, simBy, simNote string
+	var simAt *time.Time
 	err := row.Scan(&f.ID, &f.TopicID, &f.OutputID, &f.DestName, &f.DestIP, &f.DestPeerID, &f.Port, &f.Transport,
 		&f.Purpose, &f.Owner, &f.Status, &f.CreatedAt, &f.UpdatedAt, &f.DecidedBy, &f.DecidedAt, &f.DecisionNote, &f.EndAt,
-		&f.Direction, &f.Label)
+		&f.Direction, &f.Label, &simMode, &simAt, &simBy, &simNote)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return f, ErrNotFound
+	}
+	if err == nil && simMode != "" && simAt != nil {
+		f.Sim = &SimStatus{Mode: simMode, SetAt: *simAt, SetBy: simBy, Note: simNote}
 	}
 	return f, err
 }
@@ -139,7 +157,7 @@ func (s *PGStore) Create(ctx context.Context, f Feed, actor, detail string) (Fee
 		return Feed{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	_, err = tx.Exec(ctx, `INSERT INTO feeds (`+feedCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now(),$12,$13,$14,$15,$16,$17)`,
+	_, err = tx.Exec(ctx, `INSERT INTO feeds (`+insertCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now(),$12,$13,$14,$15,$16,$17)`,
 		f.ID, f.TopicID, f.OutputID, f.DestName, f.DestIP, f.DestPeerID, f.Port, f.Transport, f.Purpose, f.Owner,
 		f.Status, f.DecidedBy, f.DecidedAt, f.DecisionNote, f.EndAt, f.Direction, f.Label)
 	if err != nil {
@@ -281,6 +299,32 @@ func (s *PGStore) ExpireDue(ctx context.Context, now time.Time) ([]string, error
 		}
 	}
 	return ids, nil
+}
+
+// SetSim writes the declaration and its audit event in one transaction. It leaves the feed's
+// state, its delivery and updated_at as they are: the declaration changes nothing sent.
+func (s *PGStore) SetSim(ctx context.Context, id, mode, actor, note string) (Feed, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Feed{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `UPDATE feeds SET sim_mode=$2, sim_set_at=now(), sim_set_by=$3, sim_note=$4 WHERE id=$1`,
+		id, mode, actor, note)
+	if err != nil {
+		return Feed{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return Feed{}, ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO feed_events (feed_id, at, actor, action, detail) VALUES ($1, now(), $2, 'sim-status', $3)`,
+		id, actor, simEventDetail(mode, note)); err != nil {
+		return Feed{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Feed{}, err
+	}
+	return s.Get(ctx, id)
 }
 
 func (s *PGStore) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }

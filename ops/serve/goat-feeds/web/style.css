@@ -159,7 +159,8 @@ a.card:hover { border-color: var(--accent); }
 pre.log, pre.cmd { font-family: var(--mono); font-size: 12px; background: var(--soft); border-radius: 6px; padding: 10px;
                    overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 12px; max-height: 360px; }
 .timeline { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.timeline li { display: grid; grid-template-columns: 150px 1fr; gap: 10px; font-size: 14px; }
+.timeline li { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.timeline li > span { min-width: 0; overflow-wrap: anywhere; }
 .timeline .when { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 table.audit { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -172,7 +173,7 @@ table.audit th { color: var(--muted); font-weight: 600; font-size: 12px; }
   .who { margin-left: 0; text-align: left; width: 100%; }
   .card { grid-template-columns: 1fr; } .card .side { text-align: left; }
   .stats { grid-template-columns: repeat(2, 1fr); }
-  .timeline li { grid-template-columns: 1fr; }
+  .timeline li { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 /* receive side */
@@ -252,3 +253,22 @@ label.inline select { min-width: 0; max-width: 100%; flex: 1; }
                                border-radius: 4px; padding: 3px 5px; margin-left: 8px; color: var(--muted); vertical-align: 1px; }
 details.group.archived { border-style: dashed; }
 .fnode.arch rect { stroke-dasharray: 4 3; }
+
+/* Real or simulated: a received feed's declaration, shown beside the data. Simulated is told
+   apart by weight and a dashed edge, never by color; not declared reads muted. */
+.simline { overflow-wrap: anywhere; }
+.simline.none { color: var(--muted); }
+.simline.simulated { color: var(--ink); font-weight: 600; }
+.simhead { margin: 6px 0 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; max-width: 70ch; font-size: 14px; }
+.simhead.simulated { border: 1px dashed var(--ink); border-left-width: 5px; }
+.simhead.real { border-color: var(--accent); }
+.sim-box fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; min-width: 0; }
+.sim-box legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
+.sim-box > label { font-weight: 600; font-size: 14px; }
+.sim-opt { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line);
+           border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
+.sim-opt:has(input:checked) { border-color: var(--accent); background: var(--soft); }
+.sim-opt input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+.sim-opt b { margin-right: 6px; }
+.sim-result { margin: 0; font-size: 13px; color: var(--muted); }
+.sim-box .btn { min-height: 44px; }

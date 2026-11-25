@@ -1,7 +1,7 @@
 ---
 # The one host per goatnet that runs goat-feeds. Required.
 goat_feeds_host: ""
-goat_feeds_version: "0.4.0"
+goat_feeds_version: "0.5.0"
 # The linux binary on the controller (built by CI, or `go build` for a trial).
 # The linux binary to install. "{arch}" is replaced by amd64 or arm64 from the host's
 # architecture, so one value serves a mixed fleet: e.g. .../dist/goat-feeds-0.2.0-linux-{arch}

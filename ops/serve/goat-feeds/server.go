@@ -42,6 +42,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /", http.FileServer(http.FS(static)))
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /metrics", s.metrics)
+	mux.HandleFunc("GET /api/sim-status", s.simStatus) // no sign-in: read-only, holds no secret
 	mux.HandleFunc("GET /api/me", s.auth(s.me))
 	mux.HandleFunc("GET /api/catalog", s.auth(s.catalog))
 	mux.HandleFunc("GET /api/intake", s.auth(s.intake))
@@ -176,7 +177,13 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, v *Viewer) {
 }
 
 func (s *Server) catalog(w http.ResponseWriter, r *http.Request, v *Viewer) {
-	writeJSON(w, 200, map[string]any{"topics": s.cfg.AllTopics()})
+	topics := s.cfg.AllTopics()
+	feeds, err := s.reg.List(r.Context(), liveStates...)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"topics": withSims(topics, publishedSims(feeds))})
 }
 
 // intake describes the receive side: where systems send, which ports are free, which standards.
@@ -245,6 +252,9 @@ type feedOut struct {
 	Sources  []SourceRef `json:"sources,omitempty"`
 	Facets   Facets      `json:"facets"`
 	Manifest string      `json:"manifest,omitempty"`
+	// A feed that sends a received feed out: that feed's real-or-simulated declaration
+	// (feed page only).
+	SourceSim *SimStatus `json:"source_sim_status,omitempty"`
 }
 
 func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
@@ -283,6 +293,13 @@ func (s *Server) decorate(f Feed, v *Viewer, detail bool) feedOut {
 	o.Facets = facetsFor(s.estate(), &o, o.Sources, s.peerByIP(f.DestIP), s.cfg.GroupPrefix)
 	if detail {
 		o.Delivery = d
+		if src := strings.TrimPrefix(f.TopicID, "in-"); src != f.TopicID {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			if sf, err := s.reg.Get(ctx, src); err == nil {
+				o.SourceSim = sf.Sim
+			}
+			cancel()
+		}
 	} else if d != nil {
 		d.Lines, d.Command = nil, nil
 		o.Delivery = d
@@ -430,6 +447,7 @@ func (s *Server) getFeed(w http.ResponseWriter, r *http.Request, v *Viewer) {
 type actionBody struct {
 	Note string `json:"note"`
 	Days int    `json:"days"`
+	Mode string `json:"mode"` // sim-status: real | simulated | unknown
 }
 
 func (s *Server) feedAction(w http.ResponseWriter, r *http.Request, v *Viewer) {
@@ -445,6 +463,10 @@ func (s *Server) feedAction(w http.ResponseWriter, r *http.Request, v *Viewer) {
 	note := strings.TrimSpace(body.Note)
 	if len(note) > 500 {
 		note = note[:500]
+	}
+	if action == simActionName && !Can(v, action, f) {
+		writeErr(w, 403, fmt.Sprintf("You cannot say whether this feed is real or simulated: only its requester or an admin can, on a received feed that is live (it is %s, and you are a %s).", f.Status, v.Role))
+		return
 	}
 	if !Can(v, action, f) {
 		writeErr(w, 403, fmt.Sprintf("You cannot %s this feed (it is %s, and you are a %s).", action, f.Status, v.Role))
@@ -481,6 +503,13 @@ func (s *Server) feedAction(w http.ResponseWriter, r *http.Request, v *Viewer) {
 			status = "active"
 		}
 		out, err = s.reg.Transition(ctx, f.ID, status, v.Email, "renew", fmt.Sprintf("%d days. %s", days, note), false, &end)
+	case simActionName:
+		mode, simNote, verr := ValidateSim(body.Mode, body.Note)
+		if verr != nil {
+			s.fail(w, verr)
+			return
+		}
+		out, err = s.reg.SetSim(ctx, f.ID, mode, v.Email, simNote)
 	case "check":
 		res := checkDestination(ctx, f)
 		if f.Direction == "in" {

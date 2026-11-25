@@ -11,6 +11,9 @@ test.beforeAll(async ({ request }) => {
     dest_ip: "198.51.100.90", port: freshPort(), purpose: "quality checks, out" })).id;
   inId = (await post(request, "tactical", "/api/feeds", { direction: "in", format_id: "cot", label: "Quality receive",
     dest_name: "quality-in", dest_ip: "198.51.100.91", port: 7103, purpose: "quality checks, in" })).id;
+  // A declaration with a long unbroken note, so the feed page, list and catalog are checked with it.
+  await post(request, "tactical", `/api/feeds/${inId}/sim-status`, { mode: "simulated",
+    note: "bench-run-" + "x".repeat(200) + " the source team says the autopilot is in simulation" });
 });
 
 const pages = () => [
