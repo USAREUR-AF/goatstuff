@@ -24,3 +24,13 @@ def test_what_is_left_out():
     rows = [ac(lat=60), ac(seen_pos=31), ac(alt_baro="ground"), ac(nic=0), ac(lat=None), ac(hex=""), ac(seen_pos=None)]
     assert adsb.tracks({"ac": rows}, BOX) == []
     assert adsb.tracks({}, BOX) == []
+
+
+def test_pace_follows_the_quota():
+    day = {"x-ratelimit-remaining": "480", "x-ratelimit-reset": "86400"}
+    assert adsb.next_wait(5, 200, day) == 180.0
+    assert adsb.next_wait(5, 200, {"x-ratelimit-remaining": "499, 500;w=86400", "x-ratelimit-reset": "100"}) == 5
+    assert adsb.next_wait(5, 200, {"x-ratelimit-remaining": "0", "x-ratelimit-reset": "3600"}) == 3600
+    assert adsb.next_wait(5, 200, {}) == 5
+    assert adsb.next_wait(5, 429, {"Retry-After": "900"}) == 900
+    assert adsb.next_wait(5, 429, {}) == 600

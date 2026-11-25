@@ -60,6 +60,19 @@ goat_map_rawtap_prefix: ""
 goat_map_rawtap_zenoh_config: ""
 goat_map_rawtap_volumes: []
 
+# The ADS-B publisher (goatmap.adsb): civil aircraft from a public aggregator
+# onto one trackset key. Off while goat_map_adsb_url is empty. It paces itself
+# to the quota the aggregator states. Mount the zenoh client config and its
+# certificate with goat_map_adsb_volumes ("host:container:ro").
+goat_map_adsb_url: ""
+goat_map_adsb_box: ""
+goat_map_adsb_key: ""
+goat_map_adsb_zenoh_config: ""
+goat_map_adsb_period_s: 5
+goat_map_adsb_repeat_s: 60
+goat_map_adsb_hold_s: 300
+goat_map_adsb_volumes: []
+
 # Files from the deploying tree that the public image does not carry: basemap
 # extracts and the estate (sites/regions) file. Paths are relative to the tree
 # root (the directory above ops/). Basemaps mount at /app/web/basemap/<name>,

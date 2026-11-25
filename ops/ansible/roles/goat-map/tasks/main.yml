@@ -54,6 +54,19 @@
       stored), and every port entry as "port:feed".
   when: goat_map_rawtap_ports | length > 0
 
+- name: goat-map | require the ADS-B publisher's settings when it is on
+  ansible.builtin.assert:
+    that:
+      - goat_map_adsb_box.split(',') | length == 4
+      - goat_map_adsb_key | length > 0
+      - goat_map_adsb_zenoh_config | length > 0
+      - goat_map_adsb_url is match('https://')
+    fail_msg: >-
+      goat_map_adsb_url is set, so the publisher needs an https URL,
+      goat_map_adsb_box as lat0,lon0,lat1,lon1, goat_map_adsb_key and
+      goat_map_adsb_zenoh_config.
+  when: goat_map_adsb_url | length > 0
+
 - name: goat-map | read the fabric leaf subject
   ansible.builtin.command:
     cmd: openssl x509 -noout -subject -in {{ goat_map_cert_dir }}/goat-map-cert.pem
