@@ -9,8 +9,17 @@ aircraft inside ADSB_BOX, so the request does not state the area of interest.
 A civil aircraft carries CoT type a-n-A-C-F, which the map classes commercial.
 One the aggregator lists as military is a-u-A-M-F: unknown.
 
-Environment: ADSB_URL, ADSB_BOX=lat0,lon0,lat1,lon1, ADSB_KEY, ADSB_PERIOD_S,
-ADSB_ZENOH_CONFIG (a zenoh client config file), ADSB_DRY_RUN=1 to print.
+It paces itself to the aggregator's quota: when the response carries
+x-ratelimit-remaining and x-ratelimit-reset it spreads the remaining requests
+over the time left, and after a 429 it waits for Retry-After. Between requests
+it repeats the last aircraft every ADSB_REPEAT_S, unchanged and with their
+original report time, so the map keeps them while the next request is due; it
+stops repeating them ADSB_HOLD_S after the last good response.
+
+Environment: ADSB_URL, ADSB_BOX=lat0,lon0,lat1,lon1, ADSB_KEY, ADSB_PERIOD_S
+(the shortest interval between requests), ADSB_REPEAT_S (default 60),
+ADSB_HOLD_S (default 300), ADSB_ZENOH_CONFIG (a zenoh client config file),
+ADSB_DRY_RUN=1 to print.
 """
 
 from __future__ import annotations
@@ -69,12 +78,33 @@ def tracks(body: dict[str, Any], box: tuple[float, float, float, float]) -> list
     return out[:MAX_TRACKS]
 
 
+def next_wait(period: float, status: int, headers: Any) -> float:
+    """Seconds until the next request, from the quota the response states."""
+    def num(name: str) -> float | None:
+        v = (headers.get(name) or "").split(",")[0].strip()
+        try:
+            return float(v)
+        except ValueError:
+            return None
+
+    if status == 429:
+        return max(period, num("Retry-After") or num("x-ratelimit-reset") or 600.0)
+    remaining, reset = num("x-ratelimit-remaining"), num("x-ratelimit-reset")
+    if remaining is None or reset is None:
+        return period
+    if remaining < 1:
+        return max(period, reset)
+    return max(period, reset / remaining)
+
+
 async def run() -> None:
     import aiohttp
 
     url, key = os.environ["ADSB_URL"], os.environ["ADSB_KEY"]
     box = tuple(float(x) for x in os.environ["ADSB_BOX"].split(","))
     period = max(2.0, float(os.environ.get("ADSB_PERIOD_S", "5")))
+    repeat = max(5.0, float(os.environ.get("ADSB_REPEAT_S", "60")))
+    hold = float(os.environ.get("ADSB_HOLD_S", "300"))
     put = None
     if os.environ.get("ADSB_DRY_RUN") != "1":
         import zenoh
@@ -83,22 +113,36 @@ async def run() -> None:
         pub = session.declare_publisher(key, priority=zenoh.Priority.BACKGROUND,
                                         congestion_control=zenoh.CongestionControl.DROP)
         put = pub.put
-    wait, n = period, 0
+    loop = asyncio.get_running_loop()
+    last: bytes | None = None
+    last_at = due = 0.0
+    n, backoff = 0, period
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as http:
         while True:
-            try:
-                async with http.get(url, headers={"User-Agent": "goat-map-adsb"}) as r:
-                    r.raise_for_status()
-                    ts = tracks(await r.json(content_type=None), box)
-                body = json.dumps({"schema": "goat.geo.trackset.v1", "tracks": ts}).encode()
-                put(body) if put else print(body.decode()[:2000], flush=True)
-                if n % 60 == 0:
-                    LOG.info("published %d aircraft, %d bytes", len(ts), len(body))
-                n, wait = n + 1, period
-            except Exception as exc:  # the aggregator is best effort: slow down and go on
-                wait = min(120.0, wait * 2)
-                LOG.warning("no update (%s), next try in %.0f s", exc, wait)
-            await asyncio.sleep(wait)
+            now = loop.time()
+            if now >= due:
+                try:
+                    async with http.get(url, headers={"User-Agent": "goat-map-adsb"}) as r:
+                        wait = next_wait(period, r.status, r.headers)
+                        if r.status == 429:
+                            LOG.warning("aggregator quota spent, next request in %.0f s", wait)
+                        else:
+                            r.raise_for_status()
+                            ts = tracks(await r.json(content_type=None), box)
+                            last = json.dumps({"schema": "goat.geo.trackset.v1", "tracks": ts}).encode()
+                            last_at = now
+                            put(last) if put else print(last.decode()[:2000], flush=True)
+                            if n % 20 == 0:
+                                LOG.info("published %d aircraft, next request in %.0f s", len(ts), wait)
+                            n, backoff = n + 1, period
+                    due = now + wait
+                except Exception as exc:  # the aggregator is best effort: slow down and go on
+                    backoff = min(600.0, backoff * 2)
+                    due = now + backoff
+                    LOG.warning("no update (%s), next try in %.0f s", exc, backoff)
+            elif last is not None and now - last_at <= hold:
+                put(last) if put else None
+            await asyncio.sleep(max(0.5, min(repeat, due - loop.time())))
 
 
 if __name__ == "__main__":

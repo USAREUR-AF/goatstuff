@@ -128,12 +128,16 @@ source is read only while that key has been silent for 30 seconds.
 
 `python -m goatmap.adsb` is a separate publisher: civil aircraft from a public ADS-B
 aggregator (adsb.lol data is ODbL) as one trackset key the map subscribes to. The
-map does not depend on it. Settings are in the module's docstring.
+map does not depend on it. Settings are in the module's docstring; the goat-map
+role runs it as the `adsb` service when a goatnet sets `goat_map_adsb_url`.
 
 ## Raw feeds
 
 `python -m goatmap.rawtap` is a separate process that publishes each datagram of a
 received feed unchanged. It copies packets and never opens the feed's port.
+The goat-map role runs it as the `rawtap` service when a goatnet sets
+`goat_map_rawtap_ports`; the other `goat_map_rawtap_*` settings are described in
+the role's defaults.
 
 ## Basemap
 

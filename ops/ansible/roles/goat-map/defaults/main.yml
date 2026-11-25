@@ -47,6 +47,32 @@ goat_map_synth_radius_km: 60
 goat_map_synth_tracks: 6
 goat_map_synth_seed: 42
 
+# The raw feed tap (goatmap.rawtap): copies received UDP datagrams, byte for
+# byte, to `<prefix>/<feed>` without opening the ports. Off while the port list
+# is empty. Each port entry is "port:feed". It reads the interface with
+# CAP_NET_RAW on the host network and opens its fabric session from
+# goat_map_rawtap_zenoh_config, a path inside the container; mount that file
+# and the certificate it names with goat_map_rawtap_volumes ("host:container:ro").
+goat_map_rawtap_ports: []
+goat_map_rawtap_iface: ""
+goat_map_rawtap_listen_ip: ""
+goat_map_rawtap_prefix: ""
+goat_map_rawtap_zenoh_config: ""
+goat_map_rawtap_volumes: []
+
+# The ADS-B publisher (goatmap.adsb): civil aircraft from a public aggregator
+# onto one trackset key. Off while goat_map_adsb_url is empty. It paces itself
+# to the quota the aggregator states. Mount the zenoh client config and its
+# certificate with goat_map_adsb_volumes ("host:container:ro").
+goat_map_adsb_url: ""
+goat_map_adsb_box: ""
+goat_map_adsb_key: ""
+goat_map_adsb_zenoh_config: ""
+goat_map_adsb_period_s: 5
+goat_map_adsb_repeat_s: 60
+goat_map_adsb_hold_s: 300
+goat_map_adsb_volumes: []
+
 # Files from the deploying tree that the public image does not carry: basemap
 # extracts and the estate (sites/regions) file. Paths are relative to the tree
 # root (the directory above ops/). Basemaps mount at /app/web/basemap/<name>,
