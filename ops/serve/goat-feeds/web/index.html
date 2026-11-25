@@ -146,6 +146,18 @@
       <textarea id="note-input" rows="2"></textarea>
       <div class="row"><button class="btn primary" id="note-ok" type="button">Confirm</button><button class="btn" id="note-cancel" type="button">Cancel</button></div>
     </div>
+    <form class="note-box sim-box" id="sim-box" hidden>
+      <fieldset>
+        <legend>Is the source sending real or simulated data?</legend>
+        <label class="sim-opt"><input type="radio" name="sim-mode" value="real"><span><b>Real</b> The source sends real data.</span></label>
+        <label class="sim-opt"><input type="radio" name="sim-mode" value="simulated"><span><b>Simulated</b> The source runs a simulation.</span></label>
+        <label class="sim-opt"><input type="radio" name="sim-mode" value="unknown"><span><b>Unknown</b> We do not know yet.</span></label>
+      </fieldset>
+      <label for="sim-note">Note (optional): who told you, or what the source is doing</label>
+      <textarea id="sim-note" rows="2" maxlength="300"></textarea>
+      <p class="sim-result" id="sim-result">This is shown beside the data and to other systems. It does not change the data that is received or sent.</p>
+      <div class="row"><button class="btn primary" id="sim-ok" type="submit">Save</button><button class="btn" id="sim-cancel" type="button">Cancel</button></div>
+    </form>
     <div class="grid2">
       <div class="panel">
         <h2 id="flow-title">Delivery</h2>

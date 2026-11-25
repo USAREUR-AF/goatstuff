@@ -62,7 +62,16 @@ const dest = (f) => `${f.dest_name} · ${f.dest_ip}:${f.port}/${f.transport}`;
 const isIn = (f) => f.direction === "in";
 const isArchived = (f) => !!(f.facets && f.facets.archived);
 const title = (f) => isIn(f) ? `${f.topic_label}  ←  ${f.dest_name}` : `${f.topic_label || f.topic_id}  →  ${f.dest_name}`;
-const verb = { approve: "Approve", decline: "Decline", pause: "Pause", resume: "Resume", renew: "Renew", remove: "Remove", check: "Check destination" };
+const verb = { approve: "Approve", decline: "Decline", pause: "Pause", resume: "Resume", renew: "Renew", remove: "Remove",
+  "sim-status": "Real or simulated", check: "Check destination" };
+// Real or simulated: what a received feed's own team declares its source is doing. Shown beside
+// the data; it never changes what is sent. One sentence, the same everywhere it appears.
+const simWord = { real: "real", simulated: "simulated", unknown: "unknown" };
+function simText(sm) {
+  if (!sm || !sm.mode) return "Not declared";
+  return `Declared ${simWord[sm.mode] || sm.mode} by ${sm.set_by}, ${fmtTime(sm.set_at)}` + (sm.note ? `: ${sm.note}` : "");
+}
+const simLine = (sm, prefix = "") => el("div", { class: "line2 simline" + (sm && sm.mode ? " " + sm.mode : " none"), text: prefix + simText(sm) });
 
 // ---------- routing ----------
 function route() {
@@ -237,6 +246,7 @@ function feedCard(f) {
     el("div", { class: "main" },
       el("div", { class: "line1" }, el("span", { class: "dir", text: isIn(f) ? "IN" : "OUT" }), title(f)),
       el("div", { class: "line2", text: line2 }),
+      isIn(f) ? simLine(f.sim_status, "Real or simulated: ") : null,
       facetLine(f)),
     el("div", { class: "side" }, cls(f.data_class), el("br"), side));
 }
@@ -666,6 +676,7 @@ function stepTopic(r) {
       onclick: () => { r.topic = t; r.output = t.outputs.length === 1 ? t.outputs[0] : null; renderStep(); } },
       el("span", { class: "t" }, t.label, cls(t.data_class)),
       t.description ? el("span", { class: "d", text: t.description }) : null,
+      t.kind === "published" ? el("span", { class: "d simline" + (t.sim_status ? " " + t.sim_status.mode : " none"), text: "Real or simulated: " + simText(t.sim_status) }) : null,
       el("span", { class: "d" }, "Offered as: ", t.outputs.map((o) => o.label).join(", ")),
       el("span", { class: "d mono", text: t.key })))));
   }
@@ -818,6 +829,8 @@ async function showFeed(main, id) {
     renderFeed(d.feed, d.events, (action) => { pending = action; askNote(d.feed, action); });
   };
   const askNote = (f, action) => {
+    if (action === "sim-status") return askSim(f);
+    $("#sim-box").hidden = true;
     const box = $("#note-box");
     if (["approve", "decline", "remove", "pause", "renew"].includes(action)) {
       box.hidden = false;
@@ -841,6 +854,28 @@ async function showFeed(main, id) {
     doAction(d.feed, pending, $("#note-input").value);
   });
   $("#note-cancel").addEventListener("click", () => ($("#note-box").hidden = true));
+  // Real or simulated: choose one of three, an optional note; it applies at once.
+  const askSim = (f) => {
+    $("#note-box").hidden = true;
+    const box = $("#sim-box");
+    const cur = f.sim_status && f.sim_status.mode;
+    for (const r of box.querySelectorAll("input[name=sim-mode]")) r.checked = r.value === cur;
+    $("#sim-note").value = (f.sim_status && f.sim_status.note) || "";
+    box.hidden = false;
+    (box.querySelector("input[name=sim-mode]:checked") || box.querySelector("input[name=sim-mode]")).focus();
+  };
+  $("#sim-box").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const picked = $("#sim-box").querySelector("input[name=sim-mode]:checked");
+    if (!picked) { toast("Choose real, simulated or unknown."); return; }
+    try {
+      await api(`/api/feeds/${id}/sim-status`, { body: { mode: picked.value, note: $("#sim-note").value } });
+      toast(`Saved: declared ${simWord[picked.value]}.`);
+      $("#sim-box").hidden = true;
+      await load();
+    } catch (e) { toast(e.message); }
+  });
+  $("#sim-cancel").addEventListener("click", () => ($("#sim-box").hidden = true));
   $("#check-btn").addEventListener("click", async () => {
     const out = $("#check-result");
     out.textContent = "Checking…";
@@ -858,12 +893,15 @@ async function showFeed(main, id) {
 }
 function renderFeed(f, events, onAction) {
   const fc = f.facets || {};
-  $("#feed-head").replaceChildren(
+  $("#feed-head").replaceChildren(...[
     el("h1", { text: title(f) }),
     fc.boundary ? el("p", { class: "why boundary", text: fc.boundary }) : null,
     fc.archived ? el("p", { class: "why", text: fc.archive_note }) : null,
     el("div", { class: "sigs" }, ...signals(f)),
-    el("div", { class: "meta" }, cls(f.data_class), el("span", { class: "mono", text: f.id })));
+    el("div", { class: "meta" }, cls(f.data_class), el("span", { class: "mono", text: f.id })),
+    isIn(f) ? el("p", { class: "simhead simline" + (f.sim_status ? " " + f.sim_status.mode : " none"), id: "sim-head", text: "Real or simulated: " + simText(f.sim_status) }) : null,
+    !isIn(f) && f.source_sim_status ? el("p", { class: "simhead simline " + f.source_sim_status.mode, id: "sim-head", text: "Its source, real or simulated: " + simText(f.source_sim_status) }) : null,
+  ].filter(Boolean));
   $("#feed-actions").replaceChildren(...f.actions.filter((a) => a !== "check").map((a) =>
     el("button", { type: "button", class: "btn" + (a === "approve" ? " primary" : ""), onclick: () => onAction(a), text: verb[a] })));
   const d = f.delivery;
@@ -890,6 +928,7 @@ function renderFeed(f, events, onAction) {
     ...kv("Owner", f.owner),
     ...kv("Purpose", f.purpose),
     ...kv("State", f.status),
+    ...(isIn(f) ? kv("Real or simulated", simText(f.sim_status)) : []),
     ...kv("Decided by", f.decided_by ? `${f.decided_by}${f.decision_note ? " — " + f.decision_note : ""}` : "—"),
     ...kv("Requested", fmtTime(f.created_at)),
     ...kv("Ends", `${fmtTime(f.end_at)} (${daysLeft(f.end_at)})`));

@@ -140,6 +140,18 @@ func (m *memReg) ExpireDue(ctx context.Context, now time.Time) ([]string, error)
 	return ids, nil
 }
 func (m *memReg) Ping(context.Context) error { return nil }
+func (m *memReg) SetSim(_ context.Context, id, mode, actor, note string) (Feed, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, ok := m.feeds[id]
+	if !ok {
+		return f, ErrNotFound
+	}
+	f.Sim = &SimStatus{Mode: mode, SetAt: time.Now(), SetBy: actor, Note: note}
+	m.feeds[id] = f
+	m.events = append(m.events, Event{FeedID: id, Actor: actor, Action: "sim-status", Detail: simEventDetail(mode, note)})
+	return f, nil
+}
 
 func req(h map[string]string) *http.Request {
 	r, _ := http.NewRequest("GET", "/", nil)

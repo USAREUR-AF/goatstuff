@@ -33,6 +33,9 @@ type Topic struct {
 	// Where the topic's data comes from (facets, flow view): site and system as named in
 	// the estate.
 	Sources []SourceRef `json:"sources,omitempty"`
+	// A received feed's real-or-simulated declaration (sim_status.go), so whoever requests
+	// it out sees it.
+	SimStatus *SimStatus `json:"sim_status,omitempty"`
 }
 
 func (t *Topic) Output(id string) *Output {

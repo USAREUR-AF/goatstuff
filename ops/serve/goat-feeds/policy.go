@@ -90,13 +90,17 @@ func Can(v *Viewer, action string, f Feed) bool {
 		return (v.IsAdmin || own) && f.Status != "removed"
 	case "renew":
 		return v.IsAdmin && (f.Status == "active" || f.Status == "paused" || f.Status == "expired")
+	case simActionName:
+		// Real or simulated: a received feed's requester or an admin declares what its source
+		// is doing, while the feed is live. It changes nothing sent, so it needs no approval.
+		return f.Direction == "in" && (v.IsAdmin || own) && (f.Status == "pending" || f.Status == "active" || f.Status == "paused")
 	case "check":
 		return true
 	}
 	return false
 }
 
-var allActions = []string{"approve", "decline", "pause", "resume", "renew", "remove", "check"}
+var allActions = []string{"approve", "decline", "pause", "resume", "renew", "remove", simActionName, "check"}
 
 func ActionsFor(v *Viewer, f Feed) []string {
 	out := []string{}

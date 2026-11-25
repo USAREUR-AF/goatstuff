@@ -20,6 +20,32 @@ A tactical admin for the site or a platform admin switches either kind on; anyon
 request waits for one of them. The receive ports must be reachable from the sending systems
 on the mesh (a warrant rule).
 
+## Real or simulated (0.5.0)
+
+Some sources (a drone autopilot sending MAVLink 2, for example) can run a simulation and send it
+in the same form as real data, with no flag a receiver can read. For a received (IN) feed, the
+team operating the source declares what it is doing: **real**, **simulated** or **unknown**, with
+an optional note (up to 300 characters). The feed stays labelled real data; the declaration never
+changes what is received, published or sent. It is shown beside the data and read by other
+systems.
+
+- **Who:** the feed's requester, a tactical admin or a platform admin, while the feed is waiting,
+  on or paused. It applies at once (no approval: nothing sent changes). Every declaration is in
+  the audit log as `sim-status` with the person's email.
+- **Where it shows:** the feed card ("Real or simulated: Declared simulated by <who>, <when>:
+  <note>", or "Not declared"), the feed page, the received feed's catalog topic (so whoever
+  requests it out sees it), and the page of any feed that sends it out.
+- **For other systems:** `GET /api/sim-status`, read-only and with no sign-in (the fence lets
+  this one path through; it holds no secret and the service is mesh-only), in the boundary
+  node's document shape (`goat.sim-status/v1`, goatcore `ops/simple-bn/sim_status.py`):
+  `{"schema":"goat.sim-status/v1","feeds":{"<feed id>":{"mode","set_at","set_by","note","label"}}}`,
+  `set_at` in Unix seconds (float), only declared received feeds that are not removed or declined.
+
+| Route | What it does |
+|---|---|
+| `POST /api/feeds/{id}/sim-status` | declare `mode` (`real` \| `simulated` \| `unknown`) and `note` on a received feed (requester or admins) |
+| `GET /api/sim-status` | every declaration, machine-readable, no sign-in |
+
 ## Systems: naming, placing, archiving (0.4.0)
 
 Once an estate is declared, every link's receiving (or sending) system must be a declared
@@ -89,6 +115,7 @@ the same `status`: an archived system is not expected for readiness and reads `a
 | `placements.go` | the placement overlay in Postgres, the effective estate and its export |
 | `tidy.go` | the declare rule for requests, the Tidy up list and the place, archive, bring back actions |
 | `declared.go` | links started by deployment files (ADR 1260): reads their manifests and polls each unit every 10 s, shown read-only beside requested feeds |
+| `sim_status.go` | real or simulated: the declaration's modes and checks, `GET /api/sim-status`, the catalog topic's copy |
 | `peers.go` | mesh peers from the NetBird API for the destination picker |
 | `server.go` | the API, `/healthz`, `/metrics`, the embedded page |
 | `web/` | the page: plain HTML, CSS and JavaScript, no framework, no build step |
@@ -97,7 +124,7 @@ Tests, in three layers (all run in CI, `.github/workflows/goat-feeds.yml`):
 
 | Layer | What it covers | Run |
 |---|---|---|
-| Unit | config, permissions for every action, role and state, validation, health, pipe commands, supervisor with a fake pipe | `go test ./...` |
+| Unit | config, permissions for every action, role and state (including real or simulated by direction), validation, health, pipe commands, supervisor with a fake pipe | `go test ./...` |
 | Integration | the Postgres store (including migration from the first schema) and the HTTP API over it | `GOAT_FEEDS_TEST_DSN=postgres://… go test -p 1 -run 'TestPG\|TestAPI' ./...` |
 | Browser (e2e) | the real binary and page in Chromium: send and receive flows, approvals, actions, audit; no console errors, no missing-value text, no overflow at 390 and 1440 px, light and dark, keyboard reach | `go build -o goat-feeds . && cd e2e && npm ci && npx playwright install chromium && GOAT_FEEDS_E2E_DSN=postgres://… npx playwright test` |
 
@@ -105,7 +132,7 @@ The integration and browser tests wipe the database they are given.
 
 ```
 go test ./...                       # unit layer
-./build.sh 0.4.0                    # dist/goat-feeds-0.4.0-linux-{amd64,arm64} + SHA256SUMS
+./build.sh 0.5.0                    # dist/goat-feeds-0.5.0-linux-{amd64,arm64} + SHA256SUMS
 ```
 
 Deploy: `ops/ansible/goat-feeds-deploy.yml` (roles `goat-feeds`, `goat-feeds-oidc-client`).

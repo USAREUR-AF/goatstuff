@@ -208,7 +208,7 @@
     OAUTH2_PROXY_PASS_USER_HEADERS=true
     OAUTH2_PROXY_SET_XAUTHREQUEST=false
     OAUTH2_PROXY_SKIP_PROVIDER_BUTTON=true
-    OAUTH2_PROXY_SKIP_AUTH_ROUTES=^/healthz$
+    OAUTH2_PROXY_SKIP_AUTH_ROUTES=^/healthz$,GET=^/api/sim-status$
     OAUTH2_PROXY_REQUEST_LOGGING=true
     ENV
     if cmp -s {{ goat_feeds_dir }}/fence/oauth2-proxy.env.new {{ goat_feeds_dir }}/fence/oauth2-proxy.env; then
