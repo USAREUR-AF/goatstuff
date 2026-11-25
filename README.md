@@ -1,5 +1,7 @@
 # goatstuff
 
+**Landing page:** [usareur-af.github.io/goatstuff](https://usareur-af.github.io/goatstuff/), every surface with real captures.
+
 <picture>
   <img src="docs/figures/panoscope.gif" width="760" alt="panoscope showing 24 synthetic peers and 20 topics on a local Zenoh fabric, then the live stream of a newly published topic, notional/hello, message by message.">
 </picture>

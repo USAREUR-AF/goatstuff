@@ -1,0 +1,4 @@
+{
+  "extraKnownMarketplaces": { "goat": { "source": { "source": "url", "url": "https://usareur-af.github.io/goatdocs/claude/marketplace.json" } } },
+  "enabledPlugins": { "goat-skills@goat": true }
+}
