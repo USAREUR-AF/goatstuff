@@ -78,6 +78,11 @@ test("the requester declares a received feed simulated; everyone sees it; the AP
 
   // Whoever requests it out sees the declaration on the catalog topic.
   await post(request, "member", `/api/feeds/${f.id}/sim-status`, { mode: "simulated", note: "bench run" });
+  // The delivery loop publishes the approved received feed into the catalog on its own schedule.
+  await expect.poll(async () => {
+    const cat = await (await request.get("/api/catalog", { headers: { "X-Forwarded-Email": "member@example.test" } })).json();
+    return cat.topics.some((t: { id: string }) => t.id === `in-${f.id}`);
+  }, { timeout: 30_000 }).toBe(true);
   await ap.goto("/#request?dir=out");
   const pick = ap.getByRole("button", { name: /drone-a position/ });
   await expect(pick.locator(".simline")).toHaveText(/Real or simulated: Declared simulated by member@example\.test, .*: bench run/);
