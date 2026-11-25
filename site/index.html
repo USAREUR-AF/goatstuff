@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>goatstuff</title>
+<meta name="description" content="Tools that show what a goat data fabric is doing, and demos that teach it: panoscope, goat-topology, a browser playground, a zero-trust sandbox, synthetic publishers and more.">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to the content</a>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#top"><img src="assets/icon.svg" width="28" height="28" alt="">goatstuff</a>
+    <nav aria-label="Sections">
+      <a href="#surfaces">Surfaces</a><a href="#flow">How they read the fabric</a><a href="#playground">Playground</a><a href="#start">Start</a>
+      <a class="gh" href="https://github.com/USAREUR-AF/goatstuff">GitHub</a>
+    </nav>
+  </header>
+</div>
+
+<main id="top">
+<section class="hero" aria-labelledby="name">
+<pre class="bgcode" aria-hidden="true" data-from="ops/zenoh-trial-peers/synth-vendor/demo-roster.json">{
+  "endpoint": "tcp/panoscope-dev-zenoh:7447",
+  "peers": [
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/tarsier/alpha-fob/contacts/v1",
+      "rate_hz": 1,
+      "peer_id": "tarsier-alpha",
+      "display_name": "tarsier-alpha",
+      "role_class": "sensor",
+      "site": "alpha-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/tarsier/bravo-fob/contacts/v1",
+      "rate_hz": 1,
+      "peer_id": "tarsier-bravo",
+      "display_name": "tarsier-bravo",
+      "role_class": "sensor",
+      "site": "bravo-fob",
+      "logical_vendor": "notional"
+    },
+    {
+      "personality": "tracks-demo",
+      "topic": "notional/mantis/alpha-fob/imagery/v1",
+      "rate_hz": 1,
+      "peer_id": "mantis-alpha",</pre>
+  <div class="wrap hero-grid">
+    <div>
+      <p class="prompt">&gt;_ <span id="prompt-text">cd ops/panoscope &amp;&amp; ./demo.sh up</span><span class="cur" aria-hidden="true"></span></p>
+      <h1 class="wordmark" id="name">goatstuff</h1>
+      <p class="tagline">Tools that show what a goat data fabric is doing, and demos that teach it.</p>
+      <p class="lede">The inspection surfaces, demos and example applications that run beside <a href="https://github.com/USAREUR-AF/goatcore">goatcore</a>. They draw the fabric live, find routers that disagree, grade one topic, let a newcomer publish a message and watch it arrive, and stand in for sensors with synthetic publishers. None of them is needed to run a goatnet.</p>
+      <div class="buttons">
+        <a class="btn star" href="https://github.com/USAREUR-AF/goatstuff"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 2.8l2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.3l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9z"/></svg>Star on GitHub</a>
+        <a class="btn" href="#surfaces">Every surface</a>
+        <a class="btn" href="https://github.com/USAREUR-AF/goatstuff#readme">README</a>
+      </div>
+      <div class="cmd"><pre data-box="command"><span class="ln"><span class="dollar">$ </span><code id="c-start">cd <span class="w">ops/serve/zenoh-sandbox/local</span> &amp;&amp; ./prep.sh &amp;&amp; ./serve.sh</code></span></pre><button class="copy" type="button" data-copy="c-start">Copy</button></div>
+      <p class="cmd-note">The browser playground on one laptop: a local Zenoh router and the page, no Docker. <code>prep.sh</code> fetches the router once.</p>
+    </div>
+
+    <div class="stage" id="stage" aria-roledescription="carousel" aria-label="Real captures of goatstuff surfaces, one at a time">
+      <div class="stage-tabs" role="tablist" aria-label="Surface">
+        <button role="tab" type="button" aria-selected="true" aria-controls="sl-pano" id="tab-pano" data-prompt="cd ops/panoscope &amp;&amp; ./demo.sh up" data-dwell="16000">panoscope</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-play" id="tab-play" tabindex="-1" data-prompt="cd ops/serve/zenoh-sandbox/local &amp;&amp; ./serve.sh" data-dwell="13000">playground</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-topo" id="tab-topo" tabindex="-1" data-prompt="goat-topology serve" data-dwell="7000">goat-topology</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-trust" id="tab-trust" tabindex="-1" data-prompt="cd ops/serve/trust-sandbox &amp;&amp; docker compose up" data-dwell="7000">trust sandbox</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-deck" id="tab-deck" tabindex="-1" data-prompt="python3 -m http.server --directory ops/serve/dataflows" data-dwell="7000">dataflows</button>
+      </div>
+      <div class="slides">
+        <figure class="slide on" id="sl-pano" role="tabpanel" aria-labelledby="tab-pano">
+          <div class="shot"><picture>
+            <source media="(prefers-reduced-motion: reduce)" srcset="assets/from-tree/panoscope-still.webp">
+            <img src="assets/from-tree/panoscope.gif" width="960" height="540" alt="panoscope showing 24 synthetic peers and 20 topics on a local Zenoh fabric, then the live stream of a newly published topic, notional/hello, message by message.">
+          </picture></div>
+          <figcaption><b>panoscope</b> on a laptop: synthetic peers on a local Zenoh fabric, then the live stream of <code>notional/hello</code>. A screen capture.</figcaption>
+        </figure>
+        <figure class="slide" id="sl-play" role="tabpanel" aria-labelledby="tab-play" hidden>
+          <div class="shot">
+            <video class="v-dark" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-dark.webp" aria-label="The browser playground connected to a local router: a pretend temperature sensor publishes on demo/sensor/temp, a transform republishes it as Fahrenheit, and a subscriber on demo/** hears both, message by message."><source src="assets/from-tree/zenoh-sandbox-dark.mp4" type="video/mp4"></video>
+            <video class="v-light" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-light.webp" aria-label="The browser playground connected to a local router: a pretend temperature sensor publishes on demo/sensor/temp, a transform republishes it as Fahrenheit, and a subscriber on demo/** hears both, message by message."><source src="assets/from-tree/zenoh-sandbox-light.mp4" type="video/mp4"></video>
+          </div>
+          <figcaption><b>Browser playground</b> against a local router: a pretend sensor publishes, a transform republishes in Fahrenheit, a subscriber on <code>demo/**</code> hears both. Recorded in headless Chrome.</figcaption>
+        </figure>
+        <figure class="slide" id="sl-topo" role="tabpanel" aria-labelledby="tab-topo" hidden>
+          <div class="shot"><img src="assets/from-tree/graph-dark.png" width="1214" height="867" alt="goat-topology's routing graph: six routers that report drawn as full circles, fourteen routers known only from their neighbors' link-state graphs drawn as dashed circles, blue links inside one region and amber links from a gateway router to the routers south of it."></div>
+          <figcaption><b>goat-topology</b>: routers that report drawn whole, routers known only from their neighbors' link-state graphs drawn dashed. From <code>ops/goat-topology/README.md</code>.</figcaption>
+        </figure>
+        <figure class="slide" id="sl-trust" role="tabpanel" aria-labelledby="tab-trust" hidden>
+          <div class="shot"><picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/trust-sandbox-dark.webp">
+            <img src="assets/from-tree/trust-sandbox-light.webp" width="1200" height="750" alt="The trust sandbox's page on network admission: a device and a one-time setup key enroll with Management, which writes a NetBird profile on the device; being on the mesh is admission, not trust.">
+          </picture></div>
+          <figcaption><b>Trust sandbox</b>, the network admission page: one of five identity layers, taken apart. Served without its stack.</figcaption>
+        </figure>
+        <figure class="slide" id="sl-deck" role="tabpanel" aria-labelledby="tab-deck" hidden>
+          <div class="shot"><img src="assets/from-tree/dataflows-pubsub-dark.webp" width="1200" height="768" alt="The dataflows deck's publish and subscribe slide set to twelve subscribers: the producer makes one publish call per event, twelve subscribers receive it, and the producer does not change when subscribers join."></div>
+          <figcaption><b>dataflows</b>, the publish and subscribe slide: one publish, twelve subscribers, and the producer unchanged when they join.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="what">
+  <div class="wrap">
+    <h2>What it is</h2>
+    <p class="sub">goat is a mesh and a <a href="https://zenoh.io/">Zenoh</a> data fabric for systems that publish and subscribe. <a href="https://github.com/USAREUR-AF/goatcore">goatcore</a> holds the mesh, the fabric, identity, the build tool and the operator CLI. goatstuff holds what you look at and play with on top of it. A surface that deploys has an Ansible role and a playbook under <code>ops/ansible/</code>.</p>
+    <div class="cards">
+      <div class="card"><h3>Surfaces that watch the fabric</h3><p>panoscope draws the whole goatnet, goat-topology draws its routers, flashlight follows one slice, stethoscope grades one target, netvis draws the mesh policy. Rust services in <code>crates/</code> and <code>ops/</code>, web pages without a build step.</p></div>
+      <div class="card"><h3>Demos that teach it</h3><p>A browser playground for publish and subscribe, a zero-trust identity sandbox, an interactive deck on how systems move data, a map, and the gym: lanes of modules, each with a drill. Under <code>ops/serve/</code> and <code>ops/gym/</code>.</p></div>
+      <div class="card"><h3>Publishers that feed and test it</h3><p>Synthetic vendors stand in for sensors, health publishers fill the health surfaces, trashgoat sends unusual traffic on purpose, and transform-shim converts messages between formats. Under <code>ops/zenoh-trial-peers/</code>, <code>ops/goat-trashgoat/</code> and <code>ops/zenoh-shims/</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="surfaces">
+  <div class="wrap">
+    <h2>Every surface, with what it shows</h2>
+    <p class="sub">The status on each card is the one <a href="https://github.com/USAREUR-AF/goatstuff/blob/main/docs/RELEASE-CONTENTS.md">docs/RELEASE-CONTENTS.md</a> gives it. <b>Tested in CI</b>: a workflow builds it and runs its tests on each pull request. <b>Built</b>: a workflow checks that it compiles or parses. <b>Not run</b>: no workflow here runs it.</p>
+
+    <h3 class="group">Watch the fabric</h3>
+    <div class="gallery">
+      <article class="tile wide-tile">
+        <a class="thumb" href="https://usareur-af.github.io/goatdocs/goat/panoscope/"><img src="assets/from-tree/panoscope-still.webp" width="960" height="540" alt="panoscope's graph of synthetic peers around the notional org, with its counters: peers, topics, messages per second."></a>
+        <div class="body">
+          <span class="status" data-status="panoscope web interface">Tested in CI</span>
+          <h4><a href="https://usareur-af.github.io/goatdocs/goat/panoscope/">panoscope</a></h4>
+          <p>The whole goatnet at a glance: peers as nodes, topic flows as moving edges, and the decoded stream of any topic beside them. It is the only surface that queries the fabric on request.</p>
+          <p class="path"><code>ops/panoscope/</code> · <a href="https://usareur-af.github.io/goatdocs/goat/panoscope/">its own page</a></p>
+        </div>
+      </article>
+      <article class="tile wide-tile">
+        <div class="thumb"><img src="assets/from-tree/graph-dark.png" width="1214" height="867" alt="goat-topology's routing graph of reporting and non-reporting routers."></div>
+        <div class="body">
+          <span class="status" data-status="Topology, trashgoat, synthetic vendors, health publishers">Built</span>
+          <h4>goat-topology</h4>
+          <p>Every router, the links between them and the region each link belongs to, with findings: configurations that do not do what they appear to, routers that have gone quiet, routers that disagree with each other. It runs against stock <code>zenohd</code> with the REST plugin.</p>
+          <p class="path"><code>ops/goat-topology/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
+          <h4>flashlight</h4>
+          <p>Name a slice of the fabric in the URL, a key, an org or a role, and watch only that slice: the server narrows its subscription to match. The status is for its analytics crate.</p>
+          <p class="path"><code>ops/flashlight/</code>, <code>crates/flashlight-analytics/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
+          <h4>stethoscope</h4>
+          <p>Name one target in the URL, an org, a system or a topic. It runs a set of checks against it and shows one card per check with its verdict.</p>
+          <p class="path"><code>crates/stethoscope/</code>, <code>crates/stethoscope-checks/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
+          <h4>netvis</h4>
+          <p>The mesh access policy as a picture of what can reach what, gated by <code>goat acl test</code> assertions.</p>
+          <p class="path"><code>crates/netvis/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
+          <h4>microscope</h4>
+          <p>One entity in detail, across every layer. Admin only and read-only: no route changes anything it reads.</p>
+          <p class="path"><code>crates/microscope/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="Peer view">Tested in CI</span>
+          <h4>peerview</h4>
+          <p>Who is on this goatnet, what they run and what they ask of it. A poller on the host writes the page's data, so the browser never queries the mesh's management API.</p>
+          <p class="path"><code>ops/peerview/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <h4>netview</h4>
+          <p>How full the pipe is and what is filling it. The sibling of peerview, written by <code>netview-poll.py</code> the same way.</p>
+          <p class="path"><code>ops/netview/</code></p>
+        </div>
+      </article>
+    </div>
+
+    <h3 class="group">Try it in a browser</h3>
+    <div class="gallery">
+      <article class="tile wide-tile">
+        <a class="thumb" href="#playground"><picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/zenoh-sandbox-dark.webp">
+          <img src="assets/from-tree/zenoh-sandbox-light.webp" width="1200" height="733" alt="The browser playground: a publisher, a transform and a subscriber connected by lines, and the subscriber's list of messages.">
+        </picture></a>
+        <div class="body">
+          <span class="status" data-status="Browser playground, trust sandbox, dataflows">Built</span>
+          <h4><a href="#playground">Browser playground</a></h4>
+          <p>Publish, subscribe, transform and query on a throwaway Zenoh router, and watch each message travel from publisher to subscriber. Open it in a second tab and the two tabs talk.</p>
+          <p class="path"><code>ops/serve/zenoh-sandbox/</code></p>
+        </div>
+      </article>
+      <article class="tile wide-tile">
+        <div class="thumb"><picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/trust-sandbox-dark.webp">
+          <img src="assets/from-tree/trust-sandbox-light.webp" width="1200" height="750" alt="The trust sandbox's network admission page.">
+        </picture></div>
+        <div class="body">
+          <span class="status" data-status="Browser playground, trust sandbox, dataflows">Built</span>
+          <h4>Trust sandbox</h4>
+          <p>A local zero-trust identity playground. x509 certificates, SPIFFE workload identity, Ory sign-in and Zenoh ACLs run for real, and NetBird admission is represented; knock one layer out and the page shows which property breaks. <code>docker compose up</code>, then <code>localhost:8100</code>.</p>
+          <p class="path"><code>ops/serve/trust-sandbox/</code></p>
+        </div>
+      </article>
+      <article class="tile wide-tile">
+        <div class="thumb"><img src="assets/from-tree/dataflows-pubsub-dark.webp" width="1200" height="768" alt="The dataflows deck's publish and subscribe slide."></div>
+        <div class="body">
+          <span class="status" data-status="Browser playground, trust sandbox, dataflows">Built</span>
+          <h4>dataflows</h4>
+          <p>A ten-slide interactive deck on four ways systems move data: internal only, point-to-point interface documents, request and response APIs, and publish and subscribe. Each pattern slide is a small simulation with its own controls.</p>
+          <p class="path"><code>ops/serve/dataflows/</code></p>
+        </div>
+      </article>
+      <article class="tile wide-tile">
+        <div class="thumb"><picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/gym-dark.webp">
+          <img src="assets/from-tree/gym-light.webp" width="1200" height="750" alt="The gym's front page: a card for each lane, such as Newcomer, Fabric developer and Platform operator, with how many of its modules are ready.">
+        </picture></div>
+        <div class="body">
+          <span class="status" data-status="Gym training surface">Not run</span>
+          <h4>gym</h4>
+          <p>The training surface: a lane of modules for each role. A module points at the document that explains its subject and adds a drill to run and the quirks that cost people time. <code>python3 ops/gym/generate.py</code> renders it.</p>
+          <p class="path"><code>ops/gym/</code></p>
+        </div>
+      </article>
+      <article class="tile half">
+        <div class="body">
+          <span class="status" data-status="Map surface">Tested in CI</span>
+          <h4>goat-map</h4>
+          <p>A live map of what a sensor chain puts on the fabric: position, heading, speed, trail, staleness. It shows what is on the bus now and forgets it when the bus stops saying it.</p>
+          <p class="path"><code>ops/serve/goat-map/</code></p>
+        </div>
+      </article>
+      <article class="tile half">
+        <div class="body">
+          <h4><a href="https://usareur-af.github.io/goatdocs/goat/fieldkit-feeds/">Fieldkit Feeds</a></h4>
+          <p>Send a fabric topic to a system on the mesh, or bring a system's own data onto the fabric, with approval by a tactical admin.</p>
+          <p class="path"><code>ops/serve/goat-feeds/</code> · <a href="https://usareur-af.github.io/goatdocs/goat/fieldkit-feeds/">its own page</a></p>
+        </div>
+      </article>
+    </div>
+
+    <h3 class="group">Feed it and test it</h3>
+    <div class="gallery">
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="Topology, trashgoat, synthetic vendors, health publishers">Built</span>
+          <h4>Synthetic vendors and trial peers</h4>
+          <p>Publishers that stand in for real sensors: one notional org with sensors, effectors, data services, C2, an observer and sinks, listed in one roster file. Beside them, the health publishers the health surfaces read.</p>
+          <p class="path"><code>ops/zenoh-trial-peers/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="Topology, trashgoat, synthetic vendors, health publishers">Built</span>
+          <h4>trashgoat</h4>
+          <p>Unusual traffic, sent by an operator on purpose: large payloads, malformed formats, rate spikes, chunked publishes. A cleanse deletes every key an experiment published.</p>
+          <p class="path"><code>ops/goat-trashgoat/</code></p>
+        </div>
+      </article>
+      <article class="tile">
+        <div class="body">
+          <span class="status" data-status="Format transformer shim and pack bundles">Tested in CI</span>
+          <h4>transform-shim</h4>
+          <p>A fabric peer that subscribes in one format and republishes in another with <a href="https://usareur-af.github.io/goat-transformers/">goat-transformers</a>. Not deployed; every switch defaults to off.</p>
+          <p class="path"><code>ops/zenoh-shims/transform-shim/</code>, <code>ops/xf/</code></p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="flow">
+  <div class="wrap">
+    <h2>Publishers put data on the fabric, surfaces read it</h2>
+    <p class="sub">Most surfaces only subscribe. goat-topology's page reads what its publishers already put on the bus, so opening it, or refreshing it every second, sends nothing to any router. panoscope is the one surface that queries the fabric when someone asks. Three pieces move data both ways: transform-shim and goat-map republish what they subscribe to, and panoscope's queries get replies.</p>
+    <figure class="flowfig">
+<!-- figure:begin (written by site/figure.py; site/build.py fails when it is stale) -->
+<svg class="fig wide" viewBox="0 0 1160 560" width="1160" height="560" role="img" aria-labelledby="fw-t" xmlns="http://www.w3.org/2000/svg"><title id="fw-t">Publishers on the left put data on the fabric of one goatnet in the middle; surfaces on the right read it. transform-shim, panoscope and goat-map move data both ways.</title><defs><marker id="fwh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="fhead"/></marker></defs><text x="20" y="28" class="fcol">PUT DATA ON THE FABRIC</text><text x="780" y="28" class="fcol">READ IT</text><rect x="470" y="50" width="220" height="490" rx="10" class="ffabric"/><text x="580.0" y="287.0" text-anchor="middle" class="fname">Zenoh routers</text><text x="580.0" y="311.0" text-anchor="middle" class="fdet">one goatnet's fabric</text><rect x="20" y="52" width="360" height="66" rx="6" class="fbox"/><text x="34" y="78" class="fname">synthetic vendors</text><text x="34" y="100" class="fdet">notional/**</text><line x1="384" y1="85.0" x2="466" y2="85.0" class="fflow" marker-end="url(#fwh)"/><rect x="20" y="148" width="360" height="66" rx="6" class="fbox"/><text x="34" y="174" class="fname">health publishers</text><text x="34" y="196" class="fdet">ops/&lt;domain&gt;/health/…</text><line x1="384" y1="181.0" x2="466" y2="181.0" class="fflow" marker-end="url(#fwh)"/><rect x="20" y="244" width="360" height="66" rx="6" class="fbox"/><text x="34" y="270" class="fname">trashgoat</text><text x="34" y="292" class="fdet">trashgoat/&lt;slug&gt;/…</text><line x1="384" y1="277.0" x2="466" y2="277.0" class="fflow" marker-end="url(#fwh)"/><rect x="20" y="340" width="360" height="66" rx="6" class="fbox"/><text x="34" y="366" class="fname">goat-topology publish</text><text x="34" y="388" class="fdet">ops/fabric/topology/&lt;site&gt;/&lt;node&gt;</text><line x1="384" y1="373.0" x2="466" y2="373.0" class="fflow" marker-end="url(#fwh)"/><rect x="20" y="436" width="360" height="66" rx="6" class="fbox"/><text x="34" y="462" class="fname">transform-shim</text><text x="34" y="484" class="fdet">one format in, another out</text><line x1="384" y1="463.0" x2="466" y2="463.0" class="fflow" marker-end="url(#fwh)"/><line x1="466" y1="475.0" x2="384" y2="475.0" class="fflow back" marker-end="url(#fwh)"/><rect x="780" y="52" width="360" height="66" rx="6" class="fbox fsurf"/><text x="794" y="78" class="fname">panoscope</text><text x="794" y="100" class="fdet">subscribes; queries when asked</text><line x1="694" y1="79.0" x2="776" y2="79.0" class="fflow" marker-end="url(#fwh)"/><line x1="776" y1="91.0" x2="694" y2="91.0" class="fflow back" marker-end="url(#fwh)"/><rect x="780" y="148" width="360" height="66" rx="6" class="fbox fsurf"/><text x="794" y="174" class="fname">goat-topology serve</text><text x="794" y="196" class="fdet">ops/fabric/topology/**</text><line x1="694" y1="181.0" x2="776" y2="181.0" class="fflow" marker-end="url(#fwh)"/><rect x="780" y="244" width="360" height="66" rx="6" class="fbox fsurf"/><text x="794" y="270" class="fname">flashlight</text><text x="794" y="292" class="fdet">only the slice its URL names</text><line x1="694" y1="277.0" x2="776" y2="277.0" class="fflow" marker-end="url(#fwh)"/><rect x="780" y="340" width="360" height="66" rx="6" class="fbox fsurf"/><text x="794" y="366" class="fname">stethoscope</text><text x="794" y="388" class="fdet">one target its URL names</text><line x1="694" y1="373.0" x2="776" y2="373.0" class="fflow" marker-end="url(#fwh)"/><rect x="780" y="436" width="360" height="66" rx="6" class="fbox fsurf"/><text x="794" y="462" class="fname">goat-map</text><text x="794" y="484" class="fdet">CoT in, GeoTrackV1 out and back</text><line x1="694" y1="463.0" x2="776" y2="463.0" class="fflow" marker-end="url(#fwh)"/><line x1="776" y1="475.0" x2="694" y2="475.0" class="fflow back" marker-end="url(#fwh)"/></svg>
+<svg class="fig narrow" viewBox="0 0 360 942" width="360" height="942" role="img" aria-labelledby="fn-t" xmlns="http://www.w3.org/2000/svg"><title id="fn-t">Publishers put data on the fabric of one goatnet; surfaces read it. transform-shim, panoscope and goat-map, marked with a double arrow, move data both ways.</title><defs><marker id="fnh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="fhead"/></marker></defs><text x="10" y="20" class="fcol">PUT DATA ON THE FABRIC</text><rect x="10" y="30" width="340" height="62" rx="6" class="fbox"/><text x="24" y="56" class="fname">synthetic vendors</text><text x="24" y="78" class="fdet">notional/**</text><rect x="10" y="102" width="340" height="62" rx="6" class="fbox"/><text x="24" y="128" class="fname">health publishers</text><text x="24" y="150" class="fdet">ops/&lt;domain&gt;/health/…</text><rect x="10" y="174" width="340" height="62" rx="6" class="fbox"/><text x="24" y="200" class="fname">trashgoat</text><text x="24" y="222" class="fdet">trashgoat/&lt;slug&gt;/…</text><rect x="10" y="246" width="340" height="62" rx="6" class="fbox"/><text x="24" y="272" class="fname">goat-topology publish</text><text x="24" y="294" class="fdet">ops/fabric/topology/&lt;site&gt;/&lt;node&gt;</text><rect x="10" y="318" width="340" height="62" rx="6" class="fbox"/><text x="24" y="344" class="fname">transform-shim  ⇅</text><text x="24" y="366" class="fdet">one format in, another out</text><line x1="130" y1="396" x2="130" y2="430" class="fflow" marker-end="url(#fnh)"/><line x1="236" y1="396" x2="236" y2="430" class="fflow" marker-end="url(#fnh)"/><line x1="224" y1="430" x2="224" y2="396" class="fflow back" marker-end="url(#fnh)"/><text x="250" y="418" class="fdet">both ways</text><rect x="10" y="438" width="340" height="66" rx="10" class="ffabric"/><text x="180.0" y="466" text-anchor="middle" class="fname">Zenoh routers</text><text x="180.0" y="488" text-anchor="middle" class="fdet">one goatnet's fabric</text><line x1="130" y1="512" x2="130" y2="546" class="fflow" marker-end="url(#fnh)"/><line x1="236" y1="512" x2="236" y2="546" class="fflow" marker-end="url(#fnh)"/><line x1="224" y1="546" x2="224" y2="512" class="fflow back" marker-end="url(#fnh)"/><text x="250" y="534" class="fdet">both ways</text><text x="10" y="566" class="fcol">READ IT</text><rect x="10" y="578" width="340" height="62" rx="6" class="fbox fsurf"/><text x="24" y="604" class="fname">panoscope  ⇅</text><text x="24" y="626" class="fdet">subscribes; queries when asked</text><rect x="10" y="650" width="340" height="62" rx="6" class="fbox fsurf"/><text x="24" y="676" class="fname">goat-topology serve</text><text x="24" y="698" class="fdet">ops/fabric/topology/**</text><rect x="10" y="722" width="340" height="62" rx="6" class="fbox fsurf"/><text x="24" y="748" class="fname">flashlight</text><text x="24" y="770" class="fdet">only the slice its URL names</text><rect x="10" y="794" width="340" height="62" rx="6" class="fbox fsurf"/><text x="24" y="820" class="fname">stethoscope</text><text x="24" y="842" class="fdet">one target its URL names</text><rect x="10" y="866" width="340" height="62" rx="6" class="fbox fsurf"/><text x="24" y="892" class="fname">goat-map  ⇅</text><text x="24" y="914" class="fdet">CoT in, GeoTrackV1 out and back</text></svg>
+<!-- figure:end -->
+      <figcaption>A dashed arrow is the return direction of a flow that goes both ways. Key expressions are the ones each component's code or README uses. The browser playground is not on the figure: it talks to its own throwaway router.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="band" id="playground">
+  <div class="wrap feature">
+    <div>
+      <h2>The playground runs on one laptop</h2>
+      <p>The browser playground is two pieces: the static page in <code>ops/serve/zenoh-sandbox/app/</code> and a local Zenoh router with the remote API WebSocket plugin. <code>prep.sh</code> fetches the router for your machine once; after that <code>serve.sh</code> needs no internet and no Docker. Click Connect, start the pretend sensor, listen on <code>demo/**</code>.</p>
+      <pre class="block" data-box="command"><span class="ln">cd <span class="w">ops/serve/zenoh-sandbox/local</span>
+</span><span class="ln">./prep.sh      <span class="c"># once, needs internet</span>
+</span><span class="ln">./serve.sh     <span class="c"># page on :8080, router on ws://localhost:10000</span></span></pre>
+      <p>What the subscriber on <code>demo/**</code> heard in the recording:</p>
+      <pre class="json" data-box="output"><span class="ln">demo/sensor/fahrenheit  {"fahrenheit":64.54}</span><span class="ln">demo/sensor/temp        {"celsius": 18.08}</span><span class="ln">demo/sensor/fahrenheit  {"fahrenheit":65.84}</span><span class="ln">demo/sensor/temp        {"celsius": 18.80}</span></pre>
+    </div>
+    <figure>
+      <div class="shot framed">
+        <video class="v-dark" muted loop playsinline controls preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-dark.webp" aria-label="Recording of the browser playground: a sensor publishes, a transform republishes, a subscriber hears both."><source src="assets/from-tree/zenoh-sandbox-dark.mp4" type="video/mp4"></video>
+        <video class="v-light" muted loop playsinline controls preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-light.webp" aria-label="Recording of the browser playground: a sensor publishes, a transform republishes, a subscriber hears both."><source src="assets/from-tree/zenoh-sandbox-light.mp4" type="video/mp4"></video>
+      </div>
+      <figcaption>Recorded in headless Chrome against the local router: Listen, then the sensor, then the transform, then two one-off publishes on <code>demo/hello</code>.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="band" id="start">
+  <div class="wrap">
+    <h2>Quick start</h2>
+    <p class="sub">Clone the repository, then pick one.</p>
+    <pre class="block" data-box="command"><span class="ln">git clone <span class="w">https://github.com/USAREUR-AF/goatstuff</span>
+</span><span class="ln">cd goatstuff</span></pre>
+    <div class="starts">
+      <div><h3>The playground</h3>
+        <pre class="block" data-box="command"><span class="ln">cd <span class="w">ops/serve/zenoh-sandbox/local</span>
+</span><span class="ln">./prep.sh &amp;&amp; ./serve.sh</span></pre>
+        <p class="note">Python 3 and one download of the router. Then open <code>http://localhost:8080</code>.</p></div>
+      <div><h3>panoscope with synthetic peers</h3>
+        <pre class="block" data-box="command"><span class="ln">cd <span class="w">ops/panoscope</span>
+</span><span class="ln">./demo.sh up</span></pre>
+        <p class="note">Docker. Then open <code>http://127.0.0.1:8080</code>. The first build compiles panoscope and the data generator and takes 15 to 20 minutes; later starts take seconds. <a href="https://github.com/USAREUR-AF/goatstuff/blob/main/ops/panoscope/README-local-demo.md">README-local-demo.md</a></p></div>
+      <div><h3>Every Rust surface</h3>
+        <pre class="block" data-box="command"><span class="ln">cd crates
+</span><span class="ln">cargo build --release
+</span><span class="ln">cargo test --workspace</span></pre>
+        <p class="note">Rust. <code>crates/Cargo.toml</code> fetches <code>panoscope-core</code> from goatcore by tag.</p></div>
+    </div>
+    <p class="after"><a href="https://github.com/USAREUR-AF/goatstuff#readme">README</a> · <a href="https://github.com/USAREUR-AF/goatstuff/blob/main/docs/RELEASE-CONTENTS.md">Release contents</a> · <a href="https://github.com/USAREUR-AF/goatstuff/blob/main/CONTRIBUTING.md">Contributing</a> · <a href="https://usareur-af.github.io/goatdocs/goat/">goat as one system</a></p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><a href="https://github.com/USAREUR-AF/goatstuff">Repository</a><a href="https://github.com/USAREUR-AF/goatstuff/blob/main/LICENSE">Apache License 2.0</a><a href="https://github.com/USAREUR-AF/goatstuff/blob/main/SECURITY.md">Security policy</a></p>
+    <p>Portions written by U.S. Federal government employees within the scope of their employment are in the public domain in the United States. Part of <a href="https://github.com/USAREUR-AF/goatcore">goat</a>.</p>
+  </div>
+</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>
