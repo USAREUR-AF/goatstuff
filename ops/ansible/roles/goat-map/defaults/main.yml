@@ -59,6 +59,8 @@ goat_map_rawtap_listen_ip: ""
 goat_map_rawtap_prefix: ""
 goat_map_rawtap_zenoh_config: ""
 goat_map_rawtap_volumes: []
+# Groups (gid) that may read the mounted config and certificate.
+goat_map_rawtap_group_add: []
 
 # The ADS-B publisher (goatmap.adsb): civil aircraft from a public aggregator
 # onto one trackset key. Off while goat_map_adsb_url is empty. It paces itself
@@ -72,6 +74,9 @@ goat_map_adsb_period_s: 5
 goat_map_adsb_repeat_s: 60
 goat_map_adsb_hold_s: 300
 goat_map_adsb_volumes: []
+# Groups (gid) that may read the mounted config and certificate; the
+# publisher runs as the image's non-root user.
+goat_map_adsb_group_add: []
 
 # Files from the deploying tree that the public image does not carry: basemap
 # extracts and the estate (sites/regions) file. Paths are relative to the tree
