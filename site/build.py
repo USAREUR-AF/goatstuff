@@ -4,8 +4,9 @@
 
     python3 -I site/build.py
 
-1. Copies the captures and figures the page shows from the tree into
-   site/assets/from-tree/ (git-ignored). The page never carries its own copy.
+1. Copies every capture the page references from the tree (docs/figures/,
+   ops/goat-topology/docs/) into site/assets/from-tree/ (git-ignored), and fails
+   on a reference the tree does not hold. The page never carries its own copy.
 2. Writes the flow figure from site/figure.py between the figure markers in
    index.html. Under CI (the CI variable is set) a stale figure fails instead.
 3. Checks every status chip (data-status="<component>") against the Status
@@ -33,22 +34,25 @@ OUT = os.path.join(SITE, "assets", "from-tree")
 
 PAGES = ["index.html"]
 
-# Files copied from the tree into assets/from-tree/, by path relative to the repo root.
-# docs/figures/README.md says how each capture was made.
-FROM_TREE = [
-    "docs/figures/panoscope.gif",
-    "docs/figures/panoscope-still.webp",
-    "docs/figures/zenoh-sandbox-dark.mp4",
-    "docs/figures/zenoh-sandbox-light.mp4",
-    "docs/figures/zenoh-sandbox-dark.webp",
-    "docs/figures/zenoh-sandbox-light.webp",
-    "docs/figures/trust-sandbox-dark.webp",
-    "docs/figures/trust-sandbox-light.webp",
-    "docs/figures/dataflows-pubsub-dark.webp",
-    "docs/figures/gym-dark.webp",
-    "docs/figures/gym-light.webp",
-    "ops/goat-topology/docs/graph-dark.png",
-]
+# Files copied from the tree into assets/from-tree/: every assets/from-tree/<name> the
+# page references, looked up in these directories of the tree, in order. A name
+# found in none of them fails the build. docs/figures/README.md says how each
+# capture was made.
+FROM_DIRS = ["docs/figures", "ops/goat-topology/docs"]
+
+
+def from_tree(page):
+    names = sorted(set(re.findall(r"assets/from-tree/([A-Za-z0-9._-]+)", page)))
+    found, missing = [], []
+    for n in names:
+        for d in FROM_DIRS:
+            if os.path.isfile(os.path.join(ROOT, d, n)):
+                found.append(os.path.join(d, n))
+                break
+        else:
+            missing.append(n)
+    return found, missing
+
 
 RELEASE_CONTENTS = os.path.join(ROOT, "docs", "RELEASE-CONTENTS.md")
 FIG_BEGIN = "<!-- figure:begin (written by site/figure.py; site/build.py fails when it is stale) -->"
@@ -75,13 +79,17 @@ def figure_svg():
 
 def main():
     bad = 0
-    os.makedirs(OUT, exist_ok=True)
-    for rel in FROM_TREE:
-        shutil.copyfile(os.path.join(ROOT, rel), os.path.join(OUT, os.path.basename(rel)))
-
     index = os.path.join(SITE, "index.html")
     with open(index) as f:
         page = f.read()
+    shutil.rmtree(OUT, ignore_errors=True)
+    os.makedirs(OUT)
+    copied, missing = from_tree(page)
+    for n in missing:
+        print(f"site/index.html: assets/from-tree/{n} is in none of {', '.join(FROM_DIRS)}")
+        bad += 1
+    for rel in copied:
+        shutil.copyfile(os.path.join(ROOT, rel), os.path.join(OUT, os.path.basename(rel)))
     a, b = page.index(FIG_BEGIN) + len(FIG_BEGIN), page.index(FIG_END)
     want = "\n" + figure_svg() + "\n"
     if page[a:b] != want:
@@ -120,7 +128,7 @@ def main():
             bad += 1
     if bad:
         return 1
-    print(f"site: {len(FROM_TREE)} files copied from the tree; status chips match docs/RELEASE-CONTENTS.md")
+    print(f"site: {len(copied)} files copied from the tree; status chips match docs/RELEASE-CONTENTS.md")
     return subprocess.run([sys.executable, "-I", os.path.join(SITE, "fitcheck.py"), SITE] + PAGES).returncode
 
 

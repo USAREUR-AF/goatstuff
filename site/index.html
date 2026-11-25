@@ -68,40 +68,36 @@
     <div class="stage" id="stage" aria-roledescription="carousel" aria-label="Real captures of goatstuff surfaces, one at a time">
       <div class="stage-tabs" role="tablist" aria-label="Surface">
         <button role="tab" type="button" aria-selected="true" aria-controls="sl-pano" id="tab-pano" data-prompt="cd ops/panoscope &amp;&amp; ./demo.sh up" data-dwell="16000">panoscope</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-fl" id="tab-fl" tabindex="-1" data-prompt="flashlight  # then /?vendor=notional" data-dwell="20000">flashlight</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-map" id="tab-map" tabindex="-1" data-prompt="python3 -m goatmap" data-dwell="8000">goat-map</button>
         <button role="tab" type="button" aria-selected="false" aria-controls="sl-play" id="tab-play" tabindex="-1" data-prompt="cd ops/serve/zenoh-sandbox/local &amp;&amp; ./serve.sh" data-dwell="13000">playground</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="sl-topo" id="tab-topo" tabindex="-1" data-prompt="goat-topology serve" data-dwell="7000">goat-topology</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="sl-trust" id="tab-trust" tabindex="-1" data-prompt="cd ops/serve/trust-sandbox &amp;&amp; docker compose up" data-dwell="7000">trust sandbox</button>
-        <button role="tab" type="button" aria-selected="false" aria-controls="sl-deck" id="tab-deck" tabindex="-1" data-prompt="python3 -m http.server --directory ops/serve/dataflows" data-dwell="7000">dataflows</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-topo" id="tab-topo" tabindex="-1" data-prompt="goat-topology serve" data-dwell="15000">goat-topology</button>
+        <button role="tab" type="button" aria-selected="false" aria-controls="sl-deck" id="tab-deck" tabindex="-1" data-prompt="python3 -m http.server --directory ops/serve/dataflows" data-dwell="27000">dataflows</button>
       </div>
       <div class="slides">
         <figure class="slide on" id="sl-pano" role="tabpanel" aria-labelledby="tab-pano">
-          <div class="shot"><picture>
-            <source media="(prefers-reduced-motion: reduce)" srcset="assets/from-tree/panoscope-still.webp">
-            <img src="assets/from-tree/panoscope.gif" width="960" height="540" alt="panoscope showing 24 synthetic peers and 20 topics on a local Zenoh fabric, then the live stream of a newly published topic, notional/hello, message by message.">
-          </picture></div>
-          <figcaption><b>panoscope</b> on a laptop: synthetic peers on a local Zenoh fabric, then the live stream of <code>notional/hello</code>. A screen capture.</figcaption>
+          <div class="shot"><video class="sv" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/panoscope-dark.webp" aria-label="panoscope with the synthetic fleet on a local router: peers, topics and flows around the notional org, then one peer selected and its topic streaming message by message."><source src="assets/from-tree/panoscope-dark.mp4" type="video/mp4"></video></div>
+          <figcaption><b>panoscope</b> with the synthetic fleet on a local router: the fabric, then one peer and its live stream. Recorded locally.</figcaption>
+        </figure>
+        <figure class="slide" id="sl-fl" role="tabpanel" aria-labelledby="tab-fl" hidden>
+          <div class="shot"><video class="sv" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/flashlight-dark.webp" aria-label="flashlight&#x27;s directory of 22 synthetic peers, then the live slice for the notional org: payload, events per second and the event list, filling as messages arrive."><source src="assets/from-tree/flashlight-dark.mp4" type="video/mp4"></video></div>
+          <figcaption><b>flashlight</b>: the directory of the synthetic fleet, then the live slice for one org. Recorded locally.</figcaption>
+        </figure>
+        <figure class="slide" id="sl-map" role="tabpanel" aria-labelledby="tab-map" hidden>
+          <div class="shot"><video class="sv" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/goat-map-dark.webp" aria-label="goat-map drawing ten synthetic tracks, hollow and tagged SIM, moving with their trails over the last hour."><source src="assets/from-tree/goat-map-dark.mp4" type="video/mp4"></video></div>
+          <figcaption><b>goat-map</b>: ten tracks from its own <code>synth_tracks.py</code>, tagged SIM. Forty seconds at five times speed.</figcaption>
         </figure>
         <figure class="slide" id="sl-play" role="tabpanel" aria-labelledby="tab-play" hidden>
-          <div class="shot">
-            <video class="v-dark" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-dark.webp" aria-label="The browser playground connected to a local router: a pretend temperature sensor publishes on demo/sensor/temp, a transform republishes it as Fahrenheit, and a subscriber on demo/** hears both, message by message."><source src="assets/from-tree/zenoh-sandbox-dark.mp4" type="video/mp4"></video>
-            <video class="v-light" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-light.webp" aria-label="The browser playground connected to a local router: a pretend temperature sensor publishes on demo/sensor/temp, a transform republishes it as Fahrenheit, and a subscriber on demo/** hears both, message by message."><source src="assets/from-tree/zenoh-sandbox-light.mp4" type="video/mp4"></video>
-          </div>
-          <figcaption><b>Browser playground</b> against a local router: a pretend sensor publishes, a transform republishes in Fahrenheit, a subscriber on <code>demo/**</code> hears both. Recorded in headless Chrome.</figcaption>
+          <div class="shot"><video class="sv v-dark" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-dark.webp" aria-label="The browser playground connected to a local router: a pretend temperature sensor publishes on demo/sensor/temp, a transform republishes it as Fahrenheit, and a subscriber on demo/** hears both."><source src="assets/from-tree/zenoh-sandbox-dark.mp4" type="video/mp4"></video><video class="sv v-light" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-light.webp" aria-label="The browser playground connected to a local router: a pretend temperature sensor publishes on demo/sensor/temp, a transform republishes it as Fahrenheit, and a subscriber on demo/** hears both."><source src="assets/from-tree/zenoh-sandbox-light.mp4" type="video/mp4"></video></div>
+          <figcaption><b>Browser playground</b>: a pretend sensor publishes, a transform republishes in Fahrenheit, a subscriber on <code>demo/**</code> hears both. Recorded locally.</figcaption>
         </figure>
         <figure class="slide" id="sl-topo" role="tabpanel" aria-labelledby="tab-topo" hidden>
-          <div class="shot"><img src="assets/from-tree/graph-dark.png" width="1214" height="867" alt="goat-topology's routing graph: six routers that report drawn as full circles, fourteen routers known only from their neighbors' link-state graphs drawn as dashed circles, blue links inside one region and amber links from a gateway router to the routers south of it."></div>
-          <figcaption><b>goat-topology</b>: routers that report drawn whole, routers known only from their neighbors' link-state graphs drawn dashed. From <code>ops/goat-topology/README.md</code>.</figcaption>
-        </figure>
-        <figure class="slide" id="sl-trust" role="tabpanel" aria-labelledby="tab-trust" hidden>
-          <div class="shot"><picture>
-            <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/trust-sandbox-dark.webp">
-            <img src="assets/from-tree/trust-sandbox-light.webp" width="1200" height="750" alt="The trust sandbox's page on network admission: a device and a one-time setup key enroll with Management, which writes a NetBird profile on the device; being on the mesh is admission, not trust.">
-          </picture></div>
-          <figcaption><b>Trust sandbox</b>, the network admission page: one of five identity layers, taken apart. Served without its stack.</figcaption>
+          <div class="shot"><video class="sv v-dark" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/goat-topology-dark.webp" aria-label="goat-topology with three local routers: the routing graph, the detail of router-a, then the carve planner with two routers picked."><source src="assets/from-tree/goat-topology-dark.mp4" type="video/mp4"></video><video class="sv v-light" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/goat-topology-light.webp" aria-label="goat-topology with three local routers: the routing graph, the detail of router-a, then the carve planner with two routers picked."><source src="assets/from-tree/goat-topology-light.mp4" type="video/mp4"></video></div>
+          <figcaption><b>goat-topology</b> on its shipped three-router example: the graph, one router's detail, the carve planner. Recorded locally.</figcaption>
         </figure>
         <figure class="slide" id="sl-deck" role="tabpanel" aria-labelledby="tab-deck" hidden>
-          <div class="shot"><img src="assets/from-tree/dataflows-pubsub-dark.webp" width="1200" height="768" alt="The dataflows deck's publish and subscribe slide set to twelve subscribers: the producer makes one publish call per event, twelve subscribers receive it, and the producer does not change when subscribers join."></div>
-          <figcaption><b>dataflows</b>, the publish and subscribe slide: one publish, twelve subscribers, and the producer unchanged when they join.</figcaption>
+          <div class="shot"><video class="sv" muted loop playsinline preload="none" width="1200" height="768" poster="assets/from-tree/dataflows-dark.webp" aria-label="The dataflows deck: point-to-point wires growing from 2 to 12 systems, then one publish reaching 1, 3, 6, 12 and 25 subscribers."><source src="assets/from-tree/dataflows-dark.mp4" type="video/mp4"></video></div>
+          <figcaption><b>dataflows</b>: point-to-point wires grow as N×(N−1); one publish reaches 25 subscribers and the producer does not change.</figcaption>
         </figure>
       </div>
     </div>
@@ -128,56 +124,66 @@
     <h3 class="group">Watch the fabric</h3>
     <div class="gallery">
       <article class="tile wide-tile">
-        <a class="thumb" href="https://usareur-af.github.io/goatdocs/goat/panoscope/"><img src="assets/from-tree/panoscope-still.webp" width="960" height="540" alt="panoscope's graph of synthetic peers around the notional org, with its counters: peers, topics, messages per second."></a>
+        <div class="thumb"><video class="loop" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/panoscope-dark.webp" aria-label="panoscope with the synthetic fleet: the fabric, then one peer&#x27;s stream."><source src="assets/from-tree/panoscope-dark.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="panoscope web interface">Tested in CI</span>
           <h4><a href="https://usareur-af.github.io/goatdocs/goat/panoscope/">panoscope</a></h4>
           <p>The whole goatnet at a glance: peers as nodes, topic flows as moving edges, and the decoded stream of any topic beside them. It is the only surface that queries the fabric on request.</p>
+          <p class="capnote">Recorded against a local router and the synthetic fleet; trashgoat and goat-map's synthetic tracks show up in it too.</p>
           <p class="path"><code>ops/panoscope/</code> · <a href="https://usareur-af.github.io/goatdocs/goat/panoscope/">its own page</a></p>
         </div>
       </article>
       <article class="tile wide-tile">
-        <div class="thumb"><img src="assets/from-tree/graph-dark.png" width="1214" height="867" alt="goat-topology's routing graph of reporting and non-reporting routers."></div>
+        <div class="thumb"><video class="loop" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/flashlight-dark.webp" aria-label="flashlight following the notional org live."><source src="assets/from-tree/flashlight-dark.mp4" type="video/mp4"></video></div>
+        <div class="body">
+          <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
+          <h4>flashlight</h4>
+          <p>Name a slice of the fabric in the URL, a key, an org or a role, and watch only that slice: the server narrows its subscription to match. Payload in text and hex, events per second, the event list. The status is for its analytics crate.</p>
+          <p class="capnote">Recorded against a local router and the synthetic fleet.</p>
+          <p class="path"><code>ops/flashlight/</code>, <code>crates/flashlight-analytics/</code></p>
+        </div>
+      </article>
+      <article class="tile wide-tile">
+        <div class="thumb"><img src="assets/from-tree/graph-dark.png" width="1214" height="867" alt="goat-topology's routing graph: six reporting routers drawn whole, fourteen known only from their neighbors drawn dashed, links inside one region in blue and a gateway's links south in amber."></div>
         <div class="body">
           <span class="status" data-status="Topology, trashgoat, synthetic vendors, health publishers">Built</span>
           <h4>goat-topology</h4>
           <p>Every router, the links between them and the region each link belongs to, with findings: configurations that do not do what they appear to, routers that have gone quiet, routers that disagree with each other. It runs against stock <code>zenohd</code> with the REST plugin.</p>
+          <p class="capnote">A larger fabric, from the README. The first screen shows a recording of the shipped example.</p>
           <p class="path"><code>ops/goat-topology/</code></p>
         </div>
       </article>
-      <article class="tile">
-        <div class="body">
-          <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
-          <h4>flashlight</h4>
-          <p>Name a slice of the fabric in the URL, a key, an org or a role, and watch only that slice: the server narrows its subscription to match. The status is for its analytics crate.</p>
-          <p class="path"><code>ops/flashlight/</code>, <code>crates/flashlight-analytics/</code></p>
-        </div>
-      </article>
-      <article class="tile">
+      <article class="tile wide-tile">
+        <div class="thumb"><video class="loop v-dark" muted loop playsinline preload="none" width="1000" height="620" poster="assets/from-tree/stethoscope-dark.webp" aria-label="stethoscope: a topic typed into the picker, then one card per check."><source src="assets/from-tree/stethoscope-dark.mp4" type="video/mp4"></video><video class="loop v-light" muted loop playsinline preload="none" width="1000" height="620" poster="assets/from-tree/stethoscope-light.webp" aria-label="stethoscope: a topic typed into the picker, then one card per check."><source src="assets/from-tree/stethoscope-light.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
           <h4>stethoscope</h4>
           <p>Name one target in the URL, an org, a system or a topic. It runs a set of checks against it and shows one card per check with its verdict.</p>
+          <p class="capnote">Recorded locally with no portal or audit store, so every check says Skipped and why.</p>
           <p class="path"><code>crates/stethoscope/</code>, <code>crates/stethoscope-checks/</code></p>
         </div>
       </article>
-      <article class="tile">
+      <article class="tile wide-tile">
+        <div class="thumb"><video class="loop v-dark" muted loop playsinline preload="none" width="1000" height="700" poster="assets/from-tree/netvis-dark.webp" aria-label="netvis: the site-by-site matrix, then the crossing from SITE-A to SITE-B, then a crossing with no rule."><source src="assets/from-tree/netvis-dark.mp4" type="video/mp4"></video><video class="loop v-light" muted loop playsinline preload="none" width="1000" height="700" poster="assets/from-tree/netvis-light.webp" aria-label="netvis: the site-by-site matrix, then the crossing from SITE-A to SITE-B, then a crossing with no rule."><source src="assets/from-tree/netvis-light.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
           <h4>netvis</h4>
-          <p>The mesh access policy as a picture of what can reach what, gated by <code>goat acl test</code> assertions.</p>
+          <p>The mesh access policy as a matrix of what can reach what. Click a crossing for the machines and the rule that permits it. Gated by <code>goat acl test</code> assertions.</p>
+          <p class="capnote">Recorded drawing its synthetic test fixture, <code>tests/fixtures/reach-doc.json</code>.</p>
           <p class="path"><code>crates/netvis/</code></p>
         </div>
       </article>
-      <article class="tile">
+      <article class="tile wide-tile">
+        <div class="thumb"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/microscope-dark.webp"><img src="assets/from-tree/microscope-light.webp" width="1200" height="900" alt="microscope&#x27;s page for one entity: spine, capability, timeline and the status of each source."></picture></div>
         <div class="body">
           <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
           <h4>microscope</h4>
           <p>One entity in detail, across every layer. Admin only and read-only: no route changes anything it reads.</p>
+          <p class="capnote">Captured locally with no sources configured: each source says why it was skipped.</p>
           <p class="path"><code>crates/microscope/</code></p>
         </div>
       </article>
-      <article class="tile">
+      <article class="tile half">
         <div class="body">
           <span class="status" data-status="Peer view">Tested in CI</span>
           <h4>peerview</h4>
@@ -185,7 +191,7 @@
           <p class="path"><code>ops/peerview/</code></p>
         </div>
       </article>
-      <article class="tile">
+      <article class="tile half">
         <div class="body">
           <h4>netview</h4>
           <p>How full the pipe is and what is filling it. The sibling of peerview, written by <code>netview-poll.py</code> the same way.</p>
@@ -197,62 +203,59 @@
     <h3 class="group">Try it in a browser</h3>
     <div class="gallery">
       <article class="tile wide-tile">
-        <a class="thumb" href="#playground"><picture>
-          <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/zenoh-sandbox-dark.webp">
-          <img src="assets/from-tree/zenoh-sandbox-light.webp" width="1200" height="733" alt="The browser playground: a publisher, a transform and a subscriber connected by lines, and the subscriber's list of messages.">
-        </picture></a>
+        <div class="thumb"><video class="loop v-dark" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-dark.webp" aria-label="The browser playground: a publisher, a transform and a subscriber."><source src="assets/from-tree/zenoh-sandbox-dark.mp4" type="video/mp4"></video><video class="loop v-light" muted loop playsinline preload="none" width="1200" height="733" poster="assets/from-tree/zenoh-sandbox-light.webp" aria-label="The browser playground: a publisher, a transform and a subscriber."><source src="assets/from-tree/zenoh-sandbox-light.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="Browser playground, trust sandbox, dataflows">Built</span>
           <h4><a href="#playground">Browser playground</a></h4>
           <p>Publish, subscribe, transform and query on a throwaway Zenoh router, and watch each message travel from publisher to subscriber. Open it in a second tab and the two tabs talk.</p>
+          <p class="capnote">Recorded against its local router.</p>
           <p class="path"><code>ops/serve/zenoh-sandbox/</code></p>
         </div>
       </article>
       <article class="tile wide-tile">
-        <div class="thumb"><picture>
-          <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/trust-sandbox-dark.webp">
-          <img src="assets/from-tree/trust-sandbox-light.webp" width="1200" height="750" alt="The trust sandbox's network admission page.">
-        </picture></div>
+        <div class="thumb"><video class="loop" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/goat-map-dark.webp" aria-label="goat-map drawing ten synthetic tracks with trails."><source src="assets/from-tree/goat-map-dark.mp4" type="video/mp4"></video></div>
         <div class="body">
-          <span class="status" data-status="Browser playground, trust sandbox, dataflows">Built</span>
-          <h4>Trust sandbox</h4>
-          <p>A local zero-trust identity playground. x509 certificates, SPIFFE workload identity, Ory sign-in and Zenoh ACLs run for real, and NetBird admission is represented; knock one layer out and the page shows which property breaks. <code>docker compose up</code>, then <code>localhost:8100</code>.</p>
-          <p class="path"><code>ops/serve/trust-sandbox/</code></p>
+          <span class="status" data-status="Map surface">Tested in CI</span>
+          <h4>goat-map</h4>
+          <p>A live map of what a sensor chain puts on the fabric: position, heading, speed, trail, staleness. Synthetic tracks are drawn hollow and tagged SIM. It forgets a track when the bus stops saying it.</p>
+          <p class="capnote">Recorded with its own <code>tools/synth_tracks.py</code> and no basemap; five times speed.</p>
+          <p class="path"><code>ops/serve/goat-map/</code></p>
         </div>
       </article>
       <article class="tile wide-tile">
-        <div class="thumb"><img src="assets/from-tree/dataflows-pubsub-dark.webp" width="1200" height="768" alt="The dataflows deck's publish and subscribe slide."></div>
+        <div class="thumb"><video class="loop" muted loop playsinline preload="none" width="1200" height="768" poster="assets/from-tree/dataflows-dark.webp" aria-label="The dataflows deck&#x27;s point-to-point and publish-and-subscribe simulations."><source src="assets/from-tree/dataflows-dark.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="Browser playground, trust sandbox, dataflows">Built</span>
           <h4>dataflows</h4>
           <p>A ten-slide interactive deck on four ways systems move data: internal only, point-to-point interface documents, request and response APIs, and publish and subscribe. Each pattern slide is a small simulation with its own controls.</p>
+          <p class="capnote">Recorded from the deck's own simulations.</p>
           <p class="path"><code>ops/serve/dataflows/</code></p>
         </div>
       </article>
       <article class="tile wide-tile">
-        <div class="thumb"><picture>
-          <source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/gym-dark.webp">
-          <img src="assets/from-tree/gym-light.webp" width="1200" height="750" alt="The gym's front page: a card for each lane, such as Newcomer, Fabric developer and Platform operator, with how many of its modules are ready.">
-        </picture></div>
+        <div class="thumb"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/trust-sandbox-dark.webp"><img src="assets/from-tree/trust-sandbox-light.webp" width="1200" height="750" alt="The trust sandbox&#x27;s network admission page."></picture></div>
+        <div class="body">
+          <span class="status" data-status="Browser playground, trust sandbox, dataflows">Built</span>
+          <h4>Trust sandbox</h4>
+          <p>A local zero-trust identity playground. x509 certificates, SPIFFE workload identity, Ory sign-in and Zenoh ACLs run for real, and NetBird admission is represented; knock one layer out and the page shows which property breaks. <code>docker compose up</code>, then <code>localhost:8100</code>.</p>
+          <p class="capnote">Its network admission page, served without its containers.</p>
+          <p class="path"><code>ops/serve/trust-sandbox/</code></p>
+        </div>
+      </article>
+      <article class="tile wide-tile">
+        <div class="thumb"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/gym-dark.webp"><img src="assets/from-tree/gym-light.webp" width="1200" height="750" alt="The gym&#x27;s front page: a card for each lane with how many of its modules are ready."></picture></div>
         <div class="body">
           <span class="status" data-status="Gym training surface">Not run</span>
           <h4>gym</h4>
-          <p>The training surface: a lane of modules for each role. A module points at the document that explains its subject and adds a drill to run and the quirks that cost people time. <code>python3 ops/gym/generate.py</code> renders it.</p>
+          <p>The training surface: a lane of modules for each role. A module points at the document that explains its subject and adds a drill to run and the quirks that cost people time.</p>
+          <p class="capnote">Rendered by <code>generate.py</code> and captured locally.</p>
           <p class="path"><code>ops/gym/</code></p>
         </div>
       </article>
-      <article class="tile half">
-        <div class="body">
-          <span class="status" data-status="Map surface">Tested in CI</span>
-          <h4>goat-map</h4>
-          <p>A live map of what a sensor chain puts on the fabric: position, heading, speed, trail, staleness. It shows what is on the bus now and forgets it when the bus stops saying it.</p>
-          <p class="path"><code>ops/serve/goat-map/</code></p>
-        </div>
-      </article>
-      <article class="tile half">
+      <article class="tile wide-tile">
         <div class="body">
           <h4><a href="https://usareur-af.github.io/goatdocs/goat/fieldkit-feeds/">Fieldkit Feeds</a></h4>
-          <p>Send a fabric topic to a system on the mesh, or bring a system's own data onto the fabric, with approval by a tactical admin.</p>
+          <p>Send a fabric topic to a system on the mesh, or bring a system's own data onto the fabric, with approval by a tactical admin. Captures are on its own page.</p>
           <p class="path"><code>ops/serve/goat-feeds/</code> · <a href="https://usareur-af.github.io/goatdocs/goat/fieldkit-feeds/">its own page</a></p>
         </div>
       </article>
@@ -260,27 +263,29 @@
 
     <h3 class="group">Feed it and test it</h3>
     <div class="gallery">
-      <article class="tile">
-        <div class="body">
-          <span class="status" data-status="Topology, trashgoat, synthetic vendors, health publishers">Built</span>
-          <h4>Synthetic vendors and trial peers</h4>
-          <p>Publishers that stand in for real sensors: one notional org with sensors, effectors, data services, C2, an observer and sinks, listed in one roster file. Beside them, the health publishers the health surfaces read.</p>
-          <p class="path"><code>ops/zenoh-trial-peers/</code></p>
-        </div>
-      </article>
-      <article class="tile">
+      <article class="tile wide-tile">
+        <div class="thumb"><video class="loop" muted loop playsinline preload="none" width="1200" height="750" poster="assets/from-tree/trashgoat-flashlight-dark.webp" aria-label="flashlight on trashgoat/** while trashgoat fires a burst of chunked publishes, then a stream of UUID keys, then deletes every key it published."><source src="assets/from-tree/trashgoat-flashlight-dark.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="Topology, trashgoat, synthetic vendors, health publishers">Built</span>
           <h4>trashgoat</h4>
           <p>Unusual traffic, sent by an operator on purpose: large payloads, malformed formats, rate spikes, chunked publishes. A cleanse deletes every key an experiment published.</p>
+          <p class="capnote">Recorded in flashlight: a chunked burst, UUID-keyed publishes, then a cleanse; the rows with no size are the deletes.</p>
           <p class="path"><code>ops/goat-trashgoat/</code></p>
         </div>
       </article>
-      <article class="tile">
+      <article class="tile third">
+        <div class="body">
+          <span class="status" data-status="Topology, trashgoat, synthetic vendors, health publishers">Built</span>
+          <h4>Synthetic vendors and trial peers</h4>
+          <p>Publishers that stand in for real sensors: one notional org with sensors, effectors, data services, C2, an observer and sinks, all from one roster file. They fed every recording on this page that shows <code>notional/…</code> topics. Beside them, the health publishers the health surfaces read.</p>
+          <p class="path"><code>ops/zenoh-trial-peers/</code></p>
+        </div>
+      </article>
+      <article class="tile third">
         <div class="body">
           <span class="status" data-status="Format transformer shim and pack bundles">Tested in CI</span>
-          <h4>transform-shim</h4>
-          <p>A fabric peer that subscribes in one format and republishes in another with <a href="https://usareur-af.github.io/goat-transformers/">goat-transformers</a>. Not deployed; every switch defaults to off.</p>
+          <h4><a href="https://usareur-af.github.io/goat-transformers/">transform-shim</a></h4>
+          <p>A fabric peer that subscribes in one format and republishes in another with goat-transformers. Not deployed; every switch defaults to off.</p>
           <p class="path"><code>ops/zenoh-shims/transform-shim/</code>, <code>ops/xf/</code></p>
         </div>
       </article>
