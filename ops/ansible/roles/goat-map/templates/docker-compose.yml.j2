@@ -94,8 +94,19 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "goatmap.rawtap"]
     network_mode: host
+    # A raw socket needs uid 0: Docker gives a non-root user no effective
+    # capability. Every capability but NET_RAW is dropped.
+    user: "0"
+    cap_drop:
+      - ALL
     cap_add:
       - NET_RAW
+{% if goat_map_rawtap_group_add | length > 0 %}
+    group_add:
+{% for g in goat_map_rawtap_group_add %}
+      - "{{ g }}"
+{% endfor %}
+{% endif %}
     environment:
       RAWTAP_IFACE: "{{ goat_map_rawtap_iface }}"
       RAWTAP_LISTEN_IP: "{{ goat_map_rawtap_listen_ip }}"
@@ -124,6 +135,14 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "goatmap.adsb"]
     network_mode: host
+    cap_drop:
+      - ALL
+{% if goat_map_adsb_group_add | length > 0 %}
+    group_add:
+{% for g in goat_map_adsb_group_add %}
+      - "{{ g }}"
+{% endfor %}
+{% endif %}
     environment:
       ADSB_URL: "{{ goat_map_adsb_url }}"
       ADSB_BOX: "{{ goat_map_adsb_box }}"
