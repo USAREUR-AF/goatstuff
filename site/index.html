@@ -154,12 +154,12 @@
         </div>
       </article>
       <article class="tile wide-tile">
-        <div class="thumb"><video class="loop v-dark" muted loop playsinline preload="none" width="1000" height="620" poster="assets/from-tree/stethoscope-dark.webp" aria-label="stethoscope: a topic typed into the picker, then one card per check."><source src="assets/from-tree/stethoscope-dark.mp4" type="video/mp4"></video><video class="loop v-light" muted loop playsinline preload="none" width="1000" height="620" poster="assets/from-tree/stethoscope-light.webp" aria-label="stethoscope: a topic typed into the picker, then one card per check."><source src="assets/from-tree/stethoscope-light.mp4" type="video/mp4"></video></div>
+        <div class="thumb"><video class="loop v-dark" muted loop playsinline preload="none" width="1000" height="660" poster="assets/from-tree/stethoscope-dark.webp" aria-label="stethoscope: a topic typed into the picker, then its checks passing one by one."><source src="assets/from-tree/stethoscope-dark.mp4" type="video/mp4"></video><video class="loop v-light" muted loop playsinline preload="none" width="1000" height="660" poster="assets/from-tree/stethoscope-light.webp" aria-label="stethoscope: a topic typed into the picker, then its checks passing one by one."><source src="assets/from-tree/stethoscope-light.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
           <h4>stethoscope</h4>
           <p>Name one target in the URL, an org, a system or a topic. It runs a set of checks against it and shows one card per check with its verdict.</p>
-          <p class="capnote">Recorded locally with no portal or audit store, so every check says Skipped and why.</p>
+          <p class="capnote">Recorded against a portal stand-in that serves the tree's notional topic manifest and decodes the synthetic fleet's live messages; flow-rate needs an audit store and says so.</p>
           <p class="path"><code>crates/stethoscope/</code>, <code>crates/stethoscope-checks/</code></p>
         </div>
       </article>
@@ -174,27 +174,31 @@
         </div>
       </article>
       <article class="tile wide-tile">
-        <div class="thumb"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/from-tree/microscope-dark.webp"><img src="assets/from-tree/microscope-light.webp" width="1200" height="900" alt="microscope&#x27;s page for one entity: spine, capability, timeline and the status of each source."></picture></div>
+        <div class="thumb"><video class="loop v-dark" muted loop playsinline preload="none" width="1200" height="800" poster="assets/from-tree/microscope-dark.webp" aria-label="microscope: a person typed in, then their page: spine, capability and a timeline of console actions, one of them refused."><source src="assets/from-tree/microscope-dark.mp4" type="video/mp4"></video><video class="loop v-light" muted loop playsinline preload="none" width="1200" height="800" poster="assets/from-tree/microscope-light.webp" aria-label="microscope: a person typed in, then their page: spine, capability and a timeline of console actions, one of them refused."><source src="assets/from-tree/microscope-light.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="stethoscope, netvis, microscope, flashlight analytics">Tested in CI</span>
           <h4>microscope</h4>
-          <p>One entity in detail, across every layer. Admin only and read-only: no route changes anything it reads.</p>
-          <p class="capnote">Captured locally with no sources configured: each source says why it was skipped.</p>
+          <p>One entity in detail, across every layer: who they are, what they may do, what they did, and where a refusal happened. Admin only and read-only: no route changes anything it reads.</p>
+          <p class="capnote">Recorded with a NetBird stand-in serving the made-up zagros-dev state from hello-galaxy-mesh-change-control, and a synthetic console audit file.</p>
           <p class="path"><code>crates/microscope/</code></p>
         </div>
       </article>
-      <article class="tile half">
+      <article class="tile wide-tile">
+        <div class="thumb"><video class="loop" muted loop playsinline preload="none" width="1000" height="750" poster="assets/from-tree/peerview-dark.webp" aria-label="peerview&#x27;s Peers and People page for the made-up zagros-dev goatnet, scrolling from the census to the sources table."><source src="assets/from-tree/peerview-dark.mp4" type="video/mp4"></video></div>
         <div class="body">
           <span class="status" data-status="Peer view">Tested in CI</span>
           <h4>peerview</h4>
           <p>Who is on this goatnet, what they run and what they ask of it. A poller on the host writes the page's data, so the browser never queries the mesh's management API.</p>
+          <p class="capnote">Recorded from <code>peerview-poll.py</code>'s own output against the same NetBird stand-in; the sources it had no stand-in for say so.</p>
           <p class="path"><code>ops/peerview/</code></p>
         </div>
       </article>
-      <article class="tile half">
+      <article class="tile wide-tile">
+        <div class="thumb"><img src="assets/from-tree/netview-dark.webp" width="1200" height="750" alt="netview&#x27;s Network Load and Headroom page, every reading marked not measured."></div>
         <div class="body">
           <h4>netview</h4>
-          <p>How full the pipe is and what is filling it. The sibling of peerview, written by <code>netview-poll.py</code> the same way.</p>
+          <p>How full the pipe is, what is filling it, and what to turn down first. The sibling of peerview, written by <code>netview-poll.py</code> from Prometheus the same way.</p>
+          <p class="capnote"><code>netview-poll.py</code>'s own output with no Prometheus to read: every reading says not measured, never zero.</p>
           <p class="path"><code>ops/netview/</code></p>
         </div>
       </article>
