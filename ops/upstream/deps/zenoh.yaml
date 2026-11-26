@@ -6,7 +6,7 @@
 # browser playground, a self-contained router + plugin + client unit) and
 # zenoh-feeds-shim.yaml (speaks Zenoh 1.0.4 to its peer by design).
 name: zenoh
-version: "1.9.0"
+version: "1.10.2"
 summary: Fabric services and surfaces built in goatstuff; clients of the fleet router.
 upstream:
   github: eclipse-zenoh/zenoh
@@ -14,7 +14,7 @@ upstream:
     - {name: zenoh-python, pypi: eclipse-zenoh}
   watch_keywords: [deadlock, liveliness, breaking, wire, protocol, tls, quic]
 facts:
-  upstream_image_digest: "sha256:157965d71e0bfd0a044d76a985ff0e5c306ad3968929168fb9678cd2a7fec23f"
+  upstream_image_digest: "sha256:1885c59e7df9f38f73cc3ec0ba5b8efccb566b059a9ae3dd9c3095dcf760b86f"
 lockfiles:
   - "cargo update --manifest-path crates/Cargo.toml -p zenoh@{old} --precise {new}"
   - "cargo update --manifest-path ops/flashlight/Cargo.toml -p zenoh@{old} --precise {new}"
@@ -39,6 +39,7 @@ lockfiles:
   - "cargo update --manifest-path ops/zenoh-trial-peers/synth-vendor/Cargo.toml -p zenoh@{old} --precise {new}"
   - "cargo update --manifest-path ops/zenoh-trial-peers/time-health/Cargo.toml -p zenoh@{old} --precise {new}"
 moves_with:
+  - "goatcore first: crates/, ops/flashlight and ops/panoscope take panoscope-core from goatcore by git rev or tag, and panoscope-core pins zenoh exactly, so their git ref moves to the goatcore commit carrying the new version before their lock files can be regenerated"
   - "every goatstuff fabric service image, after the router (goatcore zenoh-router) on the ladder"
 rules:
   - kind: cargo

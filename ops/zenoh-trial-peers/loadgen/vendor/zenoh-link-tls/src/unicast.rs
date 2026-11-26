@@ -11,6 +11,8 @@
 // Contributors:
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
+#[cfg(all(feature = "uring", target_os = "linux"))]
+use std::os::fd::RawFd;
 use std::{
     convert::TryInto,
     fmt::{self, Debug},
@@ -36,6 +38,7 @@ use x509_parser::prelude::{FromDer, X509Certificate};
 use zenoh_core::{bail, zasynclock};
 use zenoh_link_commons::{
     get_ip_interface_names,
+    tcp::get_tcp_addrs,
     tls::expiration::{LinkCertExpirationManager, LinkWithCertExpiration},
     LinkAuthId, LinkManagerUnicastTrait, LinkUnicast, LinkUnicastTrait, ListenersUnicastIP,
     NewLinkChannelSender, BIND_INTERFACE, BIND_SOCKET,
@@ -312,6 +315,11 @@ impl LinkUnicastTrait for LinkUnicastTls {
     fn get_auth_id(&self) -> &LinkAuthId {
         &self.auth_identifier
     }
+
+    #[cfg(all(feature = "uring", target_os = "linux"))]
+    fn get_fd(&self) -> ZResult<RawFd> {
+        bail!("Correct FD unavailable for TLS extension")
+    }
 }
 
 #[async_trait]
@@ -361,6 +369,15 @@ pub struct LinkManagerUnicastTls {
     listeners: ListenersUnicastIP,
 }
 
+impl fmt::Debug for LinkManagerUnicastTls {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkManagerUnicastTls")
+            .field("manager", &self.manager)
+            .field("listeners", &self.listeners)
+            .finish()
+    }
+}
+
 impl LinkManagerUnicastTls {
     pub fn new(manager: NewLinkChannelSender) -> Self {
         Self {
@@ -377,7 +394,7 @@ impl LinkManagerUnicastTrait for LinkManagerUnicastTls {
         let epconf = endpoint.config();
 
         let server_name = get_tls_server_name(&epaddr)?;
-        let addr = get_tls_addr(&epaddr).await?;
+        let addrs = get_tcp_addrs(endpoint.address()).await?;
 
         // if both `iface`, and `bind` are present, return error
         if let (Some(_), Some(_)) = (epconf.get(BIND_INTERFACE), epconf.get(BIND_SOCKET)) {
@@ -398,7 +415,7 @@ impl LinkManagerUnicastTrait for LinkManagerUnicastTls {
         // Initialize the TcpStream
         let (tcp_stream, src_addr, dst_addr) = client_config
             .tcp_socket_config
-            .new_link(&addr)
+            .new_link_first_reachable(addrs)
             .await
             .map_err(|e| {
                 zerror!(
@@ -521,8 +538,14 @@ impl LinkManagerUnicastTrait for LinkManagerUnicastTls {
         self.listeners.get_endpoints()
     }
 
+    /// See [`zenoh_link_commons::ListenersUnicastIP::get_locators`].
     async fn get_locators(&self) -> Vec<Locator> {
         self.listeners.get_locators()
+    }
+
+    /// See [`zenoh_link_commons::ListenersUnicastIP::get_locators_noloopback`].
+    async fn get_locators_noloopback(&self) -> Vec<Locator> {
+        self.listeners.get_locators_noloopback()
     }
 }
 

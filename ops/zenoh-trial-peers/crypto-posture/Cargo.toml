@@ -33,7 +33,7 @@ description = "Evidence-based crypto-posture publisher for the goat fabric (ADR 
 repository = "https://github.com/usareur-af/goatcore"
 
 [dependencies]
-zenoh = { version = "=1.9.0", features = ["unstable"] }
+zenoh = { version = "=1.10.2", features = ["unstable"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
 clap = { version = "4", features = ["derive", "env"] }
 prost = "0.13"

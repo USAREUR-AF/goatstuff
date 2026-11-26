@@ -106,7 +106,7 @@ services:
   # = trivial wipe). The browser never talks to zenohd directly — the live fabric
   # viz is fed by the orchestrator's real mTLS observer session over /ws.
   zenohd:
-    image: eclipse/zenoh:1.9.0@sha256:157965d71e0bfd0a044d76a985ff0e5c306ad3968929168fb9678cd2a7fec23f
+    image: eclipse/zenoh:1.10.2@sha256:1885c59e7df9f38f73cc3ec0ba5b8efccb566b059a9ae3dd9c3095dcf760b86f
     <<: *restart
     command: ["--config", "/etc/zenoh/config.json5"]
     depends_on:

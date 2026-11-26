@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.75.0"
 name = "zenoh-link-tls"
-version = "1.9.0"
+version = "1.10.2"
 authors = [
     "Julien Enoch <julien@enoch.fr>",
     "Luca Cominardi <luca.cominardi@zettascale.tech>",
@@ -36,6 +36,9 @@ repository = "https://github.com/eclipse-zenoh/zenoh"
 
 [package.metadata.cargo-machete]
 ignored = ["rustls-webpki"]
+
+[features]
+uring = []
 
 [lib]
 name = "zenoh_link_tls"
@@ -105,28 +108,28 @@ features = ["rt"]
 version = "0.1.41"
 
 [dependencies.webpki-roots]
-version = "1.0.4"
+version = "1.0.10"
 
 [dependencies.x509-parser]
 version = "0.18.0"
 
 [dependencies.zenoh-config]
-version = "=1.9.0"
+version = "=1.10.2"
 
 [dependencies.zenoh-core]
-version = "=1.9.0"
+version = "=1.10.2"
 
 [dependencies.zenoh-link-commons]
-version = "=1.9.0"
+version = "=1.10.2"
 features = ["tls"]
 
 [dependencies.zenoh-protocol]
-version = "=1.9.0"
+version = "=1.10.2"
 default-features = false
 
 [dependencies.zenoh-result]
-version = "=1.9.0"
+version = "=1.10.2"
 default-features = false
 
 [dependencies.zenoh-runtime]
-version = "=1.9.0"
+version = "=1.10.2"

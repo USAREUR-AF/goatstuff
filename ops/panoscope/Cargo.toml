@@ -36,12 +36,12 @@ categories = ["network-programming", "visualization"]
 # This PR finishes the consolidation panoscope-side by replacing the
 # inline minio_replay S3+XML walker with panoscope_core::AuditTail so
 # the walker mechanics live in one place. Behavior-preserving.
-panoscope-core = { git = "https://github.com/usareur-af/goatcore", rev = "69f4a745026457f7382fe54038e8df08dd5aecd9" }
+panoscope-core = { git = "https://github.com/usareur-af/goatcore", rev = "941a40ef79675a91f4713eb9a599d6b5b37e55a0" }
 
 # Zenoh SDK pinned to the host image's build per ADR 0708.
 # Plugin features (internal/plugins/runtime_plugins) are NOT needed —
 # panoscope is a Zenoh client peer, not an in-process plugin.
-zenoh = { version = "=1.9.0", features = ["unstable"] }
+zenoh = { version = "=1.10.2", features = ["unstable"] }
 
 # Async runtime — full multi-thread runtime; this is a request-shaped
 # service (per ADR 0112) not the data-plane single-threaded shape that

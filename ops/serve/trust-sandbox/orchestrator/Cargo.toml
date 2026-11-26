@@ -20,7 +20,7 @@ path = "src/main.rs"
 # Native Zenoh client — opens REAL mTLS sessions holding a chosen client cert,
 # the thing a browser cannot do (the whole reason this broker exists). Pinned to
 # the fleet zenoh version per docs/design/zenoh-version-pinning.md.
-zenoh = { version = "=1.9.0", features = ["unstable"] }
+zenoh = { version = "=1.10.2", features = ["unstable"] }
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
 serde = { version = "1", features = ["derive"] }
