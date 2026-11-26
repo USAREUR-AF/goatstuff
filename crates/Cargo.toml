@@ -20,7 +20,7 @@ members = [
 ]
 
 [workspace.dependencies]
-panoscope-core = { git = "https://github.com/usareur-af/goatcore", rev = "69f4a745026457f7382fe54038e8df08dd5aecd9" }
+panoscope-core = { git = "https://github.com/usareur-af/goatcore", rev = "941a40ef79675a91f4713eb9a599d6b5b37e55a0" }
 
 [profile.release]
 lto = "thin"
