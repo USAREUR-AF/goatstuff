@@ -15,6 +15,9 @@
 # `promoted_at`, the host's UTC clock at the end of the play, so a reader can
 # tell when the deploy actually finished; `ts` is kept as it was.
 #
+# --action rollback (a role that switches a host back, release-file): the row is
+# promoted to `rollback` instead.
+#
 # --served '{"<payload>": "<file>", ...}' (a serving role: goat-get, goat-docs):
 # read each file back now, at the end of the play, and record what the host
 # serves as `served` {payload: tag}. A file that is not there is "absent"; one
@@ -53,8 +56,16 @@ def main() -> int:
             return 2
         served = json.loads(args[i + 1])
         del args[i:i + 2]
+    action = "deploy"
+    if "--action" in args:
+        i = args.index("--action")
+        if args[i + 1:i + 2] not in (["deploy"], ["rollback"]):
+            sys.stderr.write("--action is deploy or rollback\n")
+            return 2
+        action = args[i + 1]
+        del args[i:i + 2]
     if len(args) != 2:
-        sys.stderr.write("usage: promote-pending.py <ledger-path> <ref> [--served JSON]\n")
+        sys.stderr.write("usage: promote-pending.py <ledger-path> <ref> [--action deploy|rollback] [--served JSON]\n")
         return 2
     path, ref = args
 
@@ -74,7 +85,7 @@ def main() -> int:
             # A hand-edited or truncated line is not ours to repair.
             continue
         if row.get("ref") == ref and row.get("action") == "pending":
-            row["action"] = "deploy"
+            row["action"] = action
             row["promoted_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             if served:
                 row["served"] = observed(served)
@@ -90,7 +101,7 @@ def main() -> int:
                 if os.path.exists(tmp):
                     os.unlink(tmp)
                 raise
-            print("promoted pending -> deploy for %s" % ref)
+            print("promoted pending -> %s for %s" % (action, ref))
             return 0
 
     print("no pending row for %s; nothing to promote" % ref)

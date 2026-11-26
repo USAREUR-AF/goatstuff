@@ -138,3 +138,9 @@ consistency_render_manifest_root: /var/lib/goat
 # Empty for every role that serves nothing but its image.
 rollback_served: []
 rollback_served_root: ""
+
+# What the row says once it is promoted: `deploy`, or `rollback` from a role
+# that switches a host back to what it ran before (release-file). A reader then
+# never takes a rollback for a deploy of the ref it left (which the row names
+# as its prior_ref). Handler mode only.
+rollback_row_action: deploy

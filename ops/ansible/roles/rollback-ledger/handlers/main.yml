@@ -20,6 +20,7 @@
       promote-pending.py
       {{ item.path | quote }}
       {{ item.ref | quote }}
+      {{ '--action rollback' if (item.action | default('deploy')) == 'rollback' else '' }}
       {{ ('--served ' ~ (item.served | to_json | quote)) if (item.served | default({}) | length > 0) else '' }}
     executable: /usr/bin/python3
   become: true
