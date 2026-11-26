@@ -1,0 +1,17 @@
+# feeds-shim speaks Zenoh 1.0.4 to its peer by design and proves it with
+# tests/transport_compatibility.py against a registry-only 1.0.4 router. It is
+# NOT moved with the fleet version; a change here is a change of the peer's
+# version, made deliberately.
+name: zenoh-feeds-shim
+version: "1.0.4"
+summary: Shim that talks to a Zenoh 1.0.4 peer; pinned to the peer, not the fleet.
+upstream:
+  github: eclipse-zenoh/zenoh
+rules:
+  - kind: cargo
+    # zenoh-collections is excluded: zenoh 1.0.4's own crates require it with a
+    # caret range, so the lock resolves it to the newest 1.x (1.9.0 today).
+    # tests/transport_compatibility.py covers that graph.
+    crate: "zenoh(?!-collections$)(-[a-z0-9-]+)?"
+    include: ["ops/zenoh-shims/feeds-shim/*"]
+    exclude: ["ops/zenoh-shims/feeds-shim/vendor/zenoh-link-tls/*"]

@@ -1,0 +1,59 @@
+# Zenoh in goatstuff: every fabric service and surface built here. The version
+# of record must equal goatcore's ops/upstream/deps/zenoh.yaml (goatcore ADR
+# 1262, docs/design/upstream-upgrade-process.md). Change it only with
+#   python3 <goatcore>/ops/upstream/upstream.py --root . bump zenoh <version> ...
+# Two deliberate exceptions have their own manifests: zenoh-sandbox.yaml (the
+# browser playground, a self-contained router + plugin + client unit) and
+# zenoh-feeds-shim.yaml (speaks Zenoh 1.0.4 to its peer by design).
+name: zenoh
+version: "1.9.0"
+summary: Fabric services and surfaces built in goatstuff; clients of the fleet router.
+upstream:
+  github: eclipse-zenoh/zenoh
+  companions:
+    - {name: zenoh-python, pypi: eclipse-zenoh}
+  watch_keywords: [deadlock, liveliness, breaking, wire, protocol, tls, quic]
+facts:
+  upstream_image_digest: "sha256:157965d71e0bfd0a044d76a985ff0e5c306ad3968929168fb9678cd2a7fec23f"
+lockfiles:
+  - "cargo update --manifest-path crates/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/flashlight/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/goat-topology/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/goat-trashgoat/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/panoscope/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/serve/trust-sandbox/orchestrator/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-shims/rest-pub-bridge/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-shims/transform-shim/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/audit-subscriber/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/crypto-posture/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/fabric-crawler/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/fabric-health/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/loadgen/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/mesh-health/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/node-net-health/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/ntp-health-pub/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/peer-health/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/peering-health/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/presence-health/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/surface-visit-audit/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/synth-vendor/Cargo.toml -p zenoh@{old} --precise {new}"
+  - "cargo update --manifest-path ops/zenoh-trial-peers/time-health/Cargo.toml -p zenoh@{old} --precise {new}"
+moves_with:
+  - "every goatstuff fabric service image, after the router (goatcore zenoh-router) on the ladder"
+rules:
+  - kind: cargo
+    crate: "zenoh(-ext|-keyexpr|-protocol|-config|-transport|-link|-link-[a-z0-9]+|-codec|-buffers|-runtime|-task|-util|-sync|-collections|-crypto|-result|-core|-shm|-stats|-macros|-plugin-trait|-backend-traits|-config-[a-z]+)?"
+    exclude: ["ops/zenoh-shims/feeds-shim/*"]
+  - kind: regex
+    what: vendored zenoh-link-tls zenoh dependency
+    globs: ["vendor/zenoh-link-tls/Cargo.toml", "*/vendor/zenoh-link-tls/Cargo.toml"]
+    exclude: ["ops/zenoh-shims/feeds-shim/*"]
+    pattern: '^version = "=(?P<v>\d+\.\d+\.\d+)"$'
+  - kind: pip
+    package: eclipse-zenoh
+    exclude: ["ops/zenoh-shims/feeds-shim/*", "ops/serve/zenoh-sandbox/*"]
+  - kind: regex
+    what: eclipse/zenoh image tag and digest
+    globs: ["*.yml", "*.yaml", "*.j2", "*.sh", "Dockerfile", "Dockerfile.*"]
+    exclude: ["ops/ansible/roles/zenoh-sandbox/*", "ops/serve/zenoh-sandbox/*"]
+    pattern: 'eclipse/zenoh:(?P<v>\d+\.\d+\.\d+)@(?P<upstream_image_digest>sha256:[0-9a-f]{64})'

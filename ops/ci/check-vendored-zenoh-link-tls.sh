@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Finding F-614. Every copy of the patched zenoh-link-tls 1.9.0 must be
-# byte-identical to vendor/zenoh-link-tls. No vendored zenoh-link-tls of any
+# Finding F-614. Every copy of the patched zenoh-link-tls at the canonical
+# copy's version must be byte-identical to vendor/zenoh-link-tls. No vendored zenoh-link-tls of any
 # version may keep the TLS stream in an UnsafeCell shared by the read and
 # write tasks.
 # Usage: check-vendored-zenoh-link-tls.sh [repo root]
@@ -13,6 +13,7 @@ if [ ! -f "$canon/Cargo.toml" ]; then
   echo "missing canonical copy: vendor/zenoh-link-tls"
   exit 1
 fi
+canon_version=$(grep -m1 -x 'version = "[^"]*"' "$canon/Cargo.toml")
 while IFS= read -r toml; do
   dir="$root/$(dirname "$toml")"
   rel=$(dirname "$toml")
@@ -21,7 +22,7 @@ while IFS= read -r toml; do
     rc=1
   fi
   [ "$dir" = "$canon" ] && continue
-  if grep -qx 'version = "1.9.0"' "$dir/Cargo.toml"; then
+  if grep -qxF "$canon_version" "$dir/Cargo.toml"; then
     if diff -rq "$canon" "$dir" >/dev/null; then
       echo "ok   $rel"
     else

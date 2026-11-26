@@ -1,0 +1,50 @@
+name: upstream-pins
+
+# Every load-bearing upstream dependency has one manifest per repository,
+# ops/upstream/deps/<name>.yaml, holding its version of record (goatcore
+# ADR 1262, docs/design/upstream-upgrade-process.md). This job runs goatcore's
+# ops/upstream/upstream.py against this tree and fails when any place disagrees
+# with its manifest. It warns (does not fail) when this repository's zenoh
+# version differs from goatcore's main: during a bump one repository merges
+# first, and the release ladder moves the router before its clients. Change a version only with
+#   python3 <goatcore>/ops/upstream/upstream.py --root . bump <name> <version>
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pyyaml
+      - name: goatcore's upgrade tool and manifests
+        run: git clone --depth 1 https://github.com/USAREUR-AF/goatcore.git "$RUNNER_TEMP/goatcore"
+      - name: The tool proves itself on a broken fixture
+        run: python3 "$RUNNER_TEMP/goatcore/ops/upstream/upstream.py" --root . self-test
+      - name: Every place agrees with its manifest
+        run: python3 "$RUNNER_TEMP/goatcore/ops/upstream/upstream.py" --root . check
+      - name: The zenoh version equals goatcore's
+        run: |
+          python3 - "$RUNNER_TEMP/goatcore/ops/upstream/deps/zenoh.yaml" ops/upstream/deps/zenoh.yaml <<'PY'
+          import sys, yaml
+          core, here = (yaml.safe_load(open(p))["version"] for p in sys.argv[1:])
+          if core != here:
+              print(f"::warning::goatstuff zenoh {here} differs from goatcore main zenoh {core}; bump the trailing one")
+              sys.exit(0)
+          print(f"zenoh {here} in both repositories")
+          PY
