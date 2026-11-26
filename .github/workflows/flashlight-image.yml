@@ -18,6 +18,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'ops/flashlight/**'
       - 'crates/panoscope-core/**'
       - 'crates/flashlight-analytics/**'
@@ -27,6 +28,7 @@ on:
     tags: ['flashlight/v*']
   pull_request:
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'ops/flashlight/**'
       - 'crates/panoscope-core/**'
       - 'crates/flashlight-analytics/**'
@@ -95,7 +97,7 @@ jobs:
           CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "Files changed in latest push ($BASE_SHA..$HEAD_SHA):"
           echo "$CHANGED" | sed 's/^/  /'
-          if echo "$CHANGED" | grep -qE '^ops/flashlight/|^crates/panoscope-core/|^crates/flashlight-analytics/|^docs/design-system/(colors_and_type|components)\.css$|^\.github/workflows/flashlight-image\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^vendor/zenoh-link-tls/|^ops/flashlight/|^crates/panoscope-core/|^crates/flashlight-analytics/|^docs/design-system/(colors_and_type|components)\.css$|^\.github/workflows/flashlight-image\.yml$'; then
             echo "→ relevant changes present; running downstream jobs"
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else

@@ -24,12 +24,14 @@ on:
   push:
     branches: [main]
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'ops/panoscope/**'
       - 'crates/panoscope-core/**'
       - '.github/workflows/panoscope-image.yml'
     tags: ['panoscope/v*']
   pull_request:
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'ops/panoscope/**'
       - 'crates/panoscope-core/**'
       - '.github/workflows/panoscope-image.yml'
@@ -101,7 +103,7 @@ jobs:
           CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "Files changed in latest push ($BASE_SHA..$HEAD_SHA):"
           echo "$CHANGED" | sed 's/^/  /'
-          if echo "$CHANGED" | grep -qE '^ops/panoscope/|^crates/panoscope-core/|^\.github/workflows/panoscope-image\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^vendor/zenoh-link-tls/|^ops/panoscope/|^crates/panoscope-core/|^\.github/workflows/panoscope-image\.yml$'; then
             echo "→ relevant changes present; running downstream jobs"
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else

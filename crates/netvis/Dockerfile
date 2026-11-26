@@ -28,6 +28,8 @@ USER root
 WORKDIR /build
 
 COPY crates/ ./crates/
+# crates/Cargo.toml patches zenoh-link-tls to this copy (finding F-614).
+COPY vendor/zenoh-link-tls/ ./vendor/zenoh-link-tls/
 # The page shell serves the design-system tokens.
 COPY docs/design-system/colors_and_type.css ./docs/design-system/
 # The warrant lens (ADR 1129) compiles in the port-set vocabulary, product

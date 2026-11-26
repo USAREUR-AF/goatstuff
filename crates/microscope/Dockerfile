@@ -23,6 +23,8 @@ USER root
 WORKDIR /build
 
 COPY crates/ ./crates/
+# crates/Cargo.toml patches zenoh-link-tls to this copy (finding F-614).
+COPY vendor/zenoh-link-tls/ ./vendor/zenoh-link-tls/
 COPY docs/design-system/colors_and_type.css ./docs/design-system/
 COPY docs/design-system/components.css ./docs/design-system/
 

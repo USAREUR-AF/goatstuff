@@ -1,10 +1,14 @@
 # Zenoh 1.0.4 certificate adapters
 
 These three published Zenoh 1.0.4 crates keep the feeds client on its existing
-protocol/API family and retain its transport/compression features. Their Rust
-source is byte-identical to the registry archives. Only each normalized
-Cargo.toml changes: rustls-webpki 0.102.8 becomes exact 0.103.16, the patched
-version already used by Rustls in this workspace. No cryptographic code is forked.
+protocol/API family and retain its transport/compression features. Each
+normalized Cargo.toml changes: rustls-webpki 0.102.8 becomes exact 0.103.16, the
+patched version already used by Rustls in this workspace. One Rust source file
+changes: zenoh-link-tls src/unicast.rs keeps the TLS stream behind a Mutex held
+for one poll call instead of an UnsafeCell shared by the read and write tasks
+(finding F-614; the same change goatstuff applies to zenoh-link-tls 1.9.0 in
+vendor/zenoh-link-tls). All other Rust source is byte-identical to the registry
+archives. No cryptographic code is forked.
 
 `provenance.json` records registry archive checksums from the original lock,
 upstream commit, every original file hash and each edited manifest hash.

@@ -36,6 +36,12 @@ def check(root):
                 after = b'[dependencies.rustls-webpki]\nversion = "0.102.8"'
                 assert data.count(before) == 1
                 data = data.replace(before, after)
+            modified = package.get("modified_source_sha256", {})
+            if filename in modified:
+                # A reviewed source change: pin the edited file's hash; the
+                # original hash stays recorded for provenance.
+                assert hashlib.sha256(data).hexdigest() == modified[filename], (name, filename)
+                continue
             assert hashlib.sha256(data).hexdigest() == digest, (name, filename)
         source = json.loads((directory / ".cargo_vcs_info.json").read_text())
         assert source["git"]["sha1"] == package["upstream_git"]
@@ -54,7 +60,7 @@ def main():
             shutil.copytree(root / "vendor", fixture / "vendor")
             shutil.copy2(root / "Cargo.toml", fixture / "Cargo.toml")
             check(fixture)
-            for relative in ["vendor/zenoh-link-commons/src/tls.rs", "vendor/zenoh-link-tls/Cargo.toml"]:
+            for relative in ["vendor/zenoh-link-commons/src/tls.rs", "vendor/zenoh-link-tls/Cargo.toml", "vendor/zenoh-link-tls/src/unicast.rs"]:
                 path = fixture / relative
                 original = path.read_bytes()
                 path.write_bytes(original + b"\n# planted change\n" if path.suffix == ".toml" else original + b"\n// planted change\n")
@@ -69,7 +75,7 @@ def main():
         print("PASS: planted source/manifest changes rejected; original controls pass")
     else:
         assert not sys.argv[1:], "usage: check_vendor_provenance.py [--self-test]"
-    print("PASS: three published adapters, source unchanged, only reviewed WebPKI pins modified")
+    print("PASS: three published adapters; only reviewed WebPKI pins and the reviewed zenoh-link-tls stream change modified")
 
 
 if __name__ == "__main__":

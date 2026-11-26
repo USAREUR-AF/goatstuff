@@ -11,12 +11,22 @@
 // Contributors:
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
-use std::{cell::UnsafeCell, convert::TryInto, fmt, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    convert::TryInto,
+    fmt,
+    future::poll_fn,
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use time::OffsetDateTime;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf},
     net::{TcpListener, TcpStream},
     sync::Mutex as AsyncMutex,
 };
@@ -45,15 +55,14 @@ use crate::{
 pub struct TlsCommonName(String);
 
 pub struct LinkUnicastTls {
-    // The underlying socket as returned from the async-rustls library
-    // NOTE: TlsStream requires &mut for read and write operations. This means
-    //       that concurrent reads and writes are not possible. To achieve that,
-    //       we use an UnsafeCell for interior mutability. Using an UnsafeCell
-    //       is safe in our case since the transmission and reception logic
-    //       already ensures that no concurrent reads or writes can happen on
-    //       the same stream: there is only one task at the time that writes on
-    //       the stream and only one task at the time that reads from the stream.
-    inner: UnsafeCell<TlsStream<TcpStream>>,
+    // The underlying socket as returned from the async-rustls library.
+    //
+    // PATCHED (see README.md): upstream keeps this in an UnsafeCell and lets
+    // the reading task and the writing task use the stream at the same time.
+    // Here the stream sits behind a mutex held only for one `poll_*` call,
+    // never across an await (the scheme `tokio::io::split` uses). Reads and
+    // writes still interleave, but never run inside rustls at the same instant.
+    inner: Mutex<TlsStream<TcpStream>>,
     // The source socket address of this link (address used on the local host)
     src_addr: SocketAddr,
     src_locator: Locator,
@@ -68,8 +77,8 @@ pub struct LinkUnicastTls {
     expiration_manager: Option<LinkCertExpirationManager>,
 }
 
-unsafe impl Send for LinkUnicastTls {}
-unsafe impl Sync for LinkUnicastTls {}
+// PATCHED: no `unsafe impl Send/Sync` — every field is Send + Sync on its own
+// now that the stream is behind a Mutex.
 
 impl LinkUnicastTls {
     fn new(
@@ -127,7 +136,7 @@ impl LinkUnicastTls {
 
         // Build the Tls object
         LinkUnicastTls {
-            inner: UnsafeCell::new(socket),
+            inner: Mutex::new(socket),
             src_addr,
             src_locator: Locator::new(TLS_LOCATOR_PREFIX, src_addr.to_string(), "").unwrap(),
             dst_addr,
@@ -140,24 +149,79 @@ impl LinkUnicastTls {
         }
     }
 
-    // NOTE: It is safe to suppress Clippy warning since no concurrent reads
-    //       or concurrent writes will ever happen. The read_mtx and write_mtx
-    //       are respectively acquired in any read and write operation.
-    #[allow(clippy::mut_from_ref)]
-    fn get_mut_socket(&self) -> &mut TlsStream<TcpStream> {
-        unsafe { &mut *self.inner.get() }
+    /// Run one poll of an IO operation with exclusive access to the TLS
+    /// stream. The lock is released before this returns, so a pending read
+    /// never blocks a write (and vice versa) — it only excludes them from
+    /// running inside rustls simultaneously.
+    fn poll_socket<R>(
+        &self,
+        f: impl FnOnce(Pin<&mut TlsStream<TcpStream>>) -> Poll<R>,
+    ) -> Poll<R> {
+        // A panic while the lock was held leaves the stream in whatever state
+        // rustls left it; the next IO call reports that state as an error, so
+        // poisoning carries no extra information here.
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        f(Pin::new(&mut *guard))
+    }
+
+    async fn socket_write(&self, buffer: &[u8]) -> io::Result<usize> {
+        poll_fn(|cx| self.poll_socket(|s| s.poll_write(cx, buffer))).await
+    }
+
+    async fn socket_write_all(&self, mut buffer: &[u8]) -> io::Result<()> {
+        while !buffer.is_empty() {
+            let n = self.socket_write(buffer).await?;
+            if n == 0 {
+                return Err(io::ErrorKind::WriteZero.into());
+            }
+            buffer = &buffer[n..];
+        }
+        Ok(())
+    }
+
+    async fn socket_flush(&self) -> io::Result<()> {
+        poll_fn(|cx| self.poll_socket(|s| s.poll_flush(cx))).await
+    }
+
+    fn poll_socket_read(&self, cx: &mut Context<'_>, buffer: &mut [u8]) -> Poll<io::Result<usize>> {
+        let mut buf = ReadBuf::new(buffer);
+        match self.poll_socket(|s| s.poll_read(cx, &mut buf)) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(buf.filled().len())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    async fn socket_read(&self, buffer: &mut [u8]) -> io::Result<usize> {
+        poll_fn(|cx| self.poll_socket_read(cx, buffer)).await
+    }
+
+    async fn socket_read_exact(&self, buffer: &mut [u8]) -> io::Result<()> {
+        let mut filled = 0;
+        while filled < buffer.len() {
+            let n = self.socket_read(&mut buffer[filled..]).await?;
+            if n == 0 {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
+            filled += n;
+        }
+        Ok(())
     }
 
     async fn close(&self) -> ZResult<()> {
         tracing::trace!("Closing TLS link: {}", self);
         // Flush the TLS stream
         let _guard = zasynclock!(self.write_mtx);
-        let tls_stream = self.get_mut_socket();
-        let res = tls_stream.flush().await;
+        let res = self.socket_flush().await;
         tracing::trace!("TLS link flush {}: {:?}", self, res);
         // Close the underlying TCP stream
-        let (tcp_stream, _) = tls_stream.get_mut();
-        let res = tcp_stream.shutdown().await;
+        let res = poll_fn(|cx| {
+            self.poll_socket(|s| {
+                let (tcp_stream, _) = s.get_mut().get_mut();
+                Pin::new(tcp_stream).poll_shutdown(cx)
+            })
+        })
+        .await;
         tracing::trace!("TLS link shutdown {}: {:?}", self, res);
         res.map_err(|e| zerror!(e).into())
     }
@@ -182,7 +246,7 @@ impl LinkUnicastTrait for LinkUnicastTls {
 
     async fn write(&self, buffer: &[u8]) -> ZResult<usize> {
         let _guard = zasynclock!(self.write_mtx);
-        self.get_mut_socket().write(buffer).await.map_err(|e| {
+        self.socket_write(buffer).await.map_err(|e| {
             tracing::trace!("Write error on TLS link {}: {}", self, e);
             zerror!(e).into()
         })
@@ -190,7 +254,7 @@ impl LinkUnicastTrait for LinkUnicastTls {
 
     async fn write_all(&self, buffer: &[u8]) -> ZResult<()> {
         let _guard = zasynclock!(self.write_mtx);
-        self.get_mut_socket().write_all(buffer).await.map_err(|e| {
+        self.socket_write_all(buffer).await.map_err(|e| {
             tracing::trace!("Write error on TLS link {}: {}", self, e);
             zerror!(e).into()
         })
@@ -198,7 +262,7 @@ impl LinkUnicastTrait for LinkUnicastTls {
 
     async fn read(&self, buffer: &mut [u8]) -> ZResult<usize> {
         let _guard = zasynclock!(self.read_mtx);
-        self.get_mut_socket().read(buffer).await.map_err(|e| {
+        self.socket_read(buffer).await.map_err(|e| {
             tracing::trace!("Read error on TLS link {}: {}", self, e);
             zerror!(e).into()
         })
@@ -206,14 +270,10 @@ impl LinkUnicastTrait for LinkUnicastTls {
 
     async fn read_exact(&self, buffer: &mut [u8]) -> ZResult<()> {
         let _guard = zasynclock!(self.read_mtx);
-        let _ = self
-            .get_mut_socket()
-            .read_exact(buffer)
-            .await
-            .map_err(|e| {
-                tracing::trace!("Read error on TLS link {}: {}", self, e);
-                zerror!(e)
-            })?;
+        self.socket_read_exact(buffer).await.map_err(|e| {
+            tracing::trace!("Read error on TLS link {}: {}", self, e);
+            zerror!(e)
+        })?;
         Ok(())
     }
 
@@ -271,7 +331,9 @@ impl LinkWithCertExpiration for LinkUnicastTls {
 impl Drop for LinkUnicastTls {
     fn drop(&mut self) {
         // Close the underlying TCP stream
-        let (tcp_stream, _) = self.get_mut_socket().get_mut();
+        // `&mut self`: no other task can hold the stream, so no lock is taken.
+        let tls_stream = self.inner.get_mut().unwrap_or_else(|e| e.into_inner());
+        let (tcp_stream, _) = tls_stream.get_mut();
         let _ = zenoh_runtime::ZRuntime::Acceptor
             .block_in_place(async move { tcp_stream.shutdown().await });
     }

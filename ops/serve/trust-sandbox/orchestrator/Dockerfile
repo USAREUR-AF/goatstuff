@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Dependency cache layer: compile the (large) zenoh dep tree against a dummy
 # main so source edits don't trigger a full rebuild. Cargo.lock pins the tree.
 COPY orchestrator/Cargo.toml orchestrator/Cargo.lock ./
+# Patched zenoh-link-tls ([patch.crates-io] in Cargo.toml; finding F-614).
+COPY orchestrator/vendor ./vendor
 RUN mkdir src && echo 'fn main() {}' > src/main.rs \
  && cargo build --release --locked || true
 

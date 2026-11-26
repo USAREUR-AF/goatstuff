@@ -10,6 +10,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'crates/panoscope-core/**'
       - 'crates/microscope/**'
       - 'crates/Cargo.toml'
@@ -20,6 +21,7 @@ on:
     tags: ['microscope/v*']
   pull_request:
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'crates/panoscope-core/**'
       - 'crates/microscope/**'
       - 'crates/Cargo.toml'

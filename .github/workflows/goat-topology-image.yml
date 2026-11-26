@@ -27,6 +27,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'ops/goat-topology/**'
       # The design-system CSS is include_str!'d into the binary, so a change
       # there must rebuild this image or the surface serves stale tokens.
@@ -36,6 +37,7 @@ on:
     tags: ['topology/v*']
   pull_request:
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'ops/goat-topology/**'
       # The design-system CSS is include_str!'d into the binary, so a change
       # there must rebuild this image or the surface serves stale tokens.

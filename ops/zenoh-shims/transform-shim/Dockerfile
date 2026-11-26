@@ -18,6 +18,8 @@ FROM ${BASE_RUST_BUILD} AS rust-builder
 USER root
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
+# Patched zenoh-link-tls ([patch.crates-io] in Cargo.toml; finding F-614).
+COPY vendor ./vendor
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs && touch src/lib.rs && cargo fetch && rm -rf src
 COPY src/ ./src/
 RUN cargo build --release --locked

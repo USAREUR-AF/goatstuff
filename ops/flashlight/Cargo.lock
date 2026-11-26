@@ -884,11 +884,13 @@ dependencies = [
  "anyhow",
  "axum",
  "flashlight-analytics",
+ "flume",
  "futures",
  "html-escape",
  "hyper",
  "mime_guess",
  "panoscope-core",
+ "rcgen",
  "rust-embed",
  "serde",
  "serde_json",
@@ -900,6 +902,9 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "zenoh",
+ "zenoh-link-commons",
+ "zenoh-link-tls",
+ "zenoh-protocol",
 ]
 
 [[package]]
@@ -4677,8 +4682,6 @@ dependencies = [
 [[package]]
 name = "zenoh-link-tls"
 version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6f6b308ae2599f9c1344fbcd3418b2c3a3a9fe287ec39501ba834168493ba37"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

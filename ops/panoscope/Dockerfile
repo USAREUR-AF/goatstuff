@@ -40,6 +40,8 @@ WORKDIR /build
 #
 # Layout under /build mirrors repo paths:
 #   /build/ops/panoscope/{Cargo.toml,...}
+# Patched zenoh-link-tls ([patch.crates-io] in Cargo.toml; finding F-614).
+COPY vendor/zenoh-link-tls/ ./vendor/zenoh-link-tls/
 COPY ops/panoscope/Cargo.toml ops/panoscope/Cargo.lock ./ops/panoscope/
 COPY ops/panoscope/build.rs ./ops/panoscope/
 RUN mkdir -p ops/panoscope/src \

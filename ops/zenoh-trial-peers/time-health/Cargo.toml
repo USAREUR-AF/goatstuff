@@ -42,3 +42,10 @@ serde_json = "1"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Finding F-614: the published zenoh-link-tls shares one TLS stream between
+# its read and write tasks. This patched 1.9.0 copy fixes that; every other
+# zenoh crate stays on the published =1.9.0. Remove with the copy (see its
+# README.md) once a zenoh release ships the fix.
+[patch.crates-io]
+zenoh-link-tls = { path = "vendor/zenoh-link-tls" }

@@ -53,3 +53,10 @@ unsafe_code = "forbid"
 
 [lints.clippy]
 all = "warn"
+
+# Finding F-614: the published zenoh-link-tls shares one TLS stream between
+# its read and write tasks. This patched 1.9.0 copy fixes that; every other
+# zenoh crate stays on the published =1.9.0. Remove with the copy (see its
+# README.md) once a zenoh release ships the fix.
+[patch.crates-io]
+zenoh-link-tls = { path = "vendor/zenoh-link-tls" }

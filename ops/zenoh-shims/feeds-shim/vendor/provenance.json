@@ -59,10 +59,14 @@
         "src/utils.rs": "1320b57dfab41b125bc9606a5f1dea654863a2a82979a2672e357e6a94c7607e"
       },
       "modified_files": [
-        "Cargo.toml"
+        "Cargo.toml",
+        "src/unicast.rs"
       ],
-      "change": "rustls-webpki dependency0.102.8 to exact0.103.16; Rust source unchanged",
-      "modified_manifest_sha256": "c62621b39f7fdac8fff989d40c56ebb59e25ba8555c9ab5d7ef8faa6659af933"
+      "change": "rustls-webpki dependency0.102.8 to exact0.103.16; src/unicast.rs: TLS stream behind a per-poll Mutex instead of an UnsafeCell shared by the read and write tasks (finding F-614)",
+      "modified_manifest_sha256": "c62621b39f7fdac8fff989d40c56ebb59e25ba8555c9ab5d7ef8faa6659af933",
+      "modified_source_sha256": {
+        "src/unicast.rs": "26d076119f4acd75da36f3e16edea822f849f34cd493d62207a35dfa0be118a9"
+      }
     }
   ]
 }

@@ -26,6 +26,8 @@ WORKDIR /build
 # --- dependency layer ------------------------------------------------------
 # Stub out every include_str! target so the dependency build resolves without
 # the real sources. A source-only edit then reuses this layer.
+# Patched zenoh-link-tls ([patch.crates-io] in Cargo.toml; finding F-614).
+COPY vendor/zenoh-link-tls/ ./vendor/zenoh-link-tls/
 COPY ops/goat-topology/Cargo.toml ops/goat-topology/Cargo.lock ./ops/goat-topology/
 # Every include_str! target needs to exist for the dependency build. Keep this
 # list in step with the FILES table in src/assets.rs — a missing stub fails the
