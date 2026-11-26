@@ -8,8 +8,9 @@
 # rollback. changed_when:false throughout — the ledger is audit-only.
 #
 # Dedup: a row is appended only when the (ref, artifact_type, reversible)
-# tuple differs from the last row, so the jsonl carries one row per actual
-# change rather than one per ansible run.
+# tuple differs from the last row, or a deploy follows a rollback (or the
+# reverse), so the jsonl carries one row per actual change rather than one per
+# ansible run.
 
 - name: rollback-ledger | require a component name (fail-closed per ADR 1060)
   ansible.builtin.assert:
@@ -109,6 +110,7 @@
         or (_rbl_prev.artifact_type | default('')) != rollback_artifact_type
         or (_rbl_prev.reversible | default(true) | bool) != (rollback_reversible | bool)
         or ((rollback_served | length > 0) and (_rbl_prev.served | default({})) != _rbl_served_declared)
+        or ((_rbl_prev.action | default('')) == 'rollback') != (rollback_row_action == 'rollback')
       }}
 
 - name: rollback-ledger | build the ledger row
@@ -250,7 +252,7 @@
 - name: rollback-ledger | queue this row for the end-of-play promote
   ansible.builtin.set_fact:
     _rbl_promote_queue: >-
-      {{ (_rbl_promote_queue | default([])) + [{'path': rollback_ledger_path, 'ref': rollback_ref,
+      {{ (_rbl_promote_queue | default([])) + [{'path': rollback_ledger_path, 'ref': rollback_ref, 'action': rollback_row_action,
            'served': dict(rollback_served | map(attribute='name')
                           | zip(rollback_served | map(attribute='file') | map('regex_replace', '^', rollback_served_root ~ '/')))}] }}
   when:
