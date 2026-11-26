@@ -1,11 +1,14 @@
 # Zenoh in goatstuff: every fabric service and surface built here. The version
 # of record must equal goatcore's ops/upstream/deps/zenoh.yaml (goatcore ADR
 # 1262, docs/design/upstream-upgrade-process.md). Change it only with
-#   python3 <goatcore>/ops/upstream/upstream.py --root . bump zenoh <version> ...
+#   python3 <goatcore>/ops/upstream/upstream.py --root . bump zenoh-goatstuff <version> ...
+# It has its own name because goatcore's assemble.sh lays goatstuff over
+# goatcore and refuses a path the two carry with different content; goatcore's
+# zenoh.yaml stays the one manifest named zenoh.
 # Two deliberate exceptions have their own manifests: zenoh-sandbox.yaml (the
 # browser playground, a self-contained router + plugin + client unit) and
 # zenoh-feeds-shim.yaml (speaks Zenoh 1.0.4 to its peer by design).
-name: zenoh
+name: zenoh-goatstuff
 version: "1.10.2"
 summary: Fabric services and surfaces built in goatstuff; clients of the fleet router.
 upstream:
