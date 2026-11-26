@@ -1,15 +1,15 @@
-# zenoh-link-tls 1.9.0, patched
+# zenoh-link-tls 1.10.2, patched
 
-Copy of the published crate `zenoh-link-tls` **1.9.0** (Eclipse Zenoh, `EPL-2.0 OR Apache-2.0`, Copyright ZettaScale Technology), taken from crates.io. Workspaces pick it up through:
+Copy of the published crate `zenoh-link-tls` **1.10.2** (Eclipse Zenoh, `EPL-2.0 OR Apache-2.0`, Copyright ZettaScale Technology), taken from crates.io. Workspaces pick it up through:
 
 ```toml
 [patch.crates-io]
 zenoh-link-tls = { path = "<relative path>/vendor/zenoh-link-tls" }
 ```
 
-The patch replaces only `zenoh-link-tls`. Every other zenoh crate stays on the published `=1.9.0`.
+The patch replaces only `zenoh-link-tls`. Every other zenoh crate stays on the published `=1.10.2`.
 
-## Diff from upstream 1.9.0
+## Diff from upstream 1.10.2
 
 | File | Change |
 |---|---|

@@ -27,7 +27,7 @@ description = "Per-visit attribution for oauth2-proxy-fenced surfaces — Surfac
 repository = "https://github.com/usareur-af/goatcore"
 
 [dependencies]
-zenoh = { version = "=1.9.0", features = ["unstable"] }
+zenoh = { version = "=1.10.2", features = ["unstable"] }
 # PINNED DELIBERATELY — F-462. zenoh is pinned but its TLS stack is not, so a
 # crate resolved fresh picks a newer rustls that cannot complete this fleet's
 # handshake (the router negotiates a post-quantum hybrid group). The failure is
@@ -56,4 +56,4 @@ chrono = "0.4"
 [dev-dependencies]
 rcgen = { version = "0.14", features = ["x509-parser"] }
 tempfile = "3"
-zenoh-link-commons = { version = "=1.9.0", features = ["tls"] }
+zenoh-link-commons = { version = "=1.10.2", features = ["tls"] }

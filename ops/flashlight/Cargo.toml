@@ -44,7 +44,7 @@ flashlight-analytics = { path = "../../crates/flashlight-analytics" }
 
 # Zenoh SDK pinned to the host image build per
 # docs/design/zenoh-version-pinning.md.
-zenoh = { version = "=1.9.0", features = ["unstable"] }
+zenoh = { version = "=1.10.2", features = ["unstable"] }
 
 # Async runtime — full multi-thread; request-shaped service per
 # ADR 0112.
@@ -93,9 +93,9 @@ thiserror = "1"
 tokio = { version = "1", features = ["full", "test-util"] }
 # tests/tls_link_concurrent_io.rs drives a real zenoh TLS link through the
 # same link manager the zenoh session uses. Versions match the zenoh pin.
-zenoh-link-tls = "=1.9.0"
-zenoh-link-commons = "=1.9.0"
-zenoh-protocol = "=1.9.0"
+zenoh-link-tls = "=1.10.2"
+zenoh-link-commons = "=1.10.2"
+zenoh-protocol = "=1.10.2"
 flume = "0.11"
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 

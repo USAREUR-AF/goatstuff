@@ -39,7 +39,7 @@ name = "rest-pub-bridge"
 path = "src/main.rs"
 
 [dependencies]
-zenoh = { version = "=1.9.0", features = ["unstable"] }
+zenoh = { version = "=1.10.2", features = ["unstable"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 # axum 0.7 to match the repo standard (ops/panoscope/Cargo.toml).
 axum = "0.7"

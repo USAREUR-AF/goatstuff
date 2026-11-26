@@ -34,7 +34,7 @@ description = "Single lazy crawler — bounded per-owner cardinality census + ro
 repository = "https://github.com/usareur-af/goatcore"
 
 [dependencies]
-zenoh = { version = "=1.9.0", features = ["unstable"] }
+zenoh = { version = "=1.10.2", features = ["unstable"] }
 # rocksdb-direct census source: secondary read-only opens of
 # the router's live per-owner stores — zero router involvement. Reader-only;
 # must stay format-compatible with zenoh-backend-rocksdb =1.9.0 (revalidate at
