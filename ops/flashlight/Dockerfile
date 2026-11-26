@@ -69,6 +69,8 @@ RUN V="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/"/, "", $3); print $3; 
 # compiles, not stethoscope / netvis / etc. — but the manifest
 # tree has to be intact.
 COPY crates/ ./crates/
+# crates/Cargo.toml patches zenoh-link-tls to this copy (finding F-614).
+COPY vendor/zenoh-link-tls/ ./vendor/zenoh-link-tls/
 
 RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
@@ -105,6 +107,8 @@ WORKDIR /build
 # as the native rlib target.
 COPY crates/flashlight-analytics/Cargo.toml ./crates/flashlight-analytics/
 COPY crates/flashlight-analytics/src/ ./crates/flashlight-analytics/src/
+# Patched zenoh-link-tls ([patch.crates-io] in Cargo.toml; finding F-614).
+COPY vendor/zenoh-link-tls/ ./vendor/zenoh-link-tls/
 COPY ops/flashlight/Cargo.toml ops/flashlight/Cargo.lock ./ops/flashlight/
 RUN mkdir -p ops/flashlight/src/assets docs/design-system \
     && echo "fn main() {}" > ops/flashlight/src/main.rs \

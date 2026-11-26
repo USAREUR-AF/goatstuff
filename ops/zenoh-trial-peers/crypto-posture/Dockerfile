@@ -22,6 +22,8 @@ RUN if ! command -v cmake >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1;
     fi
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
+# Patched zenoh-link-tls ([patch.crates-io] in Cargo.toml; finding F-614).
+COPY vendor ./vendor
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs && cargo fetch && rm -rf src
 COPY src/ ./src/
 RUN cargo build --release --locked

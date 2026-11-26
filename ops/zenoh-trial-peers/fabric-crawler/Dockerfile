@@ -34,6 +34,8 @@ FROM rust:1-bookworm AS rust-builder
 RUN apt-get update && apt-get install -y --no-install-recommends clang libclang-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
+# Patched zenoh-link-tls ([patch.crates-io] in Cargo.toml; finding F-614).
+COPY vendor ./vendor
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs && cargo fetch && rm -rf src
 COPY src/ ./src/
 COPY proto/ ./proto/

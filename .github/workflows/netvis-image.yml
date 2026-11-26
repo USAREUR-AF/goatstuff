@@ -12,6 +12,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'crates/panoscope-core/**'
       - 'crates/netvis/**'
       - 'crates/Cargo.toml'
@@ -24,6 +25,7 @@ on:
     tags: ['netvis/v*']
   pull_request:
     paths:
+      - 'vendor/zenoh-link-tls/**'
       - 'crates/panoscope-core/**'
       - 'crates/netvis/**'
       - 'crates/Cargo.toml'

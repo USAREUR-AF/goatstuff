@@ -91,9 +91,23 @@ thiserror = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
+# tests/tls_link_concurrent_io.rs drives a real zenoh TLS link through the
+# same link manager the zenoh session uses. Versions match the zenoh pin.
+zenoh-link-tls = "=1.9.0"
+zenoh-link-commons = "=1.9.0"
+zenoh-protocol = "=1.9.0"
+flume = "0.11"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 
 [lints.rust]
 unsafe_code = "forbid"
 
 [lints.clippy]
 all = "warn"
+
+# Finding F-614: the published zenoh-link-tls shares one TLS stream between
+# its read and write tasks. This patched 1.9.0 copy fixes that; every other
+# zenoh crate stays on the published =1.9.0. Remove with the copy (see its
+# README.md) once a zenoh release ships the fix.
+[patch.crates-io]
+zenoh-link-tls = { path = "../../vendor/zenoh-link-tls" }
