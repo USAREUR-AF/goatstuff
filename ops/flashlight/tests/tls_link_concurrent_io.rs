@@ -93,11 +93,12 @@ async fn tls_link_survives_concurrent_read_and_write() {
     let pki = write_pki(&dir);
 
     // Server side: a listener on an ephemeral port; accepted links arrive on
-    // the channel exactly as they do inside a zenoh router.
+    // the channel exactly as they do inside a zenoh router. It binds the name
+    // the client dials, so both resolve to the same address family.
     let (accepted_tx, accepted_rx) = flume::unbounded();
     let server = LinkManagerUnicastTls::new(accepted_tx);
     let listen: EndPoint = format!(
-        "tls/127.0.0.1:0#root_ca_certificate_file={};listen_certificate_file={};listen_private_key_file={}",
+        "tls/localhost:0#root_ca_certificate_file={};listen_certificate_file={};listen_private_key_file={}",
         pki.ca, pki.server_cert, pki.server_key
     )
     .parse()
