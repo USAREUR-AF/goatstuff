@@ -78,3 +78,17 @@ def test_plan_changes_nothing_apply_converges_and_nothing_is_deleted(rows, capsy
 
 def test_the_shipped_schemas_have_a_known_kind():
     assert {p.suffix for p in (pr.HERE / "schemas").iterdir()} <= set(pr.KINDS)
+
+
+def test_a_verbatim_chunk_is_a_declarable_key(tmp_path):
+    p = tmp_path / "r.yaml"
+    p.write_text(f"""
+standards:
+  pcap: {{format: raw}}
+records:
+  - {{key: {A}/stream/@pcap/radar/node-1, standard: pcap, description: capture}}
+""")
+    assert [r["key"] for r in pr.load(p)] == [f"{A}/stream/@pcap/radar/node-1"]
+    f = tmp_path / "vars.yml"
+    f.write_text(f"key: volatile/{A}/stream/@pcap/radar/node-1\n")
+    assert pr.undeclared(p, [f]) == []

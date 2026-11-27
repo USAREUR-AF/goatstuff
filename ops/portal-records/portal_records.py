@@ -28,7 +28,9 @@ from pathlib import Path
 import yaml
 
 HERE = Path(__file__).resolve().parent
-KEY = re.compile(r"(?<![0-9A-Za-z/_-])(?:volatile/)?([0-9a-f]{32}(?:/[A-Za-z0-9_.*-]+)+)")
+# A chunk may start with `@`: a verbatim chunk, which no wildcard matches
+# (goatcore ADR 1270 puts raw captures under `@pcap` for that reason).
+KEY = re.compile(r"(?<![0-9A-Za-z/_-])(?:volatile/)?([0-9a-f]{32}(?:/@?[A-Za-z0-9_.*-]+)+)")
 VERSION = re.compile(r"v[0-9]+")
 KINDS = {".proto": "protobuf-source", ".fds": "protobuf-fds", ".xsd": "xsd"}
 
