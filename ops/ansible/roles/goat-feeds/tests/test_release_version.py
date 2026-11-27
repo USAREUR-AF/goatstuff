@@ -41,3 +41,13 @@ def test_the_pinned_signing_config_names_a_rekor_v1_log_only():
     cfg = json.load(open(os.path.join(FEEDS, "release", "signing-config.json")))
     assert cfg["mediaType"] == "application/vnd.dev.sigstore.signingconfig.v0.2+json"
     assert [(u["url"], u["majorApiVersion"]) for u in cfg["rekorTlogUrls"]] == [("https://rekor.sigstore.dev", 1)]
+
+
+def test_every_job_checks_out_before_it_downloads_the_files():
+    # actions/checkout cleans the workspace: files downloaded before it are lost.
+    import yaml
+    wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "goat-feeds-release.yml")))
+    for name, job in wf["jobs"].items():
+        uses = [s.get("uses", "").split("@")[0] for s in job["steps"]]
+        if "actions/checkout" in uses and "actions/download-artifact" in uses:
+            assert uses.index("actions/checkout") < uses.index("actions/download-artifact"), name
