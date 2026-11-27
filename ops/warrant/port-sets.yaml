@@ -167,3 +167,17 @@ port_sets:
       - { src: EFFECTOR-CUE, dst: INFRA }
       - { src: EFFECTOR-ARBITER, dst: INFRA }
       - { src: CONTROL, dst: INFRA }
+
+  - name: feed-delivery
+    purpose: >
+      Delivery port for fabric feeds (ADR 1259): goat-feeds on the goatnet's core
+      node sends an approved feed (a radar's tracks, a fused picture) over UDP to
+      this port on a console or control system that takes its data that way. One
+      way, from the core node to the receiving system.
+    owner: platform-admin
+    members:
+      - { protocol: udp, ports: ["7005"] }
+    required_by:
+      - { src: INFRA, dst: CONTROL }
+      - { src: INFRA, dst: EFFECTOR-CUE }
+      - { src: INFRA, dst: EFFECTOR-ARBITER }
