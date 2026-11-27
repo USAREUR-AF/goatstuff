@@ -1,0 +1,105 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# goat-feeds: the binary the service runs, from exactly one of two places.
+#
+#   goat_feeds_release_home   a release component's directory, where goatbuilder's
+#                             release-file role has put the file it verified (the pin's
+#                             SHA256SUMS digest and its keyless signature). The play sets
+#                             it when goatbuilder passes release_file_component.
+#   goat_feeds_binary_src     a binary on the controller, for a trial ("{arch}" is
+#                             replaced by amd64 or arm64).
+#
+# Needs gf_arch. Sets gf_version, the version that runs.
+
+- name: goat-feeds | binary | exactly one source
+  ansible.builtin.assert:
+    that:
+      - (goat_feeds_binary_src | length > 0) != (goat_feeds_release_home | length > 0)
+    fail_msg: >-
+      goat-feeds needs one binary: a verified release (goatbuilder deploy, which sets
+      release_file_component) or goat_feeds_binary_src (a trial), not both and not
+      neither. Nothing was installed.
+    quiet: true
+
+- name: goat-feeds | binary | from the verified release
+  when: goat_feeds_release_home | length > 0
+  block:
+    - name: goat-feeds | binary | where the releases are, every link resolved
+      ansible.builtin.command:
+        argv: [realpath, -e, "{{ goat_feeds_release_home }}"]
+      register: _gf_real
+      changed_when: false
+
+    - name: goat-feeds | binary | the file current names
+      ansible.builtin.stat:
+        path: "{{ goat_feeds_release_home }}/current"
+        follow: false
+      register: _gf_link
+
+    - name: goat-feeds | binary | that file, read again, and its directories
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        checksum_algorithm: sha256
+        get_checksum: "{{ item == (_gf_link.stat.lnk_source | default('')) }}"
+      loop:
+        - "{{ _gf_link.stat.lnk_source | default(goat_feeds_release_home ~ '/current') }}"
+        - "{{ _gf_link.stat.lnk_source | default(goat_feeds_release_home ~ '/current') | dirname }}"
+        - "{{ _gf_real.stdout }}"
+        - "{{ _gf_real.stdout | dirname }}"
+      register: _gf_stats
+
+    # The file is the one release-file verified (or, on a rollback, the one it ran
+    # before), in the directory named for its SHA-256, and no one but its owner can
+    # change it or the directories above it.
+    - name: goat-feeds | binary | it is the verified release file
+      vars:
+        _gf_file: "{{ _gf_stats.results[0].stat }}"
+        _gf_src: "{{ _gf_link.stat.lnk_source | default('') }}"
+      ansible.builtin.assert:
+        that:
+          - _gf_link.stat.islnk | default(false)
+          - _gf_file.exists and _gf_file.isreg
+          - _gf_src is match('^' ~ (_gf_real.stdout | regex_escape) ~ '/[0-9a-f]{64}/goat-feeds-[0-9A-Za-z.+~-]+-linux-' ~ gf_arch ~ '\\Z')
+          - _gf_file.checksum == (_gf_src | dirname | basename)
+          - (release_file_rollback | default(false) | bool) or
+            _gf_src == (_gf_real.stdout ~ '/' ~ (_rf_sha256 | default('')) ~ '/' ~ (_rf_name | default('')))
+          - _gf_stats.results | map(attribute='stat') | rejectattr('exists') | list | length == 0
+          - _gf_stats.results | map(attribute='stat.pw_name') | unique | list == [goat_feeds_release_owner]
+          - _gf_stats.results | map(attribute='stat.wgrp') | select | list | length == 0
+          - _gf_stats.results | map(attribute='stat.woth') | select | list | length == 0
+        fail_msg: >-
+          {{ goat_feeds_release_home }}/current is not a verified goat-feeds release file
+          for {{ gf_arch }}, or someone other than {{ goat_feeds_release_owner }} can change
+          it ({{ _gf_src or 'missing' }}). Nothing was installed.
+        quiet: true
+
+    - name: goat-feeds | binary | the release's file and version
+      ansible.builtin.set_fact:
+        gf_binary: "{{ _gf_link.stat.lnk_source }}"
+        gf_version: "{{ _gf_link.stat.lnk_source | basename | regex_replace('^goat-feeds-(.+)-linux-(amd64|arm64)$', '\\1') }}"
+
+- name: goat-feeds | binary | from the controller (a trial)
+  when: goat_feeds_binary_src | length > 0
+  block:
+    - name: goat-feeds | binary | copy it
+      ansible.builtin.copy:
+        src: "{{ goat_feeds_binary_src | replace('{arch}', gf_arch) }}"
+        dest: "{{ goat_feeds_dir }}/goat-feeds-{{ goat_feeds_version }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart goat-feeds
+
+    - name: goat-feeds | binary | the trial's file and version
+      ansible.builtin.set_fact:
+        gf_binary: "{{ goat_feeds_dir }}/goat-feeds-{{ goat_feeds_version }}"
+        gf_version: "{{ goat_feeds_version }}"
+
+- name: goat-feeds | binary | the service runs it
+  ansible.builtin.file:
+    src: "{{ gf_binary }}"
+    dest: "{{ goat_feeds_dir }}/goat-feeds"
+    state: link
+    force: true
+  notify: restart goat-feeds

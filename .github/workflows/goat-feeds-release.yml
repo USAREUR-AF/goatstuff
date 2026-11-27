@@ -1,0 +1,198 @@
+# A signed release of goat-feeds (ops/serve/goat-feeds/RELEASING.md).
+#
+# A tag `goat-feeds-v<version>` builds the static binary for linux/amd64 and
+# linux/arm64, runs each on Ubuntu 24.04 of its own architecture, writes
+# SHA256SUMS, signs it keylessly with cosign (the signature names this workflow
+# and the tag; no long-lived key), checks the signature as an installer will,
+# and attaches the files to a GitHub Release of that tag:
+#   goat-feeds-<version>-linux-amd64, goat-feeds-<version>-linux-arm64,
+#   SHA256SUMS, SHA256SUMS.sigstore.json
+#
+# Check a download:
+#   cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+#     --certificate-identity https://github.com/USAREUR-AF/goatstuff/.github/workflows/goat-feeds-release.yml@refs/tags/goat-feeds-v<version> \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+#   sha256sum -c SHA256SUMS
+#
+# Run by hand (workflow_dispatch) it is a dry run: the same build, runs, signature
+# and checks at the branch's VERSION, kept as a workflow artifact; nothing is
+# published and no tag is made, even when it is run on a tag. A tag is released
+# only from a commit on main.
+name: goat-feeds-release
+on:
+  push:
+    tags: ["goat-feeds-v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: goat-feeds-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: ops/serve/goat-feeds
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: a tag is released only from a commit on main
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch -q --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "the tagged commit is not on main"; exit 1; }
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: ops/serve/goat-feeds/go.mod
+          cache: false
+      - name: the version, held to VERSION, the role's default and the changelog
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          v=$(tr -d '[:space:]' < VERSION)
+          printf '%s\n' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "VERSION is not <major>.<minor>.<patch>: $v"; exit 1; }
+          if [ "$REF_TYPE" = tag ]; then
+            test "$TAG" = "goat-feeds-v$v" || { echo "tag $TAG, but VERSION is $v"; exit 1; }
+          fi
+          role=$(sed -n 's/^goat_feeds_version: "\(.*\)"$/\1/p' ../../ansible/roles/goat-feeds/defaults/main.yml)
+          test "$role" = "$v" || { echo "the role's goat_feeds_version is $role, VERSION is $v"; exit 1; }
+          grep -qx "## $v" CHANGELOG.md || { echo "CHANGELOG.md has no section '## $v'"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - run: go vet ./...
+      - name: unit tests (integration tests skip without a database)
+        run: go test -count=1 ./...
+      - name: build for linux/amd64 and linux/arm64, with SHA256SUMS
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          ./build.sh "$V"
+          ls -l dist
+          test "$(ls dist | sort | tr '\n' ' ')" = "SHA256SUMS goat-feeds-$V-linux-amd64 goat-feeds-$V-linux-arm64 "
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: goat-feeds-dist
+          path: ops/serve/goat-feeds/dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  run:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: goat-feeds-dist
+          path: dist
+      - name: this architecture's binary is the one SHA256SUMS lists, static, and runs
+        env:
+          V: ${{ needs.build.outputs.version }}
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS
+          f="goat-feeds-$V-linux-${{ matrix.arch }}"
+          chmod +x "$f"
+          file "$f" | tee /dev/stderr | grep -q 'statically linked'
+          test "$(./"$f" -version)" = "goat-feeds $V"
+
+  sign:
+    needs: [build, run]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: goat-feeds-dist
+          path: dist
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: ops/serve/goat-feeds/release
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+      # The signing config is pinned in the tree (Fulcio and a Rekor v1 log), so a change
+      # to Sigstore's published one cannot move the signature to a log goatbuilder refuses.
+      - name: sign SHA256SUMS, keyless
+        run: |
+          cosign sign-blob --yes --signing-config ops/serve/goat-feeds/release/signing-config.json \
+            --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
+      - name: the signature verifies as an installer will check it
+        env:
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/goat-feeds-release.yml@${{ github.ref }}
+        run: |
+          cosign verify-blob dist/SHA256SUMS --bundle dist/SHA256SUMS.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      # goatbuilder reads a Sigstore bundle v0.3 with one hashedrekord 0.0.1 entry in a
+      # Rekor v1 log, with its signed entry timestamp and inclusion proof; it refuses any
+      # other shape. Refuse here, before anything is published.
+      - name: the bundle is the shape goatbuilder reads
+        run: |
+          python3 -I - dist/SHA256SUMS.sigstore.json <<'PY'
+          import json, sys
+          b = json.load(open(sys.argv[1]))
+          assert b["mediaType"] == "application/vnd.dev.sigstore.bundle.v0.3+json", b["mediaType"]
+          vm = b["verificationMaterial"]
+          assert "certificate" in vm, "no certificate"
+          es = vm["tlogEntries"]
+          assert len(es) == 1, f"{len(es)} log entries"
+          e = es[0]
+          assert e["kindVersion"] == {"kind": "hashedrekord", "version": "0.0.1"}, e["kindVersion"]
+          assert e.get("inclusionPromise", {}).get("signedEntryTimestamp"), "no signed entry timestamp (a Rekor v2 log?)"
+          assert e.get("inclusionProof", {}).get("checkpoint", {}).get("envelope"), "no inclusion proof checkpoint"
+          print("bundle v0.3, hashedrekord 0.0.1, signed entry timestamp and inclusion proof present")
+          PY
+      - name: the files
+        run: (cd dist && ls -l && cat SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: goat-feeds-signed
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [build, sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: goat-feeds-signed
+          path: dist
+      - name: the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          V: ${{ needs.build.outputs.version }}
+        run: |
+          awk -v h="## $V" '$0 == h { on = 1; next } on && /^## / { exit } on' ops/serve/goat-feeds/CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || { echo "CHANGELOG.md has no section '## $V'" >&2; exit 1; }
+          printf '\ngoat-feeds %s for Linux (amd64, arm64; static). SHA256SUMS is signed with cosign (keyless): SHA256SUMS.sigstore.json. How to check and install: ops/serve/goat-feeds/RELEASING.md at this tag.\n' "$V" >> "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" dist/* --verify-tag --title "goat-feeds $V" --notes-file "$RUNNER_TEMP/notes.md"
