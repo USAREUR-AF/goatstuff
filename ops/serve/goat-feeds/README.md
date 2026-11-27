@@ -135,6 +135,7 @@ go test ./...                       # unit layer
 ./build.sh 0.5.0                    # dist/goat-feeds-0.5.0-linux-{amd64,arm64} + SHA256SUMS
 ```
 
-Deploy: `ops/ansible/goat-feeds-deploy.yml` (roles `goat-feeds`, `goat-feeds-oidc-client`).
+Deploy: `ops/ansible/goat-feeds-deploy.yml` (roles `goat-feeds`, `goat-feeds-oidc-client`),
+from a signed release through goatbuilder, or a trial's binary ([RELEASING.md](RELEASING.md)).
 The service listens on loopback; a sign-in fence (oauth2-proxy) on the host's mesh address
 in front of it sets `X-Forwarded-Email` and `X-Forwarded-Groups`.

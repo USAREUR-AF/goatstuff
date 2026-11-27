@@ -2,10 +2,16 @@
 # The one host per goatnet that runs goat-feeds. Required.
 goat_feeds_host: ""
 goat_feeds_version: "0.5.0"
-# The linux binary on the controller (built by CI, or `go build` for a trial).
-# The linux binary to install. "{arch}" is replaced by amd64 or arm64 from the host's
-# architecture, so one value serves a mixed fleet: e.g. .../dist/goat-feeds-0.2.0-linux-{arch}
-# (ops/serve/goat-feeds/build.sh builds both).
+# Where the binary comes from: exactly one of these two.
+# A signed release (ops/serve/goat-feeds/RELEASING.md), installed by goatbuilder: its
+# release-file role puts the verified file under <release root>/<component>/ and
+# goat-feeds-deploy.yml sets this to that directory. The service runs the file `current`
+# there names, once it is held to its SHA-256 and found writable by its owner alone.
+goat_feeds_release_home: ""
+goat_feeds_release_owner: root
+# For a trial: a linux binary on the controller (`build.sh`, or `go build`). "{arch}" is
+# replaced by amd64 or arm64 from the host's architecture, so one value serves a mixed
+# fleet: e.g. .../dist/goat-feeds-0.5.0-linux-{arch}. goat_feeds_version names it.
 goat_feeds_binary_src: ""
 goat_feeds_dir: /opt/goat-feeds
 goat_feeds_etc: /etc/goat-feeds

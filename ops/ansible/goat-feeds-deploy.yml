@@ -4,6 +4,15 @@
 # Deploy goat-feeds, self-service approved delivery of fabric topics to mesh systems
 # (ADR 1259, docs/design/fabric-feeds.md). Runs on goat_feeds_host only.
 #
+# From a signed release (ops/serve/goat-feeds/RELEASING.md): `goatbuilder deploy goat-feeds`
+# in a tree that layers goatstuff over goatcore. goatbuilder verifies the release on the
+# operator's machine (the pin's SHA256SUMS digest and its keyless signature by this
+# repository's release workflow at the pin's tag) and passes release_file_component and
+# the verified files; goatcore's release-file role puts the host's file in place and
+# records the pin, and the goat-feeds role runs that file. Rollback
+# (release_file_rollback=true) switches back to the file before.
+#
+# A trial, from a binary on the controller:
 #   cd <assembled tree>/ops/ansible
 #   ../scripts/ansible-preflight.sh -i inventory/mgmt-hosts.ini -i inventory/mgmt-hosts-mesh.ini \
 #     goat-feeds-deploy.yml -e target=<goatnet>_hosts -e goat_feeds_binary_src=<path to linux binary>
@@ -12,10 +21,49 @@
   hosts: "{{ target | mandatory }}"
   become: true
   gather_facts: false
+  vars:
+    # A play's vars outrank group_vars: the release file is root's alone.
+    release_file_root: /opt/goat/releases
+    release_file_owner: root
+    release_file_group: root
+    release_file_mode: "0755"
+    # An install unless goatbuilder's own rollback says otherwise (extra vars outrank
+    # these), so a group_vars value cannot turn an install into a rollback.
+    release_file_rollback: false
+    goat_feeds_release_owner: root
+    goat_feeds_release_home: >-
+      {{ (release_file_root ~ '/' ~ release_file_component) if (release_file_component | default('')) | length > 0 else '' }}
   pre_tasks:
     - name: Run on the feeds host only
       ansible.builtin.meta: end_host
       when: inventory_hostname != (goat_feeds_host | mandatory)
+
+    # Checked before release-file moves `current` or writes the ledger row, so a run the
+    # role would refuse leaves the host as it was.
+    - name: The goatnet's settings, before anything is put in place
+      ansible.builtin.assert:
+        that:
+          - ((goat_feeds_binary_src | default('')) | length > 0) != (goat_feeds_release_home | length > 0)
+          - (goat_feeds_bind_ip | default('')) | length > 0
+          - goat_feeds_bind_ip | default('') != '0.0.0.0'
+          - (goat_feeds_oidc_issuer_url | default('')) | length > 0
+        fail_msg: >-
+          goat-feeds needs one binary: a verified release (goatbuilder deploy, which sets
+          release_file_component) or goat_feeds_binary_src (a trial), not both and not
+          neither; and goat_feeds_bind_ip (this host's mesh IP) and goat_feeds_oidc_issuer_url.
+          Nothing was installed.
+        quiet: true
+
+    - name: The verified release file is in place (release-file)
+      when: (release_file_component | default('')) | length > 0
+      block:
+        - name: Read the host's architecture, which names its file
+          ansible.builtin.setup:
+            gather_subset: [min]
+
+        - name: Put the file in place and record the pin
+          ansible.builtin.include_role:
+            name: release-file
   roles:
     - role: goat-feeds
     - role: goat-feeds-oidc-client

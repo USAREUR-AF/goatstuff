@@ -1,20 +1,19 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-# goat-feeds (ADR 1259): binary, config, database, systemd unit, sign-in fence.
+# goat-feeds (ADR 1259): binary (tasks/binary.yml), config, database, systemd unit, sign-in fence.
 # Secrets (database password, fence client and cookie secrets) are generated on the host
 # on first run and stay there; the oidc-client role reads the client secret back to
 # register it with Hydra.
 
-- name: goat-feeds | require the binary and the fence settings
+- name: goat-feeds | require the fence settings
   ansible.builtin.assert:
     that:
-      - goat_feeds_binary_src | length > 0
       - goat_feeds_bind_ip | length > 0
       - goat_feeds_bind_ip != '0.0.0.0'
       - goat_feeds_oidc_issuer_url | length > 0
     fail_msg: >-
-      Set goat_feeds_binary_src (the linux binary), goat_feeds_bind_ip (this host's mesh IP)
-      and goat_feeds_oidc_issuer_url in group_vars or on the command line.
+      Set goat_feeds_bind_ip (this host's mesh IP) and goat_feeds_oidc_issuer_url in
+      group_vars or on the command line.
 
 - name: goat-feeds | read the host's architecture (the play does not gather facts)
   ansible.builtin.setup:
@@ -42,22 +41,8 @@
     - { path: "{{ goat_feeds_etc }}", mode: "0750", group: "{{ goat_feeds_user }}" }
     - { path: "{{ goat_feeds_etc }}/secrets", mode: "0750", group: "{{ goat_feeds_user }}" }
 
-- name: goat-feeds | binary
-  ansible.builtin.copy:
-    src: "{{ goat_feeds_binary_src | replace('{arch}', gf_arch) }}"
-    dest: "{{ goat_feeds_dir }}/goat-feeds-{{ goat_feeds_version }}"
-    owner: root
-    group: root
-    mode: "0755"
-  notify: restart goat-feeds
-
-- name: goat-feeds | current binary
-  ansible.builtin.file:
-    src: "{{ goat_feeds_dir }}/goat-feeds-{{ goat_feeds_version }}"
-    dest: "{{ goat_feeds_dir }}/goat-feeds"
-    state: link
-    force: true
-  notify: restart goat-feeds
+- name: goat-feeds | binary, from the verified release or a trial's file
+  ansible.builtin.include_tasks: binary.yml
 
 - name: goat-feeds | generate host-held secrets on first run
   ansible.builtin.shell: |
@@ -253,5 +238,5 @@
 - name: goat-feeds | report
   ansible.builtin.debug:
     msg: >-
-      goat-feeds {{ goat_feeds_version }} on {{ inventory_hostname }}: {{ (gf_health.json | default({})).status | default('?') }};
+      goat-feeds {{ gf_version }} on {{ inventory_hostname }}: {{ (gf_health.json | default({})).status | default('?') }};
       reasons {{ (gf_health.json | default({})).reasons | default([]) }}; open {{ goat_feeds_public_url }}/
