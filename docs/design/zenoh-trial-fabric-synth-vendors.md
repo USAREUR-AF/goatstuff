@@ -53,7 +53,7 @@ The fix is [`ops/ansible/zenoh-synth-vendors-slot-pool-deploy.yml`](../../ops/an
 3. **Deploy.** The unchanged `zenoh-synth-vendors` role renders + brings up the compose on the resolved fleet.
 4. **Schemas.** `ops/zenoh-trial-peers/synth-vendor-schemas/bootstrap-zagros-synth-decode.sh` registers each `‹anchor›/‹animal›/…` topic as `protobuf:‹Msg›` and uploads the matching `.fds` (the wire is already protobuf), flipping the Decoded view from `no_schema` to `decoded`.
 
-Net: each synth peer becomes a first-class onboarded slot-system — decodable in panoscope **and** shown by its alias (`tarsier-alpha`, not `40655337…`). The nova-a flat path is untouched; the deploy asserts `portal_identity_model == per-uuid-slot-pool` and refuses to run otherwise.
+Net: each synth peer becomes a first-class onboarded slot-system — decodable in panoscope **and** shown by its alias (`tarsier-alpha`, not `40655337…`). The nova-a flat path is untouched. The deploy applies only where `portal_identity_model == per-uuid-slot-pool` (built): on any other model it ends the host with one line ("portal_identity_model is not per-uuid-slot-pool; a per-vendor goatnet runs its synth path by hand") and succeeds, so goatcore's `standup`, which runs it on every goatnet with synth on, does not fail on a per-vendor goatnet. `ops/ansible/roles/zenoh-synth-vendors/tests/test_slot_pool_play.py` runs the play for both models.
 
 ## Historical reference (pre-2026-05-19)
 
