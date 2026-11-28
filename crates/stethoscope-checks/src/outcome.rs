@@ -211,3 +211,57 @@ impl CheckOutcome {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Verdict;
+
+    const VERDICT_CASES: [(Verdict, u8, &str, &str); 5] = [
+        (Verdict::Pass, 1, "pass", r#""pass""#),
+        (Verdict::Warn, 2, "warn", r#""warn""#),
+        (Verdict::Fail, 3, "fail", r#""fail""#),
+        (Verdict::Skipped, 0, "skipped", r#""skipped""#),
+        (Verdict::NotApplicable, 0, "na", r#""na""#),
+    ];
+
+    #[test]
+    fn severity_ranks_follow_the_documented_order() {
+        for &(verdict, expected_rank, _, _) in &VERDICT_CASES {
+            assert_eq!(verdict.severity_rank(), expected_rank, "{verdict:?}");
+        }
+
+        assert!(Verdict::Fail.severity_rank() > Verdict::Warn.severity_rank());
+        assert!(Verdict::Warn.severity_rank() > Verdict::Pass.severity_rank());
+        assert!(Verdict::Pass.severity_rank() > Verdict::Skipped.severity_rank());
+        assert_eq!(
+            Verdict::Skipped.severity_rank(),
+            Verdict::NotApplicable.severity_rank()
+        );
+    }
+
+    #[test]
+    fn string_forms_and_json_wire_literals_match_the_contract() {
+        for &(verdict, _, expected_str, expected_json) in &VERDICT_CASES {
+            assert_eq!(verdict.as_str(), expected_str, "{verdict:?}");
+            assert_eq!(
+                serde_json::to_string(&verdict).expect("Verdict should serialize"),
+                expected_json,
+                "{verdict:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_variant_round_trips_through_json() {
+        for &(verdict, _, _, expected_json) in &VERDICT_CASES {
+            let decoded: Verdict =
+                serde_json::from_str(expected_json).expect("contract literal should deserialize");
+            assert_eq!(decoded, verdict, "{expected_json}");
+
+            let encoded = serde_json::to_string(&verdict).expect("Verdict should serialize");
+            let round_tripped: Verdict =
+                serde_json::from_str(&encoded).expect("serialized Verdict should deserialize");
+            assert_eq!(round_tripped, verdict, "{encoded}");
+        }
+    }
+}
