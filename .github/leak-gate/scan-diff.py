@@ -101,7 +101,7 @@ def load_needles(path):
 
 def added_lines(repo: str, base: str, head: str):
     """Yield (path, line_number, text) for every line the change adds."""
-    cmd = ["git", "-C", repo, "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff",
+    cmd = ["git", "-C", repo, "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv",
            "--no-renames", "--unified=0", "--src-prefix=a/", "--dst-prefix=b/", f"{base}...{head}"]
     proc = subprocess.run(cmd, capture_output=True)
     if proc.returncode != 0:
