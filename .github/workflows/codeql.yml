@@ -1,15 +1,22 @@
 name: codeql
 
 # CodeQL from this repo, instead of the managed "Code Quality" scan.
-# goatstuff holds no Go, so this copy analyses Python and JavaScript/TypeScript only.
+# It analyses every language the repository holds: Rust, Go, Python,
+# JavaScript/TypeScript and the GitHub Actions workflows.
 #
 # The managed scan (it shows in the run list as event `dynamic`, with no YAML
 # anywhere) ran on every pull request and could not be path-filtered. This
 # workflow:
 #
-#   * starts only when Python or JavaScript/TypeScript source changes;
-#   * analyses only the languages the push touched (the `detect` job reads
-#     the diff; a push to main or the weekly schedule analyses all);
+#   * starts only when a file of one of those languages changes;
+#   * analyses all five languages on every run. A pull request that analysed
+#     only the languages it touched left the other categories on main without
+#     a matching result, and GitHub then reported incomplete coverage. The
+#     `detect` job gives every run the same language list and the list of Go
+#     modules to build.
+#
+# Go is the one language that needs a build: its extractor traces `go build`
+# of every tracked module. The other four are read from source.
 #
 # `push: main` stays, and this is the one guard-shaped workflow that keeps
 # it: code scanning diffs a pull request's alerts against the default
@@ -27,7 +34,11 @@ on:
       - '**.jsx'
       - '**.ts'
       - '**.tsx'
-      - '.github/workflows/codeql.yml'
+      - '**.rs'
+      - '**.go'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '.github/workflows/**'
   push:
     branches: [main]
     paths:
@@ -36,7 +47,11 @@ on:
       - '**.jsx'
       - '**.ts'
       - '**.tsx'
-      - '.github/workflows/codeql.yml'
+      - '**.rs'
+      - '**.go'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '.github/workflows/**'
   schedule:
     # Weekly full analysis of main, so query-pack updates reach the baseline.
     - cron: '23 5 * * 1'
@@ -51,44 +66,35 @@ concurrency:
 
 jobs:
   detect:
-    name: which languages changed
+    name: select baseline languages
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       languages: ${{ steps.pick.outputs.languages }}
+      go_modules: ${{ steps.pick.outputs.go_modules }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Pick the languages this push touched
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select the same languages and Go modules as main
         id: pick
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" != "pull_request" ]; then
-            echo 'languages=["python","javascript-typescript"]' >> "$GITHUB_OUTPUT"
-            echo "full analysis ($EVENT)"
-            exit 0
-          fi
-          # HEAD is the PR merge commit; HEAD^1 is the base tip (fetch-depth 2).
-          changed=$(git diff --name-only HEAD^1 HEAD)
-          self=0
-          grep -qx '.github/workflows/codeql.yml' <<<"$changed" && self=1
-          langs=()
-          if [ "$self" = 1 ] || grep -qE '\.py$' <<<"$changed"; then langs+=('"python"'); fi
-          if [ "$self" = 1 ] || grep -qE '\.(js|jsx|ts|tsx)$' <<<"$changed"; then langs+=('"javascript-typescript"'); fi
-          list=$(IFS=,; echo "[${langs[*]-}]")
-          echo "languages=$list" >> "$GITHUB_OUTPUT"
-          echo "analysing: $list"
+          # Every tracked Go module, as the directory holding its go.mod.
+          all_modules=$(git ls-files -- '*/go.mod' 'go.mod' | xargs -n1 dirname | sort -u)
+          echo 'languages=["rust","go","python","javascript-typescript","actions"]' >> "$GITHUB_OUTPUT"
+          echo "go_modules=$(tr '\n' ' ' <<<"$all_modules")" >> "$GITHUB_OUTPUT"
+          echo "full baseline coverage ($EVENT)"
 
   analyze:
     name: Analyze (${{ matrix.language }})
     needs: detect
     if: ${{ needs.detect.outputs.languages != '[]' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Rust is the largest language here and gets the longer limit; the same
+    # extraction took 11 to 19 minutes on goatcore, which holds more Rust.
+    timeout-minutes: ${{ matrix.language == 'rust' && 50 || 30 }}
     permissions:
       contents: read
       actions: read
@@ -98,14 +104,43 @@ jobs:
       matrix:
         language: ${{ fromJSON(needs.detect.outputs.languages) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: github/codeql-action/init@v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        if: matrix.language == 'go'
+        with:
+          # The version both go.mod files declare; raise it with them.
+          go-version: '1.25.0'
+          cache-dependency-path: '**/go.sum'
+
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           languages: ${{ matrix.language }}
-          build-mode: none
+          # Go's extractor traces a real build; the others read source.
+          build-mode: ${{ matrix.language == 'go' && 'manual' || 'none' }}
           queries: security-and-quality
 
-      - uses: github/codeql-action/analyze@v4
+      # Build the same modules on pull requests and main for comparable coverage.
+      # A module that does not build is reported and left out of the
+      # database rather than failing the scan: the build gate for a module is
+      # its own workflow, not this one.
+      - name: Build all Go modules under the CodeQL tracer
+        if: matrix.language == 'go'
+        shell: bash
+        env:
+          MODULES: ${{ needs.detect.outputs.go_modules }}
+        run: |
+          set -uo pipefail
+          for m in $MODULES; do
+            echo "::group::go build $m"
+            if (cd "$m" && go build ./...); then
+              echo "built $m"
+            else
+              echo "::warning::$m did not build and is not in the CodeQL database"
+            fi
+            echo "::endgroup::"
+          done
+
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           category: "/language:${{ matrix.language }}"
