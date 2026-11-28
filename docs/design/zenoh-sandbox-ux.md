@@ -40,10 +40,26 @@ package versions, tarball hashes and license texts beside it. The package as pub
 cannot be loaded by a browser directly (it imports its dependencies by bare name and its
 key-expression code is a WebAssembly module in bundler format), so
 `ops/serve/zenoh-sandbox/vendor-tool/regenerate.sh` produces the file: it downloads the
-pinned tarballs, verifies each SHA-512 and bundles them into one ES module with the
+pinned tarballs, verifies each SHA-512, applies reviewed downstream input cleanups
+and bundles them into one ES module with the
 WebAssembly embedded, using esbuild's Go API. The output is byte-for-byte reproducible,
 and CI rebuilds it on every change to the sandbox and fails if the committed file
 differs.
+
+Built: `vendor-tool/patches.json` records exact edits and input/output SHA-256
+values for five package files. The patch step validates every file and edit
+count before writing any of them. It removes redundant guards and assignments
+and marks five pure factory calls for removal when their results are unused.
+The package versions, public exports and WebAssembly binary remain unchanged.
+Patch provenance and rationale are documented beside
+the generated bundle.
+
+Measured locally on arm64 in Chromium 151.0.7922.34: the original and patched
+clients produce matching results against the same Zenoh 1.9.0 router and
+checksum-verified 1.9.0 remote-API plugin. Checks cover cross-session publish /
+subscribe, Unicode and 64 KiB payloads, declared publishers, query / reply,
+transforms, repeated invalid key-expression paths and connection lifecycle tests.
+Hosted CI and deployment verification are not measured by these local checks.
 
 ## Three pillars (built as phases)
 

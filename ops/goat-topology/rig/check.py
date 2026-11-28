@@ -19,7 +19,8 @@ import sys
 import urllib.request
 
 declared_path, names_path, url = sys.argv[1:4]
-rows = [l.split() for l in open(declared_path) if l.strip()]
+with open(declared_path) as declared:
+    rows = [l.split() for l in declared if l.strip()]
 # name idx zid publish subs pubs peername
 R = {r[0]: {"zid": r[2], "publish": r[3], "subs": int(r[4]), "pubs": int(r[5]), "peer": r[6]} for r in rows}
 PODS = {"charlie-gateway": ["charlie-pod-1", "charlie-pod-2"], "bravo-gateway": ["bravo-pod-1", "bravo-pod-2"]}

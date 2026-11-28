@@ -1,0 +1,87 @@
+[
+  {
+    "path": "typed-duration/dist/lib/index.js",
+    "reason": "The object type guard already excludes undefined; retain the null check.",
+    "input_sha256": "efdc3d89de0147d5b52689555aa3552c336d57bdbe540a44c6b4266c83c84171",
+    "output_sha256": "5fa545f31dc02bf057f0c7abeb18e98dd6f5e509c4d73da55e33b6fa59e203fc",
+    "edits": [
+      {
+        "before": "maybeTypedDuration === null || maybeTypedDuration === void 0",
+        "after": "maybeTypedDuration === null",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "@eclipse-zenoh/zenoh-ts/dist/link.js",
+    "reason": "Keep one constructor assignment; leave the entire connection/retry method unchanged.",
+    "input_sha256": "9169204e57b9477377162949bffb2ade634ff8e218c018aa9131e331de49eb89",
+    "output_sha256": "7c76ed95658f47b5e2d1b5148abd4bc021640f139c958ca153418f0556485aba",
+    "edits": [
+      {
+        "before": "        this.ws = ws;\n        this.ws = ws;",
+        "after": "        this.ws = ws;",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "@eclipse-zenoh/zenoh-ts/dist/key_expr/zenoh_keyexpr_wrapper_bg.js",
+    "reason": "Remove unread locals on throw paths; deferred cleanup variables and the WASM binary stay unchanged.",
+    "input_sha256": "2c408a51793c28e3b8fe84b4ca92fec5b588ddab6f026226ffd705aa30c873ff",
+    "output_sha256": "cc4eff8bddcecbd2ba91b9a8a736ff2a1b74b187418e02e106387dc5c47d003b",
+    "edits": [
+      {
+        "before": "            ptr3 = 0;\n            len3 = 0;\n",
+        "after": "",
+        "count": 2
+      },
+      {
+        "before": "            ptr2 = 0;\n            len2 = 0;\n",
+        "after": "",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "@thi.ng/errors/unsupported.js",
+    "reason": "defError returns a class; its constructor is not invoked by this factory call.",
+    "input_sha256": "d4be8e07791187345d828f5ff5c46064222e7762e150891d2e1256950b9320b0",
+    "output_sha256": "fdebfe310f277dcc5fad346b73b31ec894bf4bd13624bb88d9370041698a2c5f",
+    "edits": [
+      {
+        "before": "const UnsupportedFeatureError = defError(",
+        "after": "const UnsupportedFeatureError = /* @__PURE__ */ defError(",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "@thi.ng/leb128/index.js",
+    "reason": "These factories only return closures; WASM operations happen when the returned functions are called.",
+    "input_sha256": "4387fa83219d50638d2751c80bf3ffed3b579e5b00e7ae00242ef4ae95b5099b",
+    "output_sha256": "719bc08e387a8d661c251d2cb39e6744a8e519d903e6b1c8a89790d422fc0336",
+    "edits": [
+      {
+        "before": "const encodeSLEB128 = __encode(",
+        "after": "const encodeSLEB128 = /* @__PURE__ */ __encode(",
+        "count": 1
+      },
+      {
+        "before": "const decodeSLEB128 = __decode(",
+        "after": "const decodeSLEB128 = /* @__PURE__ */ __decode(",
+        "count": 1
+      },
+      {
+        "before": "const encodeSLEB128Into = __encodeInto(",
+        "after": "const encodeSLEB128Into = /* @__PURE__ */ __encodeInto(",
+        "count": 1
+      },
+      {
+        "before": "const encodeULEB128 = __encode(",
+        "after": "const encodeULEB128 = /* @__PURE__ */ __encode(",
+        "count": 1
+      }
+    ]
+  }
+]
