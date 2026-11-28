@@ -12,9 +12,6 @@ directory with a parse-only syntax check.
 
 ## Behavioral coverage
 
-Behavioral validation (real container deploy, real cert mounts, real
-Traefik routing, real Hydra OAuth2 client provisioning) happens at
-82Q.8 smoke deploy on nova-a — see `docs/project/implementation-plan.md`
-Block 82Q.8 + the operator runbook at
-`docs/operations/panoscope-runbook.md`
-(landed in 82Q.9).
+Follow the [operator runbook](../../../../../docs/operations/panoscope-runbook.md)
+for container deployment, certificate mounts, routing and OAuth2 client
+provisioning. These checks require a running environment.

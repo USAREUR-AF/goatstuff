@@ -5,9 +5,8 @@ renders peers as nodes, topic flows as animated edges with schema-color
 coding, role classification (source / sink / intermediary), and packet-dot
 animation per sampled publish.
 
-- **Design:** `docs/design/panoscope.md`
-- **Tracking:** Block 82Q in `docs/project/implementation-plan.md`
-- **Trust domain:** nova-goatnet (`docs/design/nova-goatnet.md`)
+- **View-model design:** [panoscope view model](../../docs/design/panoscope-view-model.md)
+- **History-lens design:** [panoscope history lens](../../docs/design/panoscope-history-lens.md)
 
 ## Status
 
@@ -68,7 +67,6 @@ v0.0.1-alpha — backend complete; frontend + deployment pending:
   with an upstream `eclipse/zenoh:1.9.0` router on the loopback. Run
   `docker compose -f docker-compose.dev.yml up --build` to see
   panoscope render against synthetic traffic.
-- Production compose at `ops/compose/nova/docker-compose.yml`.
 - Ansible role at [`ops/ansible/roles/panoscope/`](../ansible/roles/panoscope/);
   orchestrator playbook at [`ops/ansible/panoscope.yml`](../ansible/panoscope.yml).
 
