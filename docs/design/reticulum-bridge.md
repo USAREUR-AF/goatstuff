@@ -1,8 +1,6 @@
 # Reticulum bridge — extending goat below the IP line
 
-**Status:** Bridge pattern **proven** (bidirectional, no-hardware) in the sibling repo
-`goat-reticulum`; field RF
-bearers + goat-identity mapping designed-not-built. [ADR 1050](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1050-reticulum-denied-edge-bridge.md).
+**Status:** Bridge pattern accepted ([ADR 1050](https://github.com/usareur-af/goatcore/blob/main/docs/adr/1050-reticulum-denied-edge-bridge.md)). The first bridge (Python, on `rns`/`lxmf`) is removed because of the Reticulum License (ADR 1050 Amendment 1). The rebuild in Rust on Reticulum-rs is in progress, not merged; which repository holds it is to be decided. Field RF bearers and goat-identity mapping are designed-not-built.
 
 ## Conclusion
 
@@ -18,11 +16,16 @@ coordination-less, cryptographic-identity addressing (no IP, no DNS, no central
 authority), with transport interfaces over almost any medium down to a few bits
 per second. The two stacks are **complementary, not competing** — goat governs
 attributable, audited sharing above IP; Reticulum carries bits where there is no
-IP. The bridge is the seam, and goat does **not** reimplement Reticulum.
+IP. The bridge is the seam.
 
-The capability lives in a sibling repo (it pulls a Python RF stack neither goat
-core nor ice-goat should depend on) and is positioned as the first reference
-**denied-edge southbound gateway** for ice-goat.
+The Python reference implementation (`rns`, `lxmf`) is under the Reticulum
+License from 0.9.4, whose condition forbids use "in any kind of system which
+includes amongst its functions the ability to purposefully do harm to human
+beings". goat does not use it in any form. The bridge runs on Reticulum-rs
+(MIT), with the pieces it lacks written clean-room. Interop with Python `rns`
+networks is not a goal. The capability lives in a sibling repo and is
+positioned as the first reference **denied-edge southbound gateway** for
+ice-goat.
 
 ## The gap, precisely
 
@@ -37,59 +40,41 @@ Reticulum bridge is what closes it.
 
 ## Design
 
-A single bridge process holds both stacks and translates between them.
+A single bridge process holds both stacks and translates between them: a
+Reticulum identity and one `SINGLE` destination (`goat_reticulum.bearer`) that
+edges open an encrypted, forward-secret Link to, and a Zenoh peer on the
+egress and ingress key spaces. The Reticulum interface is configuration, not
+bridge code, so the same bridge runs over any bearer.
 
-- **Reticulum side:** a persistent `RNS.Identity`, one `IN`/`SINGLE`
-  `Destination` (`goat_reticulum.bearer`) that edge peers establish an encrypted,
-  forward-secret, bidirectional `Link` to. Inbound packets are republished onto
-  Zenoh; outbound Zenoh samples are sent as packets over the active Link(s).
-- **goat (Zenoh) side:** a Zenoh peer that subscribes an **egress** key space
-  (`goat/rns/egress/**`, data bound for the denied edge) and publishes
-  edge-sourced data into an **ingress** key space
-  (`goat/rns/ingress/<edge-identity-hash>`), so a proven Reticulum identity
-  becomes a first-class, attributable key on the fabric.
-- **The bearer is opaque.** The Reticulum *interface* (TCP loopback in the proof;
-  `RNode`/LoRa, KISS/packet-radio, or serial in the field) is config, not bridge
-  code — the same bridge runs over real RF unchanged.
+## The rebuild in Rust
 
-Architecture detail, key spaces, and field-deployment shape live in the sibling
-repo's `docs/architecture.md`.
+One Rust process holds a Zenoh peer (`zenoh` =1.9.0, the fleet pin) and a
+Reticulum destination on Reticulum-rs.
 
-## What is proven
+| Direction | Zenoh key | On the bearer |
+|---|---|---|
+| goat -> every edge | `goat/rns/egress/<key>` | the edge receives `<key>` |
+| goat -> one edge | `goat/rns/egress/<edge-identity-hash>/<key>` | that edge receives `<key>` |
+| edge -> goat | `goat/rns/ingress/<edge-identity-hash>/<key>` | the edge sends `<key>` |
 
-A self-contained proof (`make proof`, no RF hardware, no live fabric) spins up a
-bridge, a Reticulum-only edge node, and a goat-side Zenoh peer on loopback and
-asserts data crosses the boundary **in both directions**, against current `rns`
-1.3.5 and `eclipse-zenoh` 1.9.0 (the goat fleet pin):
-
-- **edge → goat** (Reticulum → Zenoh): the edge's RNS packet is republished onto
-  the ingress key, labeled by the edge's proven Reticulum identity hash.
-- **goat → edge** (Zenoh → Reticulum): a fabric sample is forwarded over the
-  Link and received by the Reticulum-only node.
-
-The proof now covers **both** a single small packet **and** a large payload that
-must travel as a chunked `RNS.Resource` (a 50 KB ≈ 108-part transfer), each way —
-four crossings, three consecutive runs all PASS; the edge identity propagates
-end-to-end onto the Zenoh key, not just the bytes. Detail:
-`docs/proof.md`.
-
-### Large payloads — built (`RNS.Resource`)
-
-Payloads above the ~383-byte single-packet ceiling (`ENCRYPTED_MDU`) now travel as
-a chunked, reassembled `RNS.Resource` automatically; small payloads stay
-single-packet. The choice is transparent to callers (`goat_reticulum.transport`)
-in both directions — the analog of goat's `volatile/blob` chunking. Proven over
-loopback; the field test confirms it over the real RF bearer, where chunk timing
-and loss bite.
+- An edge proves its Reticulum identity on the Link; data from an edge that has
+  not is dropped and counted. The ingress key carries the proven identity hash.
+- Messages travel over a Reticulum Channel (reliable, ordered, windowed). A
+  message larger than one packet is split into chunks sized for the bearer MTU
+  and reassembled in order.
+- Interfaces: TCP and UDP from Reticulum-rs; serial (HDLC framing), KISS (tty or
+  KISS TCP port) and RNode (KISS plus radio setup, every radio parameter
+  required) written clean-room.
+- The proof runs bridge and edge as separate processes with a goat-side Zenoh
+  peer over TCP, lossy UDP, or a serial or KISS null-modem, optionally
+  rate-limited and delayed. It asserts both directions for a one-packet and a
+  chunked (50 KB) message, sends a run of small messages each way, and fails if
+  the bridge's own p99 handling time per message exceeds 1 ms.
 
 ## What is not built (the gate to canon)
 
-- **A real RF bearer.** The proof uses a TCP loopback interface. Field use swaps
-  it for a LoRa `RNode` / packet-radio / serial interface — config, not code, but
-  unproven on hardware. Hardware tiers + BOM:
-  `docs/hardware-proveout.md`.
-- **Multi-edge routing.** The proof broadcasts egress to all active Links;
-  per-edge routing by egress key suffix is unbuilt.
+- **A real RF bearer.** The proof uses simulated bearers. The RNode and KISS
+  interfaces are unproven on hardware.
 - **goat-identity mapping.** Mapping a proven Reticulum identity to a goat slot
   anchor so edge-sourced data carries full goat attribution (alias/ACL) is
   designed-not-built.
@@ -113,8 +98,8 @@ the sibling repo's
 
 ## Why a sibling repo, not goat core
 
-- It pulls a Python RF stack (`rns`, `lxmf`) that neither goat core (Rust/Zenoh)
-  nor ice-goat should take as a dependency.
+- It carries a Reticulum stack (Reticulum-rs, vendored and patched) that neither
+  goat core nor ice-goat should take as a dependency.
 - It is a **reference** bearer — one of potentially many — so it lives beside the
   contract it implements, per the sibling-repo containment pattern
   ([ADR 0217 addendum](https://github.com/usareur-af/goatcore/blob/main/docs/adr/0217-shim-repo-containment.md)) and the
