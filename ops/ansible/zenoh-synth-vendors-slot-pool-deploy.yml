@@ -90,6 +90,21 @@
       ansible.builtin.meta: end_play
       when: not (synth_vendors_enabled | default(false) | bool)
 
+    # This play onboards each synth peer into the portal's per-uuid slot pool, so
+    # it applies only to a portal in that model. A per-vendor goatnet with synth
+    # on is not an error here: the host ends with one line and is left as it is
+    # (goatcore's standup runs this play for every goatnet with synth on).
+    - name: synth-onboard | say why a per-vendor goatnet is left as it is
+      ansible.builtin.debug:
+        msg: >-
+          portal_identity_model is not per-uuid-slot-pool; a per-vendor goatnet
+          runs its synth path by hand
+      when: (portal_identity_model | default('per-vendor')) != 'per-uuid-slot-pool'
+
+    - name: synth-onboard | end a host whose portal is not in the slot pool model
+      ansible.builtin.meta: end_host
+      when: (portal_identity_model | default('per-vendor')) != 'per-uuid-slot-pool'
+
     - name: synth-onboard | assert per-uuid-slot-pool mode (this playbook onboards into the slot pool)
       ansible.builtin.assert:
         that:
